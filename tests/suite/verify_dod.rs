@@ -1299,8 +1299,12 @@ fn row(t: &str, sha: &str) -> String {
 
 /// The schedules each behaviour test runs: the default values (the target sets nothing) and three a
 /// target sets. Every expectation is computed from the schedule, never typed for one of them.
-const SCHEDULES: [Option<Sched>; 4] =
-    [None, Some(Sched { max: 5, whole: 2, from: 4 }), Some(Sched { max: 2, whole: 1, from: 2 }), Some(Sched { max: 4, whole: 3, from: 3 })];
+const SCHEDULES: [Option<Sched>; 4] = [
+    None,
+    Some(Sched { max: 5, whole: 2, from: 4, fb: None }),
+    Some(Sched { max: 2, whole: 1, from: 2, fb: None }),
+    Some(Sched { max: 4, whole: 3, from: 3, fb: None }),
+];
 
 /// The target's committed `[review]` table: `lines` under it, appended to epic/e's rules file. The
 /// commit skips the hooks, so a schedule the pre-commit hook refuses can land on the target as by
@@ -1372,7 +1376,7 @@ fn every_round_finding_a_blocker_runs_up_to_max_rounds_scoped_by_whole_range_rou
 
         // No round past the cap, not even under settings the branch commits for itself.
         let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
-        let own = Sched { max: s.max + 5, whole: s.max + 5, from: s.max + 5 };
+        let own = Sched { max: s.max + 5, whole: s.max + 5, from: s.max + 5, fb: None };
         write(p, ".keel/config.toml", &format!("{cfg}[review]\n{}", own.lines()));
         commit(p, "a schedule of the branch's own");
         step(p, s.max + 1);
@@ -1483,7 +1487,7 @@ fn a_fix_pass_after_a_nits_only_round_is_accepted_by_the_merge_check_and_listed_
 #[test]
 fn max_rounds_alone_on_the_target_moves_the_cap_and_the_other_keys_keep_their_default_values() {
     for max in [DEFAULTS.max + 3, 1] {
-        let s = Sched { max, whole: DEFAULTS.whole.min(max), from: DEFAULTS.from.min(max) };
+        let s = DEFAULTS.capped(max);
         let d = fixture();
         let p = d.path();
         git(p, &["switch", "-q", "epic/e"]);
@@ -1519,7 +1523,8 @@ fn max_rounds_alone_on_the_target_moves_the_cap_and_the_other_keys_keep_their_de
 
 #[test]
 fn a_bad_schedule_on_the_target_is_red_naming_its_key_and_blocks_the_review_never_the_sign_off() {
-    for (lines, want) in [("modules = [\"src/*\"]\nrubric = \"r.md\"\n".to_string(), DEFAULTS.max), (Sched { max: 2, whole: 2, from: 1 }.lines(), 2)] {
+    for (lines, want) in [("modules = [\"src/*\"]\nrubric = \"r.md\"\n".to_string(), DEFAULTS.max), (Sched { max: 2, whole: 2, from: 1, fb: None }.lines(), 2)]
+    {
         let d = fixture();
         let p = d.path();
         target_schedule(p, &lines);
@@ -1577,7 +1582,7 @@ fn a_bad_schedule_staged_is_refused_by_the_pre_commit_hook_and_keel_mr_commit() 
         assert!(!o.status.success() && text(&o).contains(key) && text(&o).contains("fix ->"), "{lines}: {}", text(&o));
         assert_eq!(head(p), before, "{lines}: nothing landed");
     }
-    write(p, ".keel/config.toml", &format!("{cfg}[review]\n{}", Sched { max: 4, whole: 3, from: 3 }.lines()));
+    write(p, ".keel/config.toml", &format!("{cfg}[review]\n{}", Sched { max: 4, whole: 3, from: 3, fb: None }.lines()));
     git(p, &["add", "-A"]);
     ok(run("git", p, &["commit", "-qm", "a good schedule"], ""));
 }
@@ -1645,7 +1650,7 @@ fn the_writer_records_the_rounds_lists_and_takes_the_counts_from_its_findings() 
     let d = fixture();
     let p = d.path();
     // Two rounds are run below: a schedule that has them, set on the target.
-    target_schedule(p, &Sched { max: 2, whole: 1, from: 2 }.lines());
+    target_schedule(p, &Sched { max: 2, whole: 1, from: 2, fb: None }.lines());
     test_note(p);
     let findings = r#"[{"location": "src/a.py:2", "claim": "wrong", "severity": "blocker", "evidence": "e"},
         {"location": "src/a.py:1", "claim": "costly", "severity": "important", "evidence": "e", "waived": "owner: tracked as B9"}]"#;
@@ -1780,7 +1785,7 @@ fn no_fix_line_names_a_round_the_schedule_refuses() {
 #[test]
 fn a_fix_pass_answers_a_failed_round_only_with_a_code_fix_and_never_replaces_a_reviewed_note() {
     // And a schedule whose fix_importants_from is 1, where no round follows a round 1 without a blocker.
-    for set in SCHEDULES.into_iter().chain([Some(Sched { max: 3, whole: 1, from: 1 })]) {
+    for set in SCHEDULES.into_iter().chain([Some(Sched { max: 3, whole: 1, from: 1, fb: None })]) {
         // Code review round 2, B1: a docs-only commit after a FAIL with importants in round
         // fix_importants_from fixed nothing.
         let d = fixture();
@@ -2064,7 +2069,7 @@ fn a_clean_back_merge_into_a_file_the_wu_also_changed_is_no_change_of_its_own() 
     // Past whole_range_rounds the scope's files are those of the diff it prints: the WU's fix, not the merge.
     let d = fixture();
     let p = d.path();
-    let s = on_target(p, Some(Sched { max: 4, whole: 2, from: 3 }));
+    let s = on_target(p, Some(Sched { max: 4, whole: 2, from: 3, fb: None }));
     shared_file(p);
     edit_shared(p, 2, "\"wu\"");
     commit(p, "the WU changes line 2 of the shared file");
@@ -2506,4 +2511,299 @@ fn a_binding_in_git_s_old_short_form_holds_from_7_to_12_characters_and_no_other_
     let o = keel(p, &["verify-dod", "wu", "wu/e/a", "--no-receipt"]);
     assert_red(&o, "5·diff-binding");
     assert_red(&o, "8·manual-review");
+}
+
+// E-CRLEVEL.W1: the schedule per level - [review.wu] and [review.epic] over [review], the level read
+// from the review's target, and fix_blockers_from (UC-REV-3, UC-REV-2, UC-GATE-1). Every expectation
+// is computed from the Sched each table writes.
+
+/// The shared settings these tests write: one above each default, so none is a default value.
+const SHARED: Sched = Sched { max: DEFAULTS.max + 1, whole: DEFAULTS.whole + 1, from: DEFAULTS.from + 1, fb: None };
+/// A WU level over SHARED: one above each of SHARED's.
+const WU_LEVEL: Sched = Sched { max: SHARED.max + 1, whole: SHARED.whole + 1, from: SHARED.from + 1, fb: None };
+/// An epic level over SHARED: two above each of SHARED's.
+const EPIC_LEVEL: Sched = Sched { max: SHARED.max + 2, whole: SHARED.whole + 2, from: SHARED.from + 2, fb: None };
+
+/// `tables` appended to the committed config of `branch` (hooks skipped, so main takes a commit and a
+/// refused value can land as by `--no-verify`). HEAD back on wu/e/a.
+fn tables_on(p: &Path, branch: &str, tables: &str) {
+    git(p, &["switch", "-q", branch]);
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    write(p, ".keel/config.toml", &format!("{cfg}{tables}"));
+    git(p, &["add", "-A"]);
+    git(p, &["commit", "-q", "--no-verify", "-m", &format!("review tables on {branch}")]);
+    git(p, &["switch", "-q", "wu/e/a"]);
+}
+
+/// The epic's own review, round 1: the e2e layer's note on the epic tip, then preflight epic. HEAD on epic/e.
+fn epic_preflight(p: &Path) -> Output {
+    git(p, &["switch", "-q", "epic/e"]);
+    ok(run(env!("CARGO_BIN_EXE_keel"), p, &["notes", "write", "test"], EPIC_TESTS));
+    keel(p, &["preflight", "epic", "epic/e"])
+}
+
+/// Every round of the WU finds a blocker under `s`: preflight announces each round, the cr notes
+/// record their scope, the last ends in the cap's waiver, and the sign-off history tags each round by
+/// `s` before the owner accepts it.
+fn blockers_to_the_cap(p: &Path, s: Sched) {
+    let blocker = r#"[{"location": "src/a.py:2", "claim": "a() is wrong", "severity": "blocker", "evidence": "e"}]"#;
+    test_note(p);
+    doc_note(p);
+    let b = base(p);
+    let mut tips = vec![head(p)];
+    for n in 1..=s.max {
+        let (prev, tip) = round_pair(&tips, n);
+        assert!(text(&ok(preflight(p))).contains(&s.announce(n, &b, &prev, &tip)), "{s:?} round {n}");
+        let o = ok(write_cr(p, &["--verdict", "FAIL", "--findings", blocker]));
+        assert!(text(&o).contains(&format!("review round {n} of {} recorded", s.max)), "the writer reads the same level: {}", text(&o));
+        assert_eq!(note(p, "cr", "HEAD")["scope"].as_str(), Some(s.scope(n, &prev).as_str()), "{s:?} round {n}");
+        if n < s.max {
+            tips.push(step(p, n + 1));
+            doc_note(p);
+        } else {
+            assert!(text(&o).contains("review cap reached") && text(&o).contains(&s.cap(1)), "{s:?}: {}", text(&o));
+        }
+    }
+    ok(write_cr(p, &["--verdict", "WAIVED"]));
+    assert_eq!(note(p, "cr", "HEAD")["waiver"], s.cap(1).as_str());
+    let o = keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"]);
+    refused(&o, &[&s.cap(1), "--accept-waiver"]);
+    for n in 1..=s.max {
+        let (prev, tip) = round_pair(&tips, n);
+        assert!(row(&text(&o), &tip).contains(&s.tag(n, &prev)), "the history reads the same level: {s:?} round {n}: {}", text(&o));
+    }
+    sign_waived(p, "wu", "docs/a.html");
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+}
+
+#[test]
+fn a_wu_review_follows_its_targets_wu_table_and_an_epic_review_mains_epic_table_neither_reaching_the_other() {
+    // The WU's target sets all three tables: the WU review follows [review.wu].
+    let d = fixture();
+    let p = d.path();
+    tables_on(p, "epic/e", &format!("{}{}{}", SHARED.table("review"), WU_LEVEL.table("review.wu"), EPIC_LEVEL.table("review.epic")));
+    blockers_to_the_cap(p, WU_LEVEL);
+    // [review] alone on the target: the WU review follows it, whatever main's tables say.
+    let d = fixture();
+    let p = d.path();
+    tables_on(p, "main", &format!("{}{}", WU_LEVEL.table("review.wu"), EPIC_LEVEL.table("review.epic")));
+    tables_on(p, "epic/e", &SHARED.table("review"));
+    blockers_to_the_cap(p, SHARED);
+
+    // The epic's review reads main: its [review.epic], else its [review], else the default; never a
+    // [review.wu] and never the epic branch's own tables.
+    for (main, want) in [
+        (format!("{}{}{}", SHARED.table("review"), WU_LEVEL.table("review.wu"), EPIC_LEVEL.table("review.epic")), EPIC_LEVEL),
+        (format!("{}{}", SHARED.table("review"), WU_LEVEL.table("review.wu")), SHARED),
+        (WU_LEVEL.table("review.wu"), DEFAULTS),
+    ] {
+        let d = fixture_where_the_epic_has_work();
+        let p = d.path();
+        tables_on(p, "main", &main);
+        tables_on(p, "epic/e", &format!("{}{}", WU_LEVEL.table("review.wu"), DEFAULTS.capped(1).table("review.epic")));
+        let o = ok(epic_preflight(p));
+        let (b, tip) = (git(p, &["merge-base", "main", "HEAD"]), head(p));
+        assert!(text(&o).contains(&want.announce(1, &b, "", &tip)), "{main}: {}", text(&o));
+        let o = ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+        assert!(text(&o).contains(&format!("review round 1 of {} recorded", want.max)), "{main}: {}", text(&o));
+        // The same tip named as refs/heads/<main> is the same level.
+        let o = ok(keel(p, &["preflight", "epic", "epic/e", "--target", "refs/heads/main"]));
+        assert!(text(&o).contains(&format!("review round 1 of {}", want.max)), "{main}: {}", text(&o));
+    }
+}
+
+#[test]
+fn a_wu_level_of_one_round_alone_ends_a_round_1_blocker_in_the_caps_waiver() {
+    let d = fixture();
+    let p = d.path();
+    tables_on(p, "epic/e", &format!("{}[review.wu]\nmax_rounds = 1\n", SHARED.table("review")));
+    let s = SHARED.capped(1);
+    blockers_to_the_cap(p, s);
+    // No round 2 runs on a later fix.
+    step(p, 2);
+    let o = preflight(p);
+    assert_red(&o, "0·review-cap");
+    assert!(text(&o).contains(&s.no_round(1)), "{}", text(&o));
+}
+
+/// The WU under `s` (written as `table`, which sets fix_blockers_from): every round finds `finding`
+/// (a blocker or an important) up to round fix_blockers_from, which a fix-PASS answers - no round
+/// after it, the cap's waiver refused, and a sign-off that lists the fix and asks no --accept-waiver.
+fn findings_to_a_fix_pass(p: &Path, s: Sched, table: &str, severity: &str) {
+    let f = s.fb.expect("a schedule setting fix_blockers_from");
+    tables_on(p, "epic/e", table);
+    test_note(p);
+    doc_note(p);
+    let finding = format!(r#"[{{"location": "src/a.py:2", "claim": "a() is wrong", "severity": "{severity}", "evidence": "e"}}]"#);
+    let b = base(p);
+    let mut tips = vec![head(p)];
+    for n in 1..=f {
+        let (prev, tip) = round_pair(&tips, n);
+        assert!(text(&ok(preflight(p))).contains(&s.announce(n, &b, &prev, &tip)), "{s:?} round {n}");
+        let o = ok(write_cr(p, &["--verdict", "FAIL", "--findings", &finding]));
+        if n < f {
+            assert!(s.follows(n, (severity == "blocker") as u32) && text(&o).contains(&format!("review round {}", n + 1)), "{s:?}: {}", text(&o));
+            refused(&write_cr(p, &["--verdict", "WAIVED"]), &["review cap"]);
+            tips.push(step(p, n + 1));
+            doc_note(p);
+            continue;
+        }
+        assert!(text(&o).contains(&format!("--verdict PASS --fixes {}", &tip[..10])) && !text(&o).contains("review cap reached"), "{s:?}: {}", text(&o));
+        // The cap's waiver is refused: from fix_blockers_from on a blocker is fixed, never waived by the cap.
+        let why: &[&str] = if severity == "blocker" { &["waiver is refused", "fix_blockers_from", "--fixes"] } else { &["review cap is not reached"] };
+        refused(&write_cr(p, &["--verdict", "WAIVED"]), why);
+        assert_eq!(note(p, "cr", "HEAD")["verdict"], "FAIL", "the refused waiver writes nothing");
+    }
+    let rf = tips[f as usize - 1].clone();
+    let fix = step(p, f + 1);
+    doc_note(p);
+    let o = preflight(p);
+    assert_red(&o, "0·review-cap");
+    assert!(text(&o).contains(&s.no_round(f)) && text(&o).contains(&format!("--fixes {rf}")) && !text(&o).contains("found none"), "{s:?}: {}", text(&o));
+    refused(&write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]), &[&format!("round {}", f + 1)]);
+    let o = ok(write_cr(p, &["--verdict", "PASS", "--fixes", &rf]));
+    if severity == "blocker" {
+        assert!(text(&o).contains("answering its 1 blockers"), "{}", text(&o));
+    }
+    // cr/v1 unchanged: the fields any fix-PASS writes, and the blockers stay on the round's own note.
+    let n = note(p, "cr", "HEAD");
+    let mut keys: Vec<&str> = n.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort();
+    let want = [
+        "answers",
+        "base",
+        "blockers",
+        "branch",
+        "code_diff_hash",
+        "committer",
+        "fix_diff_hash",
+        "fixes",
+        "importants",
+        "round",
+        "schema",
+        "timestamp",
+        "tip",
+        "verdict",
+    ];
+    assert_eq!(keys, want, "{n}");
+    assert_eq!(
+        (n["verdict"].as_str(), n["blockers"].as_u64(), n["round"].as_u64(), n["fixes"].as_str()),
+        (Some("PASS"), Some(0), Some(f as u64), Some(rf.as_str()))
+    );
+    assert_eq!(n["answers"].as_object().unwrap().keys().collect::<Vec<_>>(), ["importants", "nits"], "answers gains no blockers count: {n}");
+    assert_eq!(note(p, "cr", &rf)["findings"][0]["severity"], severity);
+    let o = keel(p, &["verify-dod", "wu", "wu/e/a"]);
+    assert_red(&o, "8·manual-review");
+    assert!(text(&o).contains("- 1 failed"), "{}", text(&o));
+    let o = ok(keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html"]));
+    let t = text(&o);
+    let answers = if severity == "blocker" { "; answers 1 blockers (src/a.py:2: a() is wrong)" } else { "" };
+    assert!(row(&t, &fix).contains(&format!("[fix-PASS of round {f} on {}{answers}; no reviewers ran; changed: src/a.py]", &rf[..10])), "{s:?}: {t}");
+    assert!(!t.contains("--accept-waiver"), "no waiver to accept: {t}");
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+    git(p, &["switch", "-q", "epic/e"]);
+    ok(run("git", p, &["merge", "--no-ff", "-m", "merge wu a", "wu/e/a"], ""));
+}
+
+#[test]
+fn from_fix_blockers_from_on_a_rounds_blocker_is_fixed_under_a_fix_pass_with_no_round_and_no_cap_waiver() {
+    // One round, its blocker fixed under a fix-PASS (Keel's own WU level).
+    let one = Sched { fb: Some(1), ..SHARED.capped(1) };
+    let d = fixture();
+    findings_to_a_fix_pass(d.path(), one, &format!("{}[review.wu]\nmax_rounds = 1\nfix_blockers_from = 1\n", SHARED.table("review")), "blocker");
+    // Round 1's blocker earns round 2; round 2's is fixed under a fix-PASS.
+    let three = Sched { max: 3, whole: 2, from: 3, fb: Some(2) };
+    let d = fixture();
+    findings_to_a_fix_pass(d.path(), three, &three.table("review.wu"), "blocker");
+    // fix_blockers_from in [review], below fix_importants_from: round 1's importants earn round 2,
+    // round 2's are fixed under a fix-PASS.
+    let below = Sched { max: 4, whole: 1, from: 4, fb: Some(2) };
+    let d = fixture();
+    findings_to_a_fix_pass(d.path(), below, &below.table("review"), "important");
+}
+
+#[test]
+fn a_target_lowering_its_wu_level_after_rounds_were_recorded_stops_the_review_at_the_new_cap() {
+    let d = fixture();
+    let p = d.path();
+    tables_on(p, "epic/e", &SHARED.table("review"));
+    test_note(p);
+    let mut tips = vec![head(p)];
+    let recorded = 2;
+    assert!(SHARED.max > recorded, "the shared schedule runs the rounds recorded");
+    for n in 1..=recorded {
+        ok(write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]));
+        tips.push(step(p, n + 1));
+    }
+    doc_note(p);
+    tables_on(p, "epic/e", "[review.wu]\nmax_rounds = 1\n");
+    let s = SHARED.capped(1);
+    let o = preflight(p);
+    assert_red(&o, "0·review-cap");
+    let t = text(&o);
+    assert!(t.contains(&s.no_round(recorded)) && t.contains(&format!("round {recorded} ran on {}", &tips[1][..10])) && t.contains("--waive-review"), "{t}");
+    refused(&write_cr(p, &["--verdict", "FAIL", "--blockers", "1"]), &[&format!("round {}", recorded + 1)]);
+    let preview = text(&keel(p, &["mr", "confirm", "wu", "--as", "t", "--report", "docs/a.html", "--waive-review", RULING]));
+    for n in 1..=recorded {
+        let (prev, tip) = round_pair(&tips, n);
+        assert!(row(&preview, &tip).contains(s.tag(n, &prev).trim_end_matches(']')), "tagged by the lowered level: round {n}: {preview}");
+    }
+    ok(waive_at_sign_off(p, "wu", "docs/a.html", RULING));
+    ok(keel(p, &["verify-dod", "wu", "wu/e/a"]));
+}
+
+/// The bad level values: (what the target's config appends, what the refusal names).
+const BAD_LEVELS: [(&str, &str); 9] = [
+    ("[review.wu]\nmax_rounds = 0\n", "[review.wu] max_rounds = 0"),
+    ("[review.epic]\nmax_rounds = -1\n", "[review.epic] max_rounds = -1"),
+    ("[review.wu]\nwhole_range_rounds = \"3\"\n", "[review.wu] whole_range_rounds = \"3\""),
+    ("[review.epic]\nfix_blockers_from = 2.5\n", "[review.epic] fix_blockers_from = 2.5"),
+    ("[review]\nmax_rounds = 2\n[review.wu]\nfix_blockers_from = 3\n", "[review.wu] fix_blockers_from = 3 is above max_rounds = 2"),
+    ("[review.wu]\nmax_rounds = 2\nfix_importants_from = 3\n", "[review.wu] fix_importants_from = 3 is above max_rounds = 2"),
+    ("[review.wu]\nmodules = [\"src/*\"]\n", "[review.wu] modules is not a schedule key"),
+    ("[review.close]\nmax_rounds = 1\n", "[review.close] is not a table keel knows"),
+    ("[review]\nwu = 1\n", "[review] wu = 1 must be a table"),
+];
+
+#[test]
+fn a_bad_value_at_either_level_is_red_at_preflight_and_refused_by_the_writer_naming_its_table_and_key() {
+    for (tables, says) in BAD_LEVELS {
+        let d = fixture();
+        let p = d.path();
+        tables_on(p, "epic/e", tables);
+        test_note(p);
+        let o = preflight(p);
+        assert_red(&o, "0·review-cap");
+        assert!(text(&o).contains(says) && !text(&o).contains("review round 1"), "{tables}: {}", text(&o));
+        refused(&write_cr(p, &["--verdict", "PASS"]), &[says]);
+        assert!(!has_note(p, "cr", "HEAD"), "{tables}");
+    }
+    // A good level table and fix_blockers_from in [review] land and are read.
+    let d = fixture();
+    let p = d.path();
+    tables_on(p, "epic/e", &format!("{}{}", Sched { fb: Some(SHARED.max), ..SHARED }.table("review"), WU_LEVEL.table("review.wu")));
+    test_note(p);
+    assert!(text(&ok(preflight(p))).contains(&format!("review round 1 of {}", WU_LEVEL.max)));
+}
+
+#[test]
+fn a_bad_level_value_staged_is_refused_by_the_pre_commit_hook_and_keel_mr_commit() {
+    let d = fixture();
+    let p = d.path();
+    git(p, &["switch", "-q", "epic/e"]);
+    let cfg = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    let before = head(p);
+    for (tables, says) in BAD_LEVELS {
+        write(p, ".keel/config.toml", &format!("{cfg}{tables}"));
+        git(p, &["add", "-A"]);
+        let o = run("git", p, &["commit", "-qm", "a bad level"], "");
+        assert!(!o.status.success() && text(&o).contains("the staged .keel/config.toml is refused") && text(&o).contains(says), "{tables}: {}", text(&o));
+        let o = keel(p, &["mr", "commit", "-m", "a bad level", "--as", "t"]);
+        assert!(!o.status.success() && text(&o).contains(says) && text(&o).contains("fix ->"), "{tables}: {}", text(&o));
+        assert_eq!(head(p), before, "{tables}: nothing landed");
+    }
+    let good = Sched { fb: Some(1), ..SHARED.capped(1) };
+    write(p, ".keel/config.toml", &format!("{cfg}{}{}", SHARED.table("review"), good.table("review.wu")));
+    git(p, &["add", "-A"]);
+    ok(run("git", p, &["commit", "-qm", "a good level"], ""));
 }
