@@ -21,7 +21,7 @@ test-plan:
     tests/suite/router.rs: the scratch helper creates a fresh mktemp repo dir with its marker, and refuses a path
     outside a fresh scratch dir (a plain temp dir, a path under $HOME, a symlink, a dir it did not make).
   integration: >-
-    tests/suite/router.rs: the launcher's --settings pin shows sandbox.allowLocalBinding true, the exact filesystem
+    tests/suite/router.rs: the launcher's --settings pin shows sandbox.network.allowLocalBinding true, the exact filesystem
     and network keys (five hosts + registry.npmjs.org, no strictAllowlist), and the worker grant with the two
     scripts/router-scratch.sh shapes; the pin is red on the old launcher before it is edited. The 14 #[ignore] tests
     and their now-unused mock helpers are deleted from tests/suite/notify_owner.rs. The launcher puts pnpm's
@@ -36,7 +36,7 @@ test-plan:
 details:
   parts:
     W2-ports: >-
-      scripts/router-worker.sh: sandbox.allowLocalBinding = true; serve and connect on any port and address. The
+      scripts/router-worker.sh: sandbox.network.allowLocalBinding = true; serve and connect on any port and address. The
       known cost stands: the key makes the profile bind every interface and reach every local listener. The 14
       #[ignore] tests in tests/suite/notify_owner.rs are deleted with their unused mock helpers (mock, mock_seeing,
       serve, Served, stalled_server, closed_base, sent_payload and the imports only they used), no replacement.
@@ -53,8 +53,9 @@ details:
       moving the content-addressable store alone still materialised the package tree (xmlbuilder 15.1.1's
       .vscode/launch.json) inside the worktree, where the sandbox denies **/.vscode/** at any depth (W1 finding d).
       So the launcher sets pnpm's modules dir to a folder in the temp folder (pnpm 11 reads
-      pnpm_config_modules_dir from the environment; probed in a scratch dir) and links the worktree's git-ignored
-      app/node_modules at it, while PNPM_HOME keeps the store beside it. The whole package tree, .vscode included,
+      pnpm_config_modules_dir from the environment; probed in a scratch dir), adds that folder to
+      filesystem.allowWrite (the worker's sandbox reaches only its cwd, its own temp and that list), and links the
+      worktree's git-ignored app/node_modules at it, while PNPM_HOME keeps the store beside it. The whole package tree, .vscode included,
       is then outside every worktree and the owner's ~/Library/pnpm is untouched. pnpm-workspace.yaml keeps
       nodeLinker: hoisted and its allowBuilds list. Trade-off: Forge's packager needs a real tree, so `pnpm make`
       stays an owner install; the test loops (pnpm test:main, typecheck, Vite) resolve through the link. A worktree
@@ -106,6 +107,12 @@ details:
     - "Forge packaging (`pnpm make`) needs a real, non-linked node_modules: it stays the owner's lane, while the worker's test loops and Vite resolve through the link."
     - "A worktree that already holds a real app/node_modules is left alone, never replaced: the launcher's link applies to a fresh worktree, which is what a WU worktree is."
     - "The git rule for other worktrees of the repo stays open (owner has not ruled); resume, the two context ceilings, the warm-cache definition and fix-to-fresh are other WUs and are untouched."
+  independent-review: >-
+    Independent review of the rule files and the security path after b04d4a88: FAIL, 2 blockers and 5 nits. B1: the
+    port key sat at sandbox.allowLocalBinding instead of sandbox.network.allowLocalBinding, so 2.1.288 dropped it.
+    B2: the pnpm tree was outside the worker sandbox's writable roots, so the install would have hit EPERM; the home
+    is now an allowWrite root. Nits 3-7: the helper's basename/.git checks, the security-file test list, the
+    project-router code_paths and script list, this pair's fix-PASS line, and an accepted helper run of keel init.
   review-round-1: >-
     Verdict FAIL on 707bb5a2, one blocker (scripts/router-worker.sh:575-578): the store move alone left pnpm's
     package tree inside the worktree, so xmlbuilder's .vscode path still hit the sandbox deny. The fix moves the

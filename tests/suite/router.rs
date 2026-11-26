@@ -1019,6 +1019,9 @@ fn keels_router_security_files_are_rule_bearing() {
         "scripts/router-file-guard.sh",
         "scripts/router-watch.sh",
         "scripts/router-app.sh",
+        "scripts/router-inbox.sh",
+        "scripts/router-scratch.sh",
+        "scripts/notify-owner.py",
         ".claude/agents/worker.md",
     ] {
         let body = std::fs::read_to_string(c.join(f)).unwrap();
@@ -4277,11 +4280,19 @@ fn launcher_starts_a_worker_on_project_settings_alone_with_no_mcp_server() {
 /// E-ROUTER3.W8 (DEC-46, points 9 and 13): the worker's shell runs in Claude Code's sandbox, which
 /// writes its worktree, the shared git dir but its config and hooks, and cargo's cache, reads no ssh
 /// key or push channel, and reaches the host base. What the sandbox does is probe P3's; this pins the JSON.
-/// E-WSANDBOX.W2 (owner q1): allowLocalBinding true, so the worker serves any port and address; the
-/// cost is the ruling's - it binds every interface and reaches every local listener.
+/// E-WSANDBOX.W2 (owner q1), corrected after the independent review: allowLocalBinding sits at its real
+/// path, sandbox.network.allowLocalBinding (2.1.288's schema drops a top-level field), so the worker serves
+/// any port and address; the cost is the ruling's - it binds every interface and reaches every local
+/// listener. The worker's pnpm home is an allowWrite root, because the sandbox reaches only the cwd, its own
+/// temp and allowWrite: the package tree outside the worktree must be writable.
 #[test]
 fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
     let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
+    let pnpm_home = format!("{}/keel-worker-pnpm", tmp.display());
+    std::fs::create_dir_all(l.wt.join("app")).unwrap();
+    std::fs::create_dir_all(l.wt2.join("app")).unwrap();
     let g = l.main.join(".git");
     let g = g.to_str().unwrap();
     // E-WMODE round 2: ~/.cargo only where cargo writes (H3); the worktree's .git link, its two
@@ -4291,10 +4302,9 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
             "enabled": true,
             "autoAllowBashIfSandboxed": true,
             "allowUnsandboxedCommands": false,
-            "allowLocalBinding": true,
             "filesystem": {
                 "allowWrite": [g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
-                    "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"],
+                    "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm", &pnpm_home],
                 "denyWrite": [format!("{g}/config"), format!("{g}/hooks"), format!("{g}/keel-hooks"), format!("{g}/info"),
                     // backlog R33 (DEC-37): the git dir's commondir, then the worker's
                     // own admin link files, then every other worktree's
@@ -4307,12 +4317,12 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
                     format!("{}/.claude/settings.local.json", wt.display()), "~/.claude.json".to_string()],
                 "denyRead": ["~/.ssh", "~/.claude/channels"]
             },
-            "network": {"allowedDomains": ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com", "registry.npmjs.org"]}
+            "network": {"allowLocalBinding": true, "allowedDomains": ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com", "registry.npmjs.org"]}
         }})
     };
     // a second worktree of the same repository shares its git dir
     for (name, wt, admin, other) in [("a", &l.wt, "wt", "wt2"), ("b", &l.wt2, "wt2", "wt")] {
-        let (ok, out) = l.run(&["spawn", name, wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+        let (ok, out) = l.run_env(&["spawn", name, wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
         assert!(ok, "{out}");
         let mut s: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, name), "--settings")).unwrap();
         s.as_object_mut().unwrap().remove("hooks");
@@ -4380,6 +4390,38 @@ fn the_scratch_helper_refuses_a_path_outside_a_fresh_scratch_dir() {
     // outside the temp folder
     let outside = tempfile::tempdir().unwrap();
     refuse(outside.path());
+    // a helper-shaped name nested one level down: the name matches but the parent is not the temp folder
+    let nested = tmp.join("sub/keel-scratch.abcdefgh");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::write(nested.join(".keel-scratch"), "").unwrap();
+    std::fs::create_dir(nested.join(".git")).unwrap();
+    refuse(&nested);
+    // a marked dir whose .git is a symlink, not a real directory
+    let linked = tmp.join("keel-scratch.11112222");
+    std::fs::create_dir(&linked).unwrap();
+    std::fs::write(linked.join(".keel-scratch"), "").unwrap();
+    std::os::unix::fs::symlink(tmp.join("elsewhere"), linked.join(".git")).unwrap();
+    refuse(&linked);
+}
+
+/// E-WSANDBOX.W4 (nit 7 of the independent review): the accepted path really runs `keel init` - the
+/// built binary, in the fresh temp repo the helper made, with nothing else in it.
+#[test]
+fn the_scratch_helper_runs_keel_init_in_a_fresh_dir() {
+    let t = tempfile::tempdir().unwrap();
+    let bin = t.path().join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_keel"), bin.join("keel")).unwrap();
+    let path = format!("{}:{}", bin.display(), common::path());
+    let helper = root().join("scripts/router-scratch.sh");
+    let run = |args: &[&str]| common::cmd("sh").arg(&helper).args(args).env("TMPDIR", t.path()).env("PATH", &path).output().unwrap();
+    let new = run(&["new"]);
+    assert!(new.status.success(), "{}", String::from_utf8_lossy(&new.stderr));
+    let d = PathBuf::from(String::from_utf8(new.stdout).unwrap().trim());
+    let o = run(&["init", d.to_str().unwrap()]);
+    let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    assert!(o.status.success(), "{out}");
+    assert!(d.join("AGENTS.md").is_file() && d.join(".keel/config.toml").is_file(), "keel init did not run: {out}");
 }
 
 /// E-WSANDBOX.W3 (owner q3), corrected in review round 1: the whole pnpm package tree lives outside
@@ -4391,6 +4433,7 @@ fn the_scratch_helper_refuses_a_path_outside_a_fresh_scratch_dir() {
 fn launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree() {
     let l = launcher();
     let t = tempfile::tempdir().unwrap();
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
     let real = l.wt.join("app/node_modules");
     std::fs::create_dir_all(&real).unwrap();
     std::fs::write(real.join("keep.txt"), "keep").unwrap();
@@ -4403,11 +4446,11 @@ fn launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree() {
     let (ok, out) = l.run_env(&["spawn", "b", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
     assert!(ok, "{out}");
     let env = std::fs::read_to_string(l.state.join("pnpm-env")).unwrap();
-    let home = format!("PNPM_HOME={}/keel-worker-pnpm", t.path().display());
+    let home = format!("PNPM_HOME={}/keel-worker-pnpm", tmp.display());
     assert!(env.lines().any(|l| l == home), "the worker's pnpm store is not in the temp folder: {env:?}");
     let line = env.lines().rev().find(|l| l.starts_with("pnpm_config_modules_dir=")).expect("the modules dir is not set");
     let modules = Path::new(&line["pnpm_config_modules_dir=".len()..]);
-    assert!(modules.starts_with(t.path().join("keel-worker-pnpm")), "the package tree is not in the worker's temp folder: {modules:?}");
+    assert!(modules.starts_with(tmp.join("keel-worker-pnpm")), "the package tree is not in the worker's temp folder: {modules:?}");
     let link = l.wt.join("app/node_modules");
     assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink(), "app/node_modules is not a link");
     assert_eq!(std::fs::read_link(&link).unwrap(), modules, "the link does not point at the ruled modules dir");
@@ -4419,8 +4462,10 @@ fn launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree() {
     );
     let a = worker_argv(&l.state, "b");
     let settings: serde_json::Value = serde_json::from_str(&option(&a, "--settings")).unwrap();
-    let allow = settings["sandbox"]["filesystem"]["allowWrite"].to_string();
-    assert!(!allow.to_lowercase().contains("pnpm"), "a pnpm path widened the sandbox: {allow}");
+    let allow = &settings["sandbox"]["filesystem"]["allowWrite"];
+    let home = &home["PNPM_HOME=".len()..];
+    assert!(allow.as_array().unwrap().iter().any(|v| v.as_str() == Some(home)), "the pnpm home is not an allowWrite root: {allow}");
+    assert!(Path::new(home).is_dir(), "the launcher did not create the pnpm home");
 }
 
 /// Backlog R33 (DEC-37): a commondir file in the main git dir would send

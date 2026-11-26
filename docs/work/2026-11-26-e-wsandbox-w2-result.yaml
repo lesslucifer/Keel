@@ -63,7 +63,10 @@ evidence:
     verdict: "FAIL - 1 blocker, 0 importants, 0 nits (cr note on 707bb5a2)"
     blocker: "scripts/router-worker.sh: the store move alone left the package tree in the worktree; the sandbox's cwd-anchored **/.vscode/** deny still refused xmlbuilder 15.1.1."
     fix: "28674051: the modules dir plus the linked app/node_modules; helper refuted, unchanged."
-    fix_pass: "owed: a fresh worker writes keel notes write cr --verdict PASS --fixes 707bb5a2ef"
+    fix_pass: "written on b04d4a88 (cr PASS with fixes=707bb5a2ef); the independent review below followed it"
+    independent: "FAIL - 2 blockers, 5 nits, on b04d4a88 (rule files and the security path); the owner's sign-off held"
+    independent_fixes: "B1: the port key moved to sandbox.network.allowLocalBinding; B2: the pnpm home is a filesystem.allowWrite root; nits 3-7 fixed or recorded in details.independent-review"
+
 distillation: >-
   docs/install.html (T1) now records the worker's install and that pnpm make stays the owner's lane;
   docs/backlog/e-router-v2.yaml R41 (T2) records WebFetch with the reviewer and the ruled per-call widening.
@@ -75,7 +78,8 @@ follow-ups:
   - "If Forge packaging is ever to run in a worker, the modules dir must become a real tree; that is a new owner decision, not this WU."
 details:
   rulings-implemented:
-    q1: "allowLocalBinding true; serve and connect on any port and address; the cost stands (binds every interface, reaches every local listener)."
+    q1: "sandbox.network.allowLocalBinding true (the real 2.1.288 path); serve and connect on any port and address; the cost stands (binds every interface, reaches every local listener)."
+
     q2: "The 14 #[ignore] tests in tests/suite/notify_owner.rs deleted completely, no replacement."
     q3: "registry.npmjs.org on the host base; pnpm's store and package tree outside the worktree; cargo as today."
     q4: "No pinned site list, no strictAllowlist; the auto reviewer decides each site; the five hosts stay as the base (an empty list is unverified); WebFetch stays with the reviewer and is recorded in R41."
@@ -88,9 +92,10 @@ details:
   mechanism: >-
     pnpm 11 reads pnpm_config_modules_dir from the environment (probed). The launcher points it at
     $TMPDIR/keel-worker-pnpm/modules-<cksum of the worktree>, exports PNPM_HOME beside it, and links the
-    worktree's git-ignored app/node_modules at the modules dir (a real install is never replaced). The sandbox
-    anchors its hard-coded **/.vscode/** deny at the session cwd, so the whole package tree must be outside;
-    the link is the tooling bridge.
+    worktree's git-ignored app/node_modules at the modules dir (a real install is never replaced), and adds the
+    home to filesystem.allowWrite because the sandbox reaches only the cwd, its own temp and that list. The
+    sandbox anchors its hard-coded **/.vscode/** deny at the session cwd, so the whole package tree must be
+    outside; the link is the tooling bridge.
   probe: >-
     2026-11-26, scratch dir under $TMPDIR with PNPM_HOME/store there: a copy of app/package.json,
     pnpm-lock.yaml and pnpm-workspace.yaml with app/node_modules linked at the modules dir, then pnpm install
@@ -104,9 +109,17 @@ details:
     - "A scratch keel init through the helper."
     - "A site the reviewer allows and one it refuses."
     - "What an empty allowedDomains does (the five hosts stay as the base)."
+  independent-review:
+    b1: "The port key sat at sandbox.allowLocalBinding; 2.1.288 drops a top-level field and reads sandbox.network.allowLocalBinding. Fixed in the launcher, the pin test (the real path, red first), and the project-router facts; the WU plan's two mentions corrected. The worker persona and the keel-router skill state only that ports are open, never a settings path, so nothing there matched the old placement."
+    b2: "The pnpm tree used the launcher's $TMPDIR, which the worker's sandbox cannot write (it reaches the cwd, its own temp and allowWrite). Fixed by adding exactly the pnpm home to filesystem.allowWrite, with a fixed name only inside the user's own $TMPDIR and a mktemp dir plus an ownership/symlink guard otherwise; the tree test now asserts the allowWrite root instead of denying it."
+    nit3: "The helper matches the basename with eight alnum characters, requires the parent to be $TMPDIR, and refuses a .git that is a symlink or not a directory."
+    nit4: "The security-file test now names scripts/router-scratch.sh, router-inbox.sh, router-file-guard.sh, router-app.sh and notify-owner.py."
+    nit5: "project-router: code_paths now includes app/; the no-gate-review list names the helper and the other router scripts."
+    nit6: "this pair records the fix-PASS on b04d4a88 and this independent review."
+    nit7: "a new test runs the accepted helper path and a real keel init in its fresh dir, with the built binary on PATH."
   open:
     - "pnpm make stays the owner's lane (Forge needs a real node_modules)."
     - "A worktree that already holds a real app/node_modules is left alone by the launcher; the link applies to a fresh WU worktree."
-    - "The fix-PASS cr note, the sign-off and the merge are owed; notes, preflight and verify-dod run on the final tip in this turn."
+    - "The fix-PASS on the new tip, the sign-off and the merge are owed; the notes on b04d4a88 are stale after this fix round and are rewritten with the fix-PASS."
   htmldoc:
     id: 6b0846eb9f34851f0dfb2d71
