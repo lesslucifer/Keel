@@ -58,7 +58,8 @@ fix_blockers_from = 1
 
 [router]   # read by scripts/router-worker.sh, not by the CLI (DEC-39)
 worker_model = "opus"
-worker_efforts = ["medium", "high"]
-worker_default_effort = "medium"
+worker_efforts = ["low", "high"]
+worker_default_effort = "low"
+planner_effort = "high"
 worker_permission_mode = "auto"
 watchdog_model = "haiku"
