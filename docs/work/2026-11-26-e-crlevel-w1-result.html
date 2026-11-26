@@ -40,14 +40,15 @@
   <li>At sign-off you see the fix, the blocker it answers and the file it changed. You sign with no waiver to accept.</li>
   <li>The epic's own review then follows main's epic settings, not the WU ones.</li>
 </ol>
-<p>These steps run through the real tool and hooks. A hand run in a scratch folder was blocked by this session's permission check.</p>
+<p>The tests run these steps through the real tool and hooks; a hand run was blocked by a permission check.</p>
 
 <h2 id="differences">Differences from the plan</h2>
 <ul data-c="differences">
-  <li>The tool learns the main branch's name from the rules file each command already reads, so the level and the merge target always agree.</li>
+  <li>The level and the merge target come from the same main-branch name, so they always agree.</li>
   <li>A bad value at one level refuses the whole rules file, for both levels.</li>
   <li>A level cannot switch off the blocker fix setting when the shared settings turn it on. Keel sets it for WUs only, so the epic keeps its waiver.</li>
   <li>The waived-review use case was updated too, as the plan's records list says.</li>
+  <li>Review round 1 found that huge finding counts could overflow into a waiver. Fixed, with two smaller points.</li>
 </ul>
 
 <h2 id="left">What is left, and who takes it</h2>

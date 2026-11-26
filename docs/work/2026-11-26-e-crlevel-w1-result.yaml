@@ -27,12 +27,16 @@ deviations:
   - "The fix-PASS writer says 'answering its N blockers' and review::Fix carries the count; nothing of it is recorded on the note."
   - "A [review.wu.deep] sub-table is refused as '[review.wu] deep is not a schedule key'."
   - "The real-run example: a scratch-repo run of the built binary was denied by the session's auto-mode permission check and not retried; the page's example is the flow the integration tests and the e2e run through the real binary and hooks."
+  - "Code review round 1 (FAIL on 0f6eabc7: 1 blocker, 1 important, 1 nit), fixed with red-first tests: fixable's fix_blockers_from arm summed two u32 counts (b + i), so typed counts at the edge of u32 panicked in debug and wrapped in release into the cap's waiver - now b > 0 || i > 0, and the same sum in cr_verdict (a PASS with open findings) likewise; cap() asks then() instead of restating its rule; next_round no longer says a fix-PASS answers a round from fix_blockers_from on that counted no finding."
 evidence:
   commits:
     - "3a8993f2 test(E-CRLEVEL.W1): the schedule per level - [review.wu], [review.epic], fix_blockers_from; red on the old code"
     - "9fe08a27 feat(E-CRLEVEL.W1): the review schedule per level - [review.wu], [review.epic] over [review], and fix_blockers_from"
     - "5ea89219 docs(E-CRLEVEL.W1): the schedule per level and fix_blockers_from in UC-REV-3, UC-REV-2, UC-GATE-1 and DEC-50"
-    - "this result pair's commit"
+    - "0f6eabc7 docs(E-CRLEVEL.W1): the WU result - the tool side of the review schedule per level"
+    - "c2678e6e test(E-CRLEVEL.W1): review round 1 - counts at the edge of u32, a nothing-counted round from fix_blockers_from; red on 0f6eabc7"
+    - "d29c70cb fix(E-CRLEVEL.W1): review round 1 - no u32 sum of counts, cap() asks then(), the nothing-counted reason"
+    - "this result update's commit"
   red-first: >-
     The 7 new integration and e2e tests, run against the epic tip's src (33b01f21) with the new tests: all 7 failed;
     the 4 unchanged schedule tests run beside them passed.
@@ -59,7 +63,12 @@ evidence:
     hook; WUs D and E on SET; [review.wu] max_rounds = 1: WU F's importants get a fix-PASS, WU G's blocker the cap's
     waiver; fix_blockers_from = 1 added: WU H's blocker gets a fix-PASS, the cap's waiver refused, signed with no
     --accept-waiver; the epic's round 1 announces EPIC's cap, the walk shows C, E and G waived, merged into main.
-  checks: "cargo fmt --check, cargo clippy --all-targets -- -D warnings, cargo test (162 unit; 458 suite, 14 ignored as before), keel verify-doc on the docs touched: green."
+  review-round-1: >-
+    Regression tests, red on 0f6eabc7: review::tests::counts_at_the_edge_of_u32_never_wrap_into_the_caps_waiver,
+    review::tests::a_round_from_fix_blockers_from_with_nothing_counted_is_never_said_to_be_fixed_under_a_fix_pass,
+    notes::tests::the_cr_writer_takes_no_reason (PASS with counts past u32), and
+    verify_dod::counts_typed_at_the_edge_of_u32_never_wrap_into_the_caps_waiver_or_a_pass.
+  checks: "cargo fmt --check, cargo clippy --all-targets -- -D warnings, cargo test (164 unit; 459 suite, 14 ignored as before), keel verify-doc on the docs touched: green."
 distillation:
   - "docs/use-cases/workflow.yaml: UC-REV-3 (the level rule, the level tables, per-key precedence, the clamp, the refusals, fix_blockers_from, the history row), UC-REV-2 (the cap's waiver only below fix_blockers_from), UC-GATE-1 (a staged level table)."
   - "docs/decisions/review-docs.html: DEC-50 amended in place - the schedule per level and fix_blockers_from, the owner's request and rulings of 2026-11-26, the accepted cost, the rejected shapes; DEC-26's sentence; the page's scope line and date."
