@@ -1220,7 +1220,7 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
     let code_diff_hash = code_diff_hash(repo, cfg, &base, &tip)?;
     // The schedule exactly as preflight reads it (review::Schedule, one place for both).
     let schedule = || {
-        review::Schedule::read(repo, &r.id.base, &tip, &r.target, &cfg.code_paths)
+        review::Schedule::read(repo, &r.id.base, &tip, &r.target, &cfg.branches.main, &cfg.code_paths)
             .or_else(|(what, fix)| refuse(what.trim_start_matches("keel: ").to_string(), &fix))
     };
     let fixes = flag("--fixes").or_else(|| args.contains(&"--fixes").then_some(""));
@@ -1254,7 +1254,8 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
                 )
             })?;
             let fix = review::fix_pass(own.as_ref(), &s.earlier, &sha, &s.policy, |c| s.unchanged(c)).or_else(|(what, fix)| refuse(what, &fix))?;
-            let said = format!("fix-PASS of round {} on {}: no reviewers run, no new round", fix.round, short(&sha));
+            let blockers = if fix.blockers > 0 { format!(", answering its {} blockers", fix.blockers) } else { String::new() };
+            let said = format!("fix-PASS of round {} on {}{blockers}: no reviewers run, no new round", fix.round, short(&sha));
             let schedule = ScheduleFields {
                 round: Some(fix.round),
                 fix_diff_hash: Some(self::code_diff_hash(repo, cfg, &sha, &tip)?),
