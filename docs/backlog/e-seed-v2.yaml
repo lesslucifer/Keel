@@ -363,53 +363,6 @@ open:
     source: "E-APPLIST close, the W14 archive (2026-11-23): the skill line found while distilling W14."
     taken-by: "E-GATEFIX (proposed); a rule-bearing change for the owner"
 
-  - id: B34
-    title: "The code-review skill states the default schedule twice"
-    status: "proposed: E-GATEFIX"
-    problem: >-
-      `skills/keel-code-review/SKILL.md` section 5 (and its copy under `.claude/skills/`) shows the default schedule in
-      the table under "The defaults", then restates it as rounds in the sentence below the table ("round 1 reviews
-      the whole range, round 2 the last fix, ..."). E-CRLIMIT meant the defaults to be written in one place.
-    proposal: >-
-      The owner rules: drop the sentence, or keep it as part of the one defaults block. A rule-bearing change: the
-      owner's `keel mr commit`.
-    source: "E-CRLIMIT.W2 independent review, nit N1 (2026-11-24); the W2 result's first deviation."
-    taken-by: "E-GATEFIX (proposed); a rule-bearing change for the owner"
-
-  - id: B35
-    title: "The code-review skill lists only some of what the round cap check refuses"
-    status: "proposed: E-GATEFIX"
-    problem: >-
-      `skills/keel-code-review/SKILL.md` sections 2 and 5 (and the `.claude/skills/` copy) list what preflight's
-      `0·review-cap` refuses. The tool also refuses a target that names no commit, a config git cannot read, a
-      target config that does not parse, a `[review]` that is not a table, and a key too large for a 32-bit number.
-      None of these is named.
-    proposal: "Name the missing refusals in both lists. A rule-bearing change: the owner's `keel mr commit`."
-    source: "E-CRLIMIT.W2 independent review, nit N2 (2026-11-24)."
-    taken-by: "E-GATEFIX (proposed); a rule-bearing change for the owner"
-
-  - id: B36
-    title: "The review settings' comments omit where a staged change is checked"
-    status: "proposed: E-GATEFIX"
-    problem: >-
-      The `[review]` row of `docs/architecture.html` and the `[review]` comments in `templates/config.toml` and
-      `.keel/config.toml` do not say that a staged change to the schedule is checked by the pre-commit hook and
-      `keel mr commit`, nor that `keel mr confirm` tags the rounds in its history by the target's settings.
-    proposal: "Add both facts to the three places. A rule-bearing change: the owner's `keel mr commit`."
-    source: "E-CRLIMIT.W2 independent review, nit N3 (2026-11-24)."
-    taken-by: "E-GATEFIX (proposed); a rule-bearing change for the owner"
-
-  - id: B37
-    title: "The independent-review prompt nests one placeholder inside another"
-    status: "proposed: E-GATEFIX"
-    problem: >-
-      In `skills/keel-router/references/messages.md` (and the `.claude/skills/` copy) the independent-review prompt's
-      scope line reads `<rounds up to <whole_range_rounds>: ... | later rounds: ...>`, a placeholder inside a
-      placeholder. A router filling it in can misread where each part ends.
-    proposal: "Split the scope line into two plain lines, one per case. A rule-bearing change: the owner's `keel mr commit`."
-    source: "E-CRLIMIT.W2 independent review, nit N4 (2026-11-24)."
-    taken-by: "E-GATEFIX (proposed); a rule-bearing change for the owner"
-
   - id: B38
     title: "The keel-write example writes a review default a second time"
     status: "proposed: E-GATEFIX"
@@ -434,6 +387,89 @@ open:
       target's committed ones, naming both lists.
     source: "The E-APPLIST merge into main and E-APPCFG (583187ca), 2026-11-23; carried at the E-CRLIMIT close."
     taken-by: "E-GATEFIX (proposed)"
+
+  - id: B40
+    title: "The code-review skill's cap sentence names a case that cannot happen"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      `skills/keel-code-review/SKILL.md` section 5, "The cap" (and the `.claude/skills/` copy), and the keel-router
+      skill say the cap's waiver comes when round `max_rounds` fails with a blocker "below `fix_blockers_from` or with
+      it unset". A set `fix_blockers_from` is never above `max_rounds`, so round `max_rounds` is never below it: only
+      "unset" can happen. The extra words make a reader look for a case that does not exist.
+    proposal: >-
+      Say the cap applies when `fix_blockers_from` is unset, in both skills. A rule-bearing change: the owner's
+      `keel mr commit`.
+    source: "E-CRLEVEL.W1 independent review of the rule text, nit N1 (2026-11-26); the W1 result's follow-ups."
+    taken-by: "E-GATEFIX (proposed); a rule-bearing change for the owner"
+
+  - id: B41
+    title: "The code-review skill says every schedule refusal names its table and key"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      `skills/keel-code-review/SKILL.md` section 5 (and the `.claude/skills/` copy) says "The tool refuses, naming the
+      table and the key:" and lists, among the cases, "a config that does not parse". That refusal names no table or
+      key: the file never parsed.
+    proposal: >-
+      Move the parse case out of that sentence, or say it names neither. A rule-bearing change: the owner's
+      `keel mr commit`.
+    source: "E-CRLEVEL.W1 independent review of the rule text, nit N2 (2026-11-26)."
+    taken-by: "E-GATEFIX (proposed); a rule-bearing change for the owner"
+
+  - id: B42
+    title: "The config template's review comment reads in a circle"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      In `templates/config.toml`, the `[review]` comment says "A schedule key left out takes [review]'s, else its
+      default". It sits inside `[review]`, so it reads as `[review]` taking its own value; it is meant for the level
+      tables. The `fix_blockers_from` line says "every finding" where the rule means every counted finding.
+    proposal: >-
+      Say "a level table's key left out takes [review]'s, else the default", and "every counted finding". A
+      rule-bearing change: the owner's `keel mr commit`.
+    source: "E-CRLEVEL.W1 independent review of the rule text, nit N3 (2026-11-26)."
+    taken-by: "E-GATEFIX (proposed); a rule-bearing change for the owner"
+
+  - id: B43
+    title: "On a detached HEAD the cr writer and preflight can read different review levels"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      With no `--target`, `keel notes write cr` on a detached HEAD takes main as its target, so an epic review, while
+      `keel preflight` takes the epic (or WU) of the branch that holds the tip. The two can then read different
+      levels' schedules for the same round. `skills/keel-code-review/SKILL.md` section 6 does not warn about it.
+    proposal: >-
+      Now: section 6 says "run the writer on the work branch, or pass it the same `--target` preflight used" (a
+      rule-bearing change: the owner's `keel mr commit`). Later, in code: the writer and preflight pick the target
+      the same way.
+    source: "E-CRLEVEL.W1 independent review of the rule text, nit N4 (2026-11-26)."
+    taken-by: "E-GATEFIX (proposed); the skill line is a rule-bearing change for the owner, the code fix a WU"
+
+  - id: B44
+    title: "No test checks the cr writer's schedule refusal prints one prefix"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      `src/notes.rs:1224` strips a leading "keel: " from a schedule read error before the writer's refusal adds its own
+      "keel notes:" prefix. No test drives `keel notes write cr` into that refusal (a git failure, or a refused
+      `[review]` on the target) and checks the message carries one prefix, so the doubled prefix could come back
+      unnoticed.
+    proposal: "An integration test: a refused target schedule, then `keel notes write cr`, asserting a single 'keel notes:' prefix."
+    source: "E-CRLIMIT epic review round 2, nit at src/notes.rs:1222 (cr note on 128200de, 2026-11-24); carried at the E-CRLEVEL close."
+    taken-by: "E-GATEFIX (proposed)"
+
+  - id: B45
+    title: "Test helpers can fail on a broken pipe when the command exits without reading its input"
+    status: "proposed: E-GATEFIX"
+    problem: >-
+      The `run()` helper in `tests/suite/verify_dod.rs:27` writes the test's input to the child's stdin with
+      `.unwrap()`. When the command prints its usage or refuses and exits without reading stdin
+      (`keel notes write test --help`, `--tagret`), a parent that runs late writes after the child has gone and gets
+      a broken pipe, and the test fails. It failed once in the pre-push `keel check` during E-CRLEVEL; it passed 15
+      times out of 15 alone. It is older than that epic (the E-SEED.W3 helper, the E-KEELFIX.W2 test). The same
+      write sits in tests/suite/review.rs:28, keelfix_e2e.rs:33, close_walk.rs:27, seed3_e2e.rs:33,
+      ghrevert_e2e.rs:32, docsplit_e2e.rs:26, verify_doc.rs:25 and mr.rs:224.
+    proposal: >-
+      Ignore a broken pipe on that write, as tests/suite/init.rs:259 already does, in every helper listed. A
+      test-only change, but `tests/` is code, so it needs a small epic or a WU of one.
+    source: "The E-CRLEVEL pre-push keel check (2026-11-26), as the router recorded it."
+    taken-by: "E-GATEFIX (proposed), or a small epic of its own"
 closed:
   - id: B1
     title: "E-SEED.W10 release pipeline (parked branch)"
@@ -483,3 +519,15 @@ closed:
   - id: B29
     title: "A diff binding turns red when git lengthens its short hashes"
     closed: "done by E-APPLIST.W14 (owner ruling 2026-11-23): keel hashes `git diff --full-index`, and one rule accepts a note in git's old short form at 7 to 12 characters (UC-REV-1)"
+  - id: B34
+    title: "The code-review skill states the default schedule twice"
+    closed: "done by E-CRLEVEL.W1 (de3d5779, the owner's commit): the defaults are one table in keel-code-review section 5"
+  - id: B35
+    title: "The code-review skill lists only some of what the round cap check refuses"
+    closed: "done by E-CRLEVEL.W1 (de3d5779): section 5 lists the refusals; the one it misnames is B41"
+  - id: B36
+    title: "The review settings' comments omit where a staged change is checked"
+    closed: "done by E-CRLEVEL.W1 (de3d5779 for docs/architecture.html and templates/config.toml, 79ad7bdb for .keel/config.toml)"
+  - id: B37
+    title: "The independent-review prompt nests one placeholder inside another"
+    closed: "done by E-CRLEVEL.W1 (de3d5779): messages.md gives one scope line per case"

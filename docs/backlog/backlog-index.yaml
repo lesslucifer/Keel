@@ -8,13 +8,13 @@ files:
     scope: >-
       Work deferred at the E-SEED, E-SEED2, E-SEED3, E-CRCAP, E-DOCSTYLE and E-TESTOPT closes: release, per-language
       e2e, Trawler re-records, the gate fixes, the notes fetch, accepted limits of the doc check, small follow-ups.
-    next-free: B40
+    next-free: B46
   - letter: R
     file: e-router-v2.yaml
     scope: >-
       Router work deferred at the E-ROUTER close and since: the launcher, the worker environment and sandbox, the
       watchdog, the report channel, the shared git dir; rows for the next router epic.
-    next-free: R53
+    next-free: R54
   - letter: A
     file: local-app.yaml
     scope: >-
@@ -62,7 +62,7 @@ order:
   - rank: 3
     epic: E-GATEFIX
     status: proposed
-    rows: "B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14; B30 - B32 (E-APPLIST.W14's review nits); B33 (the code-review skill's stale hash sentence, rule-bearing); B34 - B38 (E-CRLIMIT.W2's review nits, rule-bearing); B39 (warn when a branch's code paths differ from the target's)"
+    rows: "B13 (the waived E-SEED2 review blocker) first, then B11: review, then fix; B14; B30 - B32 (E-APPLIST.W14's review nits); B33 (the code-review skill's stale hash sentence, rule-bearing); B38 (E-CRLIMIT.W2's last review nit, rule-bearing; B34 - B37 done by E-CRLEVEL.W1); B39 (warn when a branch's code paths differ from the target's); B40 - B43 (E-CRLEVEL.W1's rule-text review nits, rule-bearing; B43 also a code fix); B44 (a test for the cr writer's one prefix); B45 (the test helpers' broken pipe, test-only)"
   - rank: 3
     epic: E-MULTILANG
     status: proposed
@@ -72,8 +72,12 @@ order:
     status: not yet proposed; the owner orders it
     rows: >-
       R5's live part, R6 row 4's note, R7's open rows, R14 (DEC-48 item 4), R20 - R29, R31, R32, R34 - R42, R44 -
-      R48, R51, R52. R40, the live check of `auto`, is owed at the first spawn after E-WMODE's merge; R47's L3 is
+      R48, R51 - R53. R40, the live check of `auto`, is owed at the first spawn after E-WMODE's merge; R47's L3 is
       wanted soon.
+  - rank: none
+    epic: E-CRLEVEL · a review schedule per level
+    status: "closed: [review.wu] and [review.epic] over [review], per key, and fix_blockers_from; the level read from the review's target; Keel's WU review runs one round and fixes its blockers under a fix-PASS"
+    rows: e-seed-v2 B34 - B37 done by E-CRLEVEL.W1; B40 - B45 added to E-GATEFIX; e-router-v2 R53 to the next router epic
   - rank: none
     epic: E-CRLIMIT · the review schedule as three settings
     status: "closed: the review schedule is the target's [review] max_rounds, whole_range_rounds and fix_importants_from, the owner's 3-round schedule their defaults; the rules name the settings"

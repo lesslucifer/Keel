@@ -592,6 +592,19 @@ open:
       - >-
         W2, a per-worker jq that failed would drop that worker's row, and the write step would then delete its line;
         no input is known to make it fail. Fix: a guard that marks the tick unreadable instead.
+  - id: R53
+    title: "A long-lived builder session costs more on follow-ups than a fresh worker"
+    status: "open: a router-skill note, rule-bearing"
+    problem: >-
+      After a fix round, a builder session that is kept for follow-ups grows to 300 - 420k tokens of context, and each
+      follow-up re-reads all of it. Measured on E-CRLEVEL's w1-build: 128 turns and 35.9M cache-read tokens; its
+      follow-ups wrote 125k and read 23.9M, where a fresh fix worker would have read about 3M.
+    proposal: >-
+      A note in the keel-router skill: reuse a live session for a short follow-up while its context is under about
+      130k; past about 300k, retire it and spawn a fresh worker with a full brief. A rule-bearing change: the owner's
+      `keel mr commit`.
+    source: "E-CRLEVEL close (2026-11-26): the router's measurement of the w1-build session."
+    taken-by: "unowned: the next router epic"
 closed:
   - id: R1
     title: "Worker persona missing in branches without it"
