@@ -603,6 +603,7 @@ fn stub_claude(stub: &Path) {
     std::fs::write(stub, concat!(
         "#!/bin/sh\nS=$STUB_STATE\nprintf '%s ' \"$PWD\" >> \"$S/calls\"; printf '[%s]' \"$@\" >> \"$S/calls\"; echo >> \"$S/calls\"\n",
         "env | grep '^GIT_' >> \"$S/git-env\"\n",
+        "env | grep '^PNPM_HOME=' >> \"$S/pnpm-env\"\n",
         "[ -s \"$S/sessions.json\" ] || echo '[]' > \"$S/sessions.json\"\n",
         "case \"$1\" in\n",
         "  agents) if [ -e \"$S/agents-ok\" ]; then k=$(cat \"$S/agents-ok\"); [ \"$k\" -gt 0 ] || { echo 'Error: no supervisor' >&2; exit 1; }; echo $((k - 1)) > \"$S/agents-ok\"; fi\n",
@@ -1030,7 +1031,7 @@ fn keels_router_security_files_are_rule_bearing() {
     }
 }
 
-const WORKER_GRANTS: [&str; 11] = [
+const WORKER_GRANTS: [&str; 12] = [
     "cargo build",
     "cargo test",
     "cargo check",
@@ -1042,6 +1043,8 @@ const WORKER_GRANTS: [&str; 11] = [
     "keel notes write",
     "keel lint",
     "keel check",
+    // E-WSANDBOX.W4 (owner q5): the one scratch shape; two grant entries, `Bash(c)` and `Bash(c *)`
+    "scripts/router-scratch.sh",
 ];
 /// Denied to every worker, each as `Bash(c)` and `Bash(c *)` (E-ROUTER3.W8, DEC-46).
 const WORKER_DENIES: [&str; 26] = [
@@ -4314,6 +4317,68 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
         s.as_object_mut().unwrap().remove("hooks");
         assert_eq!(s, want(wt, admin, other), "{name}");
     }
+}
+
+/// E-WSANDBOX.W4 (owner q5): the one shape a worker sets a scratch repo up with. `new` makes a
+/// fresh mktemp dir, marks it, and initialises a git repo; its `keel init` step is the deferred
+/// live proof, so this pins the dir and the marker only.
+#[test]
+fn the_scratch_helper_makes_a_fresh_repo_dir_and_marker() {
+    let t = tempfile::tempdir().unwrap();
+    let o = common::cmd("sh").arg(root().join("scripts/router-scratch.sh")).arg("new").env("TMPDIR", t.path()).output().unwrap();
+    let shown = String::from_utf8(o.stdout).unwrap();
+    assert!(o.status.success(), "{shown} {}", String::from_utf8_lossy(&o.stderr));
+    let lines: Vec<&str> = shown.lines().collect();
+    assert_eq!(lines.len(), 1, "one path, nothing else: {shown:?}");
+    let d = Path::new(lines[0]);
+    assert_eq!(d.parent(), Some(t.path()), "not a dir in the caller's TMPDIR: {d:?}");
+    let name = d.file_name().unwrap().to_str().unwrap();
+    assert!(name.starts_with("keel-scratch.") && name.len() == "keel-scratch.".len() + 8, "not a mktemp name: {name}");
+    assert!(d.join(".keel-scratch").is_file(), "the helper's marker is missing");
+    assert!(d.join(".git").is_dir(), "git was not initialised");
+}
+
+/// E-WSANDBOX.W4 (owner q5): `init` runs `keel init` in a fresh helper scratch dir and nowhere
+/// else - not the temp folder, not a dir mktemp did not make, not one that is no longer fresh, not
+/// through a symlink, not outside $TMPDIR; a refused path is never touched.
+#[test]
+fn the_scratch_helper_refuses_a_path_outside_a_fresh_scratch_dir() {
+    let t = tempfile::tempdir().unwrap();
+    let tmp = t.path();
+    let helper = root().join("scripts/router-scratch.sh");
+    let refuse = |path: &Path| {
+        let o = common::cmd("sh").arg(&helper).arg("init").arg(path).env("TMPDIR", tmp).output().unwrap();
+        assert!(!o.status.success(), "accepted {}", path.display());
+        let err = String::from_utf8_lossy(&o.stderr).to_string();
+        assert!(err.starts_with("router-scratch: "), "{err}");
+        assert!(!path.join("AGENTS.md").exists() && !tmp.join("AGENTS.md").exists(), "a refused init ran keel init: {err}");
+    };
+    // the temp folder itself, and a plain dir mktemp did not make
+    refuse(tmp);
+    let plain = tmp.join("plain");
+    std::fs::create_dir(&plain).unwrap();
+    refuse(&plain);
+    // a helper-shaped name with no marker, and a path that does not exist
+    let fake = tmp.join("keel-scratch.12345678");
+    std::fs::create_dir(&fake).unwrap();
+    refuse(&fake);
+    refuse(&tmp.join("keel-scratch.absent1"));
+    // a marked dir that is no longer fresh
+    let used = tmp.join("keel-scratch.abcdefgh");
+    std::fs::create_dir(&used).unwrap();
+    std::fs::write(used.join(".keel-scratch"), "").unwrap();
+    std::fs::write(used.join("extra"), "x").unwrap();
+    refuse(&used);
+    // a symlink to a fresh marked dir
+    std::fs::remove_file(used.join("extra")).unwrap();
+    std::fs::create_dir(used.join(".git")).unwrap();
+    let link = tmp.join("link");
+    std::os::unix::fs::symlink(&used, &link).unwrap();
+    refuse(&link);
+    assert!(!used.join("AGENTS.md").exists(), "a refused init ran keel init in the symlink's target");
+    // outside the temp folder
+    let outside = tempfile::tempdir().unwrap();
+    refuse(outside.path());
 }
 
 /// Backlog R33 (DEC-37): a commondir file in the main git dir would send

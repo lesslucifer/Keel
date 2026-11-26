@@ -401,10 +401,13 @@ open:
       worker and loaded by the next session there; (2) other worktrees' admin dirs under the git dir, which the
       worker's shell can still rewrite, unchecked when the owner or the router runs git there (the router's checkout
       included when it is a linked worktree). Data exposure: under `auto` the classifier judges reads outside the
-      worktree and extra hosts, so what a worker may read it may send.
+      worktree and extra hosts, so what a worker may read it may send; `WebFetch` is in-process and not gated by
+      `allowedDomains` at all (W1 finding e).
     proposal: >-
-      A guard or sandbox bound on the worktree's `.claude/agents/` and `.claude/skills/`, a `linked_ok`-style check
-      before any owner or router git in a worktree, and a read allowlist or host pin for `auto` workers.
+      A guard or sandbox bound on the worktree's `.claude/agents/` and `.claude/skills/` and a `linked_ok`-style
+      check before any owner or router git in a worktree. No read allowlist or host pin: the owner ruled 2026-11-26
+      (E-WSANDBOX q4) no pinned site list and no `strictAllowlist`, so the per-call widening is the accepted cost,
+      the auto reviewer decides each site, and `WebFetch` stays with that reviewer - recorded here, not denied.
     source: >-
       E-WMODE plan open point 7, W1 review round 2 (M4). Found at the E-WMODE close (epic closed 2026-11-12).
     taken-by: "unowned"
