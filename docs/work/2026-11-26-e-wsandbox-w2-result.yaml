@@ -6,8 +6,8 @@ title: "E-WSANDBOX.W2 result: ports, sites and packages in one ruled change"
 date: "2026-11-26"
 page: 2026-11-26-e-wsandbox-w2-result.html
 outcome: >-
-  Delivered. Parts 2 - 4 are built on one branch in owner rule commits (707bb5a2, 28674051, f949aa34 and the
-  one this fix round stages): sandbox.network.allowLocalBinding true in the
+  Delivered. Parts 2 - 4 are built on one branch in owner rule commits (707bb5a2, 28674051, f949aa34,
+  807a7a43): sandbox.network.allowLocalBinding true in the
   launcher's settings; no strictAllowlist and the five-host base kept (the auto reviewer decides each site, and
   registry.npmjs.org joins the base for installs); one fixed scratch helper on the grant; the 14 #[ignore]
   tests deleted; pnpm's store and its whole package tree outside every worktree, with the git-ignored
@@ -92,14 +92,14 @@ details:
     q3: "registry.npmjs.org on the host base; pnpm's store and package tree outside the worktree; cargo as today."
     q4: "No pinned site list, no strictAllowlist; the auto reviewer decides each site; the five hosts stay as the base (an empty list is unverified); WebFetch stays with the reviewer and is recorded in R41."
     q5: "One fixed scratch helper on the grant for a temp repo under $TMPDIR (keel init in it); mode stays auto."
-    q6: "Parts 2 - 4 on one branch, one review, one signature; one owner keel mr commit per rule change (707bb5a2 the first landing, 28674051 the first review fix, f949aa34 the second review fix, and the round-2 fix staged here)."
+    q6: "Parts 2 - 4 on one branch, one review, one signature; one owner keel mr commit per rule change (707bb5a2 the first landing, 28674051 the first review fix, f949aa34 the second review fix, 807a7a43 the round-2 fix)."
   one-branch:
     branch: "wu/E-WSANDBOX/w2-ports"
     owner-commits:
       - "707bb5a2 (scripts/router-worker.sh, scripts/router-scratch.sh, .keel/config.toml, .claude/agents/worker.md, skills/keel-router/SKILL.md, .claude/skills/keel-router/SKILL.md, .claude/skills/project-router/SKILL.md, docs/install.html)"
       - "28674051 (scripts/router-worker.sh, docs/install.html, .claude/skills/project-router/SKILL.md)"
       - "f949aa34 (scripts/router-worker.sh, scripts/router-scratch.sh, .claude/skills/project-router/SKILL.md, .keel/config.toml)"
-      - "staged after the round-2 review (scripts/router-worker.sh; the config and project-router facts stay as f949aa34 landed them)"
+      - "807a7a43 (scripts/router-worker.sh; the config and project-router facts stay as f949aa34 landed them)"
   mechanism: >-
     pnpm 11 reads pnpm_config_modules_dir from the environment (probed). The launcher points it at
     $TMPDIR/keel-worker-pnpm/modules-<cksum of the worktree>, exports PNPM_HOME beside it, and links the
