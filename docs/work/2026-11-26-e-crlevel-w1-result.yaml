@@ -6,8 +6,9 @@ title: "E-CRLEVEL.W1 result · A review schedule per level, the tool side"
 date: "2026-11-26"
 page: 2026-11-26-e-crlevel-w1-result.html
 outcome: >-
-  Step 1 of the owner's steps delivered (the code, its tests and the T2 docs); steps 2-5 (the rule text, the
-  reinstall, Keel's .keel/config.toml, the independent review and the sign-off) are the owner's and later workers'.
+  Steps 1 and 2 of the owner's steps delivered: step 1 (the code, its tests and the T2 docs) and step 2, the
+  owner's rule-text commit de3d5779; steps 3-5 (the reinstall, Keel's .keel/config.toml, the independent review and
+  the sign-off) follow.
   review::policy_in reads [review]'s shared schedule keys and two optional level tables, [review.wu] and
   [review.epic], each taking only the schedule keys; per key the level's value wins, then [review]'s, then
   review::Policy::DEFAULT. A value a level table writes above its level's max_rounds is refused naming the table and
@@ -36,6 +37,8 @@ evidence:
     - "0f6eabc7 docs(E-CRLEVEL.W1): the WU result - the tool side of the review schedule per level"
     - "c2678e6e test(E-CRLEVEL.W1): review round 1 - counts at the edge of u32, a nothing-counted round from fix_blockers_from; red on 0f6eabc7"
     - "d29c70cb fix(E-CRLEVEL.W1): review round 1 - no u32 sum of counts, cap() asks then(), the nothing-counted reason"
+    - "d83c73d1 docs(E-CRLEVEL.W1): the WU result - review round 1's findings and their fix"
+    - "de3d5779 E-CRLEVEL.W1: the rules name the review levels (the owner's keel mr commit, Reviewed-By: username vuluu)"
     - "this result update's commit"
   red-first: >-
     The 7 new integration and e2e tests, run against the epic tip's src (33b01f21) with the new tests: all 7 failed;
@@ -68,15 +71,22 @@ evidence:
     review::tests::a_round_from_fix_blockers_from_with_nothing_counted_is_never_said_to_be_fixed_under_a_fix_pass,
     notes::tests::the_cr_writer_takes_no_reason (PASS with counts past u32), and
     verify_dod::counts_typed_at_the_edge_of_u32_never_wrap_into_the_caps_waiver_or_a_pass.
+  rule-text: >-
+    de3d5779 (12 files: skills/keel-code-review/SKILL.md, skills/keel-workflow/SKILL.md, skills/keel-router/SKILL.md,
+    skills/keel-router/references/messages.md and brief-skeleton.md, their five .claude/skills copies,
+    templates/config.toml, docs/architecture.html) states the schedule per level once, in keel-code-review section 5,
+    with one defaults table, and folds in backlog B34-B37. Re-gated on de3d5779: diff -r of skills/ and .claude/skills/
+    for keel-code-review, keel-workflow and keel-router empty; the plan's stale-number grep hits only the allowed
+    non-schedule places (B38's keel-write example line is outside this step); keel verify-doc docs/architecture.html
+    and keel check green.
   checks: "cargo fmt --check, cargo clippy --all-targets -- -D warnings, cargo test (164 unit; 459 suite, 14 ignored as before), keel verify-doc on the docs touched: green."
 distillation:
   - "docs/use-cases/workflow.yaml: UC-REV-3 (the level rule, the level tables, per-key precedence, the clamp, the refusals, fix_blockers_from, the history row), UC-REV-2 (the cap's waiver only below fix_blockers_from), UC-GATE-1 (a staged level table)."
   - "docs/decisions/review-docs.html: DEC-50 amended in place - the schedule per level and fix_blockers_from, the owner's request and rulings of 2026-11-26, the accepted cost, the rejected shapes; DEC-26's sentence; the page's scope line and date."
   - "docs/decisions/decisions-index.yaml and docs/use-cases/use-cases-index.yaml: DEC-50's and UC-REV-3's titles, the scope lines."
 follow-ups:
-  - "E-CRLEVEL.W1, owner step 2: the rule text (skills/keel-code-review, keel-workflow, keel-router and its references, their .claude/skills copies, templates/config.toml, docs/architecture.html), the owner's keel mr commit; a fresh worker re-gates after each."
   - "E-CRLEVEL.W1, owner steps 3-4: reinstall keel from the WU tip, then Keel's .keel/config.toml [review.wu] max_rounds = 1, fix_blockers_from = 1 and its [review] comment; a fresh worker re-gates."
-  - "E-CRLEVEL.W1, owner step 5: the independent read-only review of the rule text, the sign-off and the merge into the epic; this result is updated for steps 2-4 before it."
+  - "E-CRLEVEL.W1, owner step 5: the independent read-only review of the rule text, the sign-off and the merge into the epic; this result is updated for steps 3-4 before it."
   - "E-CRLEVEL close: distil and archive the plan and result pairs, the epic review on the current schedule."
 details:
   files: [src/review.rs, src/gate.rs, src/notes.rs, src/mr.rs, src/main.rs, tests/common/mod.rs, tests/suite/verify_dod.rs, tests/suite/review.rs, docs/use-cases/workflow.yaml, docs/use-cases/use-cases-index.yaml, docs/decisions/review-docs.html, docs/decisions/decisions-index.yaml]
