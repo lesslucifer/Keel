@@ -668,7 +668,7 @@ fn build_launcher(base: &Path) {
     std::fs::copy(root().join("scripts/router-guard.jq"), main.join("scripts/router-guard.jq")).unwrap();
     std::fs::copy(root().join("scripts/router-file-guard.sh"), main.join("scripts/router-file-guard.sh")).unwrap();
     std::fs::copy(root().join("scripts/router-app.sh"), main.join("scripts/router-app.sh")).unwrap();
-    std::fs::write(main.join(".gitignore"), ".router/\n/target/\n").unwrap();
+    std::fs::write(main.join(".gitignore"), ".router/\n/target/\napp/node_modules\n").unwrap();
     std::fs::create_dir_all(main.join(".claude/agents")).unwrap();
     std::fs::write(main.join(".claude/agents/worker.md"), "---\nname: worker\n---\nworker\n").unwrap();
     std::fs::write(main.join(".router/briefs/b.md"), "do the thing\n").unwrap();
@@ -4411,6 +4411,12 @@ fn launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree() {
     let link = l.wt.join("app/node_modules");
     assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink(), "app/node_modules is not a link");
     assert_eq!(std::fs::read_link(&link).unwrap(), modules, "the link does not point at the ruled modules dir");
+    // the ignored link must leave the worker's worktree clean (a symlink is not a directory to git)
+    assert!(
+        git(&l.wt, &["status", "--short"]).stdout.is_empty(),
+        "the link dirtied the worktree: {}",
+        String::from_utf8_lossy(&git(&l.wt, &["status", "--short"]).stdout)
+    );
     let a = worker_argv(&l.state, "b");
     let settings: serde_json::Value = serde_json::from_str(&option(&a, "--settings")).unwrap();
     let allow = settings["sandbox"]["filesystem"]["allowWrite"].to_string();
