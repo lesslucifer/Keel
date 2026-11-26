@@ -4306,7 +4306,7 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
                     format!("{}/.claude/settings.local.json", wt.display()), "~/.claude.json".to_string()],
                 "denyRead": ["~/.ssh", "~/.claude/channels"]
             },
-            "network": {"allowedDomains": ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}
+            "network": {"allowedDomains": ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com", "registry.npmjs.org"]}
         }})
     };
     // a second worktree of the same repository shares its git dir
@@ -4379,6 +4379,24 @@ fn the_scratch_helper_refuses_a_path_outside_a_fresh_scratch_dir() {
     // outside the temp folder
     let outside = tempfile::tempdir().unwrap();
     refuse(outside.path());
+}
+
+/// E-WSANDBOX.W3 (owner q3): pnpm's store lives outside the worker's worktree - the launcher's
+/// PNPM_HOME is a folder in the temp folder, and the sandbox allowWrite gains nothing for it.
+#[test]
+fn launcher_gives_a_worker_a_private_pnpm_home_outside_its_worktree() {
+    let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let (ok, out) = l.run_env(&["spawn", "a", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
+    let env = std::fs::read_to_string(l.state.join("pnpm-env")).unwrap();
+    let want = format!("PNPM_HOME={}/keel-worker-pnpm", t.path().display());
+    assert!(env.lines().last() == Some(want.as_str()), "the worker's pnpm home is not the ruled one: {env:?}");
+    assert!(Path::new(&want["PNPM_HOME=".len()..]).is_dir(), "the launcher did not create the pnpm home");
+    let a = worker_argv(&l.state, "a");
+    let settings: serde_json::Value = serde_json::from_str(&option(&a, "--settings")).unwrap();
+    let allow = settings["sandbox"]["filesystem"]["allowWrite"].to_string();
+    assert!(!allow.to_lowercase().contains("pnpm"), "a pnpm path widened the sandbox: {allow}");
 }
 
 /// Backlog R33 (DEC-37): a commondir file in the main git dir would send
