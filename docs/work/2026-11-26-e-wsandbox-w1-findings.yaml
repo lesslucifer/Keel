@@ -127,12 +127,28 @@ details:
         in the worktree allowed; 12:49:23Z cargo build finished; first git commit d77f915 succeeded; 13:46Z first
         keel notes write succeeded. Reported to router keel-77 at 13:02:49Z.
   questions:
-    q1-ports: {verified: "a, b", unverified: "whether other sessions' proxies refuse a call without their token", default: "No local port for any worker, and no per-part opt-in: Claude Code has no loopback-only bound. Your lane, written down."}
-    q2-ignored-tests: {verified: "c (today refused; a per-path key exists)", unverified: "live run of allowUnixSockets (owner step 1); a socket transport in the sender", default: "Your lane at the close of an epic that touches the sender. The socket seam is a real alternative: one socket folder inside the worktree, set only in the launcher."}
-    q3-packages: {verified: "d (hard-coded under the worktree; not under other paths)", unverified: "whether pnpm's store and virtual store can live outside the worktree with Forge and Vite working", default: "You install (lane) unless W3 first proves a store outside the worktree in one folder the launcher may write; pnpm add stays yours either way."}
-    q4-websites: {verified: "e (strictAllowlist in --settings ends per-call widening); local settings already cannot widen", unverified: "live run (owner step 1); WebFetch stays with the classifier", default: "Yes, pin it: strictAllowlist true in the launcher; a new site is your commit. WebFetch: deny it or record it."}
-    q5-scratch: {verified: "f (rules from --settings only; the grant skips the classifier)", unverified: "the helper's e2e", default: "The fixed helper on the grant, as planned; optionally an autoMode.environment line in the launcher with $defaults kept. Mode stays auto."}
-    q6-commits: {verified: "W2, W3 and W4 all edit scripts/router-worker.sh", unverified: "none", default: "One owner commit per part, in build order on the one file; if ports stay off, W2 has no launcher change."}
+    q1-ports: {verified: "a, b", unverified: "whether other sessions' proxies refuse a call without their token", default: "No local port for any worker, and no per-part opt-in: Claude Code has no loopback-only bound. Your lane, written down.", example: "A worker starts the app dev server: today bind EPERM; with allowLocalBinding it binds every interface and reaches every local listener."}
+    q2-ignored-tests: {verified: "c (today refused; a per-path key exists)", unverified: "live run of allowUnixSockets (owner step 1); a socket transport in the sender", default: "Your lane at the close of an epic that touches the sender. The socket seam is a real alternative: one socket folder inside the worktree, set only in the launcher.", example: "Each ignored test in tests/suite/notify_owner.rs starts a fake Telegram server on a loopback port; an allowUnixSockets folder could replace the port if the sender gains a socket transport."}
+    q3-packages: {verified: "d (hard-coded under the worktree; not under other paths)", unverified: "whether pnpm's store and virtual store can live outside the worktree with Forge and Vite working", default: "You install (lane) unless W3 first proves a store outside the worktree in one folder the launcher may write; pnpm add stays yours either way.", example: "xmlbuilder 15.1.1 ships .vscode/launch.json (the plan, W10 f0b2886); unpacked inside the worktree it is refused, so the install fails (the main case on the page)."}
+    q4-websites: {verified: "e (strictAllowlist in --settings ends per-call widening); local settings already cannot widen", unverified: "live run (owner step 1); WebFetch stays with the classifier", default: "Yes, pin it: strictAllowlist true in the launcher; a new site is your commit. WebFetch: deny it or record it.", example: "A Bash call with allowed_domains [registry.npmjs.org]: today auto may approve it, and what the worker read can then be sent there; with strictAllowlist the tool refuses it at once."}
+    q5-scratch: {verified: "f (rules from --settings only; the grant skips the classifier)", unverified: "the helper's e2e", default: "The fixed helper on the grant, as planned; optionally an autoMode.environment line in the launcher with $defaults kept. Mode stays auto.", example: "A throwaway git repo under $TMPDIR may be judged risky by the classifier; classifier rules come only from the launcher, never from project files."}
+    q6-commits: {verified: "W2, W3 and W4 all edit scripts/router-worker.sh", unverified: "none", default: "One owner commit per part, in build order on the one file; if ports stay off, W2 has no launcher change.", example: "Ports off and the list pinned: W4 is one launcher commit, W2 has none, and W3 can be dropped alone."}
+  router-watchdog:
+    asked: "Owner comment 2026-11-26 on the questions table: is there a sandbox or restriction on the router and the watchdog?"
+    router: >-
+      No Bash sandbox: neither ~/.claude/settings.json, the project's .claude/settings.json nor a local settings file
+      in the main checkout sets a sandbox key, and no managed settings exist. Its bound is the router guard
+      (scripts/router-guard.jq, a fail-closed PreToolUse hook on every tool): the 11 tools of .claude/agents/router.md
+      (no Agent), Bash only a whitelist of plain-word commands (git and gh pr reads, ps, the router scripts), Write
+      only .router/briefs/<name>.md and .router/notify/owner.md, five inline skills. It runs in the owner's default
+      mode (auto, from user settings). The scripts it may run (launcher, router-watch.sh with git fetch,
+      notify-owner.py) run unsandboxed with the owner's rights.
+    watchdog: >-
+      No Bash sandbox: the launcher starts it with --setting-sources local and a --settings holding only hooks
+      (scripts/router-worker.sh, watchdog mode). Tools SendMessage and CronCreate only; the guard (router-guard.jq
+      with watchdog_to) admits only CronCreate of the */5 tick and a SendMessage to its router. Its facts hook runs
+      the launcher unsandboxed and checks each worktree's .git link before any git there (linked_ok).
+    scope: "Sandboxing either is not in E-WSANDBOX's scope; a new part or epic if the owner wants it."
   owner-steps:
     recipe: >-
       Probe clone /Users/nguyenvanluong/Documents/proj/misc/Keel-probe (project-router skill, 'Live probes'), run in
