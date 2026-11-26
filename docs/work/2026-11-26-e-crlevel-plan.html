@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-htmldoc-id="b2c699df339ef27f9aa6117e">
+<html lang="en" data-htmldoc-id="6b07eae99f34851f0dfb2c7f">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,7 +10,7 @@
     <div class="inner">
       <h1>E-CRLEVEL · A WU review and an epic review each get their own schedule</h1>
       <p>Your request of 26 November: a WU review gets one round; the epic review keeps today's schedule.</p>
-      <div class="meta">T3 · epic plan · 2026-11-26 · Keel · its data file, 2026-11-26-e-crlevel-plan.yaml, sits beside this page</div>
+      <div class="meta">Draft v1 · 2026-11-26 · Keel · T3 epic plan · its data file, 2026-11-26-e-crlevel-plan.yaml, sits beside this page</div>
     </div>
   </header>
   <main>
@@ -65,7 +65,7 @@ flowchart LR
     <tr><td>W2 · The rules name the levels</td><td>The instructions, the template and the architecture page name the two sections, with no numbers. Keel's rules file sets one round for WUs.</td><td>Your WU review is one round, from the first WU after this epic.</td><td>W1, and your reinstall</td></tr>
   </tbody>
 </table>
-<p>The installed keel refuses a setting it does not know, so your rules-file commit needs the new keel first. W2 holds every rule file, so each of its commits is yours to type.</p>
+<p data-c="parts-note">The installed keel refuses a setting it does not know, so your rules-file commit needs the new keel first. W2 holds every rule file, so each of its commits is yours to type.</p>
 
 <h2 id="decide">What you decide</h2>
 <table data-c="decide">
@@ -79,7 +79,7 @@ flowchart LR
     <tr><td>6</td><td>Do this epic's own WU reviews get one round?</td><td><b>No.</b> A setting applies once it is committed where the work merges, and W2 commits it last.</td></tr>
   </tbody>
 </table>
-<p>Two more points are in the data file.</p>
+<p data-c="decide-note">Two more points are in the data file.</p>
 
 <h2 id="done">How you'll know it worked</h2>
 <ul data-c="done">
@@ -97,12 +97,18 @@ flowchart LR
   <li>What reviewers look for, or the waiver and sign-off rules.</li>
   <li>Re-reviewing anything already merged.</li>
 </ul>
-<p>For agents: the details are in the data file.</p>
+<p data-c="agents-note">For agents: the details are in the data file.</p>
 
   </main>
   <script type="module">
     import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-    mermaid.initialize({ startOnLoad: true });
+    // keep diagram source readable for the diff layer (mermaid replaces it with SVG)
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
   </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
 </body>
 </html>
