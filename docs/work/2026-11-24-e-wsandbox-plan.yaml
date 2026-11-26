@@ -240,9 +240,9 @@ open-questions:
   - "Are the two context ceilings settings? OPEN. Default: yes, [router] keys in .keel/config.toml (reuse_max_context_cold = 200000, reuse_max_context_warm = 400000) read by the launcher's status, which prints them; the numbers are written in that one place only, and the skills name the keys, not the numbers."
   - "When is a worker's cache warm? OPEN, for W6 to confirm before it builds. Default: warm while less time has passed since its last turn than the lifetime its last cache write used (1 hour for a 1-hour write, which every launcher worker shows; else 5 minutes), cold otherwise. Claude Code's code holds both lifetimes and labels each write by them; whether a cache read extends the lifetime is W6's to confirm."
   - "Who decides that a fix goes to a fresh worker? OPEN. Default: the router applies rule 1 (same WU or a follow-up, under the ceiling: the live author); the author may decline in its report ('take it fresh') and the router then starts a fresh one; past a ceiling the fix goes fresh. Owner fork: whether 'up to the worker' also lets the author keep a fix past a ceiling."
-  - "How do the committed [router] keys name the effort policy? OPEN, W9's design. Recommended default: keep the flat grammar - worker_default_effort = \"low\", a new planner_effort = \"high\", worker_efforts = [\"low\",\"high\"] - one key per role, because the launcher's parser accepts only key = \"word\" or a list and validates --effort against worker_efforts. Alternative: one worker_effort policy string, which needs a new grammar and still a second role. Either way medium and xhigh leave the policy (DSH has neither) and off and max stay unused."
-  - "Which workers take the planner role? OPEN. Recommended default: the existing 'design, review and debugging' set, so a review worker is a planner (high) and every other worker is low; that keeps today's project-router rule and writes it down. The owner may narrow it to planning only."
-  - "What happens to a worker that asks for medium after W9? OPEN. Recommended default: the launcher refuses it (medium leaves worker_efforts), so the ruling is enforced rather than advised; an owner commit can widen the list again."
+  - "How do the committed [router] keys name the effort policy? RULED (owner, 2026-11-26; built by W9): the flat grammar, one key per role - worker_default_effort = \"low\", a new planner_effort = \"high\" and worker_efforts = [\"low\",\"high\"]. The launcher's parser accepts only key = \"word\" or a list, so one policy string would need a new grammar and still a second role. Both role efforts must sit in worker_efforts, checked like the default; a policy missing planner_effort is refused whole, so no host can omit the planner level."
+  - "Which workers take the planner role? RULED (owner, 2026-11-26): a planner authors a plan or a design; reviews, builds, fixes and checks are workers. A review worker is therefore low, and the old 'design, review and debugging' set is dropped, because a review is not planning."
+  - "What happens to a worker that asks for medium after W9? RULED (owner, 2026-11-26): the launcher refuses it by name, because medium leaves worker_efforts; the ruling is enforced, not advised, and an owner commit can widen the list again."
 details:
   status-of-this-plan: "Written by worker e-wsandbox-plan (opus, high) on epic/E-WSANDBOX off main 39d9a5c; amended 2026-11-26 by e-wsandbox-plan2 at 956ba9d (W5, W6). Rewritten 2026-11-26 by worker e-wsandbox-plan3 at cab0968f, folding in the owner's W1 rulings (docs/work/2026-11-26-e-wsandbox-w1-findings.yaml, details.rulings) and the owner's three scope notes below. Facts come from that pair's details, this worktree's files and git history. Amended again 2026-11-26 by e-wsandbox-plan3 at 4843f8df with W9 (the owner's effort ruling; facts from .keel/config.toml, scripts/router-worker.sh, the skills and the DSH route's model listing)."
   rulings-source: "docs/work/2026-11-26-e-wsandbox-w1-findings.yaml, details.rulings (owner, 2026-11-26): q1 ports, q1-ports-detail, q2 ignored tests, q3 packages, q4 websites, q5 scratch, q6 commits. The owner's exact words there are the ruling; this plan records their build shape, not a wider reading."
@@ -333,7 +333,7 @@ details:
     point-4:
       - "Ruled: the router and the watchdog get their own parts; record each bound, pin it, surface the sandbox fork. No power is added."
   w9-effort-policy:
-    ruling: "Owner, 2026-11-26: 'From now, later workers use low effort except planner workers, who use high.' Asked about the DSH/Claude Code wording: 'it's different wording between DSH & claude. Maybe we can have a WU to resolve that.' The ruling is the policy; the key shape, the planner role and what a worker may still ask for are the open questions."
+    ruling: "Owner, 2026-11-26: 'From now, later workers use low effort except planner workers, who use high.' Asked about the DSH/Claude Code wording: 'it's different wording between DSH & claude. Maybe we can have a WU to resolve that.' The ruling is the policy; W9 ruled the key shape, the planner role and what a worker may still ask for, below."
     facts:
       claude-code: >-
         .keel/config.toml:61-62: worker_efforts = ["medium", "high"], worker_default_effort = "medium".
@@ -364,8 +364,8 @@ details:
       Claude Code: the router passes --effort low for a worker (or omits it: the launcher default is low) and --effort
       high for a planner; the launcher refuses anything outside worker_efforts (medium included, once it is
       narrowed). DSH: the router passes worker_spawn's effort = low or high explicitly and never omits it (omission is
-      the high default). The launcher has no role field: the router chooses by the brief's role, and which tasks count
-      as planner is the open question.
+      the high default). The launcher takes the role explicitly (--role worker|planner), and a planner authors a plan or a
+      design while reviews, builds, fixes and checks are workers.
     facts-to-update: >-
       project-router SKILL.md:42 (the review row's --effort high) and :67 (the 'medium by default' sentence); both
       keel-router copies (skills/keel-router and .claude/skills/keel-router, kept equal by
