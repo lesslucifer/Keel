@@ -1521,6 +1521,10 @@ mod tests {
             let e = cr_verdict(v, Some(r), 0, 0).unwrap_err();
             assert!(e.contains("refused") && e.contains("--reason") && e.contains("fix ->"), "{v} {r:?}: {e}");
         }
+        // E-CRLEVEL.W1 review round 1, B1 (sibling): counts whose sum passes u32 never wrap into a PASS.
+        for (b, i) in [(u32::MAX, 1), (1, u32::MAX), (u32::MAX, u32::MAX)] {
+            assert!(cr_verdict("PASS", None, b, i).is_err(), "({b}, {i})");
+        }
         let e = cr_verdict("PASS", None, 1, 0).unwrap_err();
         assert!(e.contains("refused") && e.contains("fix ->"), "{e}");
         for v in ["", "pass", "WAIVE", "CAPPED"] {

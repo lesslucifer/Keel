@@ -1533,4 +1533,37 @@ mod tests {
             assert!(!tags(&imp, &p, |_, _| Ok(vec![]))[0].contains("blockers"), "a fix-PASS of importants names no blocker");
         }
     }
+
+    /// E-CRLEVEL.W1 review round 1, B1: a round's counts sum past u32 never
+    /// wrap: from fix_blockers_from on a fix-PASS answers them, then() never reads Cap and the cap's
+    /// waiver is refused, whatever the counts the writer took.
+    #[test]
+    fn counts_at_the_edge_of_u32_never_wrap_into_the_caps_waiver() {
+        for p in FB_POLICIES {
+            let f = p.fix_blockers_from.unwrap();
+            for k in f..=p.max_rounds {
+                for (b, i) in [(u32::MAX, 1), (u32::MAX, u32::MAX), (1, u32::MAX), (u32::MAX, 0)] {
+                    let n = note("FAIL", b, i, json!({}));
+                    assert_eq!(fixable(&n, k, &p), Ok(()), "{p:?} round {k} ({b}, {i})");
+                    assert_eq!(then(&n, k, &p), Then::FixPass, "{p:?} round {k} ({b}, {i})");
+                    let (what, _) = cap(Some(&n), &failed_rounds(k - 1), &p, "0123456789ab").unwrap_err();
+                    assert!(what.contains("waiver is refused"), "{p:?} round {k} ({b}, {i}): {what}");
+                }
+            }
+        }
+    }
+
+    /// E-CRLEVEL.W1 review round 1, N1: a round from fix_blockers_from on that failed with nothing
+    /// counted gets no fix-PASS, and the refusal of the next round says so, naming only the owner.
+    #[test]
+    fn a_round_from_fix_blockers_from_with_nothing_counted_is_never_said_to_be_fixed_under_a_fix_pass() {
+        for p in FB_POLICIES {
+            let f = p.fix_blockers_from.unwrap();
+            for k in f..p.max_rounds {
+                let (what, fix) = next_round(&rounds_to(k, 0, 0), &p, &never).unwrap_err();
+                assert!(what.contains(&format!("round {k} on r{k} counted no finding a fix-PASS could answer")), "{p:?} round {k}: {what}");
+                assert!(!what.contains("are fixed under a fix-PASS") && fix.contains("--waive-review") && !fix.contains("--fixes"), "{what} / {fix}");
+            }
+        }
+    }
 }

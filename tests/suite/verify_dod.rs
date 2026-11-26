@@ -2807,3 +2807,21 @@ fn a_bad_level_value_staged_is_refused_by_the_pre_commit_hook_and_keel_mr_commit
     git(p, &["add", "-A"]);
     ok(run("git", p, &["commit", "-qm", "a good level"], ""));
 }
+
+/// E-CRLEVEL.W1 review round 1, B1: counts typed at the edge of u32 never wrap - a FAIL from
+/// fix_blockers_from on still gets the fix-PASS and never the cap's waiver, and a PASS with them is
+/// refused.
+#[test]
+fn counts_typed_at_the_edge_of_u32_never_wrap_into_the_caps_waiver_or_a_pass() {
+    let d = fixture();
+    let p = d.path();
+    tables_on(p, "epic/e", &format!("{}[review.wu]\nmax_rounds = 1\nfix_blockers_from = 1\n", SHARED.table("review")));
+    test_note(p);
+    let max = u32::MAX.to_string();
+    refused(&write_cr(p, &["--verdict", "PASS", "--blockers", &max, "--importants", "1"]), &["PASS claimed"]);
+    assert!(!has_note(p, "cr", "HEAD"));
+    let o = ok(write_cr(p, &["--verdict", "FAIL", "--blockers", &max, "--importants", "1"]));
+    assert!(text(&o).contains("--verdict PASS --fixes") && !text(&o).contains("review cap reached"), "{}", text(&o));
+    refused(&write_cr(p, &["--verdict", "WAIVED"]), &["waiver is refused", "fix_blockers_from"]);
+    assert_eq!(note(p, "cr", "HEAD")["verdict"], "FAIL", "no waiver written");
+}
