@@ -549,7 +549,13 @@ done
 # Forge's packager needs a real tree, so `pnpm make` stays an owner install; a worktree that already
 # holds a real app/node_modules is left alone, never replaced.
 pnpm_home= pnpm_modules=
-if [ -d "$wt/app" ]; then
+if [ -e "$wt/app" ] || [ -L "$wt/app" ]; then
+  # a worker can replace its app directory with a symlink (it may write anywhere in its worktree);
+  # following it would create node_modules in another worktree with the launcher's owner rights, so
+  # app must be a real directory inside this worktree (E-WSANDBOX.W3, independent review round 2).
+  [ -d "$wt/app" ] && [ ! -L "$wt/app" ] || die "the worktree's app is not a real directory: $wt/app"
+  app_real=$(cd -P "$wt/app" 2>/dev/null && pwd -P) || die "cannot resolve $wt/app"
+  [ "$app_real" = "$wt/app" ] || die "the worktree's app resolves outside it: $wt/app -> $app_real"
   pnpm_tmp=${TMPDIR:-}
   if [ -n "$pnpm_tmp" ]; then
     pnpm_tmp=$(cd -P "$pnpm_tmp" 2>/dev/null && pwd -P) || die "cannot resolve the temp folder ${TMPDIR:-}"
