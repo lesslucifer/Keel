@@ -124,7 +124,10 @@ areas:
           the launcher, `claude`, …), on its command line only (DEC-37); `spawn` starts the worker in `[router]
           worker_permission_mode` as committed at the router checkout's HEAD (`plan`, `acceptEdits` or `auto`,
           `acceptEdits` when absent, Keel: `auto`, DEC-37), takes an optional `--permission-mode` that may only narrow
-          it (`plan` < `acceptEdits` < `auto`) and an optional `--effort`, and records the mode and the effort in the
+          it (`plan` < `acceptEdits` < `auto`); the effort is the one policy by role - `--role worker|planner`
+          takes `low` for a worker and `high` for a planner, `--effort` names a level explicitly, and the two are
+          never given together (E-WSANDBOX.W9: the same level on DSH, passed explicitly in `worker_spawn`'s
+          `effort`) - and it records the mode and the effort in the
           run dir and on the `RUNNING` line. Tests: `tests/suite/router.rs`
           `launcher_refuses_unsafe_targets_and_runs_one_worker_per_name`,
           `launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validated_mode`,

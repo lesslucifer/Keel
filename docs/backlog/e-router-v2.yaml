@@ -608,6 +608,19 @@ open:
       `keel mr commit`.
     source: "E-CRLEVEL close (2026-11-26): the router's measurement of the w1-build session."
     taken-by: "unowned: the next router epic"
+  - id: R54
+    title: "The review's code hash reads the signing checkout, not the merge target"
+    status: "open: a gate fix, code"
+    problem: >-
+      `keel mr confirm` and a by-hand `keel verify-dod` compute `code_diff_hash` from the working tree's `code_paths`
+      in the checkout they run in, while the merge hook uses the target branch's committed `.keel/config.toml`. When
+      the two disagree - a rule commit that changes `code_paths` or `scripts/`, or a sign-off run in another worktree -
+      the owner can sign a note the hook must reject, and the rejection blames the code.
+    proposal: >-
+      `code_binds` reads the target's committed config, as `review::policy` already does, or the cr note records the
+      pathspec and the policy commit it hashed, so the sign-off and the hook agree on what "the code" is.
+    source: "Found while signing E-WSANDBOX.W2 (owner's sign-off, 2026-11-26); recorded by the E-WSANDBOX.W9 worker."
+    taken-by: "unowned: the next router epic"
 closed:
   - id: R1
     title: "Worker persona missing in branches without it"
