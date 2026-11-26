@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="b2c699df339ef27f9aa6117e">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-CRLEVEL epic plan</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-CRLEVEL · A WU review and an epic review each get their own schedule</h1>
+      <p>Your request of 26 November: a WU review gets one round; the epic review keeps today's schedule.</p>
+      <div class="meta">T3 · epic plan · 2026-11-26 · Keel · its data file, 2026-11-26-e-crlevel-plan.yaml, sits beside this page</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">One review schedule serves every review. A WU review and an epic review get the same rounds. You want a shorter WU review: one round. The epic review stays as it is.</p>
+
+<h2 id="for-you">What changes for you</h2>
+<table data-c="for-you">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>A WU review runs</td><td>The one schedule</td><td>The WU settings; in Keel, one round</td></tr>
+    <tr><td>That round finds medium findings</td><td>A second round may follow</td><td>They are fixed and recorded; no second round</td></tr>
+    <tr><td>That round finds a blocker</td><td>A second round follows</td><td>The review stops; you decide at sign-off</td></tr>
+    <tr><td>An epic review runs</td><td>The one schedule</td><td>The epic settings; in Keel, unchanged</td></tr>
+    <tr><td>A project sets no level</td><td>One schedule</td><td>Exactly as today</td></tr>
+    <tr><td>A level's setting is wrong</td><td>Not possible</td><td>Refused at its commit, naming the level</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">Example: two WUs, one round each</h2>
+<ol data-c="example">
+  <li>WU A's round 1 reads the whole work and finds two medium findings.</li>
+  <li>The author fixes them and records the fix. No round 2 runs.</li>
+  <li>WU B's round 1 finds a blocker. The review stops, recorded as waived.</li>
+  <li>At sign-off you read the open blocker and accept the waiver, or not.</li>
+  <li>The epic review then runs today's schedule.</li>
+</ol>
+
+<h2 id="terms">Terms</h2>
+<table data-c="terms">
+  <tbody>
+    <tr><td>Level</td><td>Which review it is. Work that merges into main gets an epic review; work that merges into an epic gets a WU review.</td></tr>
+    <tr><td>Shared settings</td><td>Today's three review settings. They apply to both levels unless a level sets its own.</td></tr>
+    <tr><td>Blocker, medium finding</td><td>Both must be fixed before merge; a medium one may be fixed without a new round.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="work">The parts, in build order</h2>
+<div class="diagram" data-c="order">
+<pre class="mermaid">
+flowchart LR
+  W1["W1 The tool reads a schedule per level"] --> R["You reinstall keel from the epic"]
+  R --> W2["W2 The rules name the levels"]
+</pre>
+<div class="caption">An arrow means "starts after".</div>
+</div>
+<table data-c="parts">
+  <thead><tr><th>Part</th><th>What it builds</th><th>What you get</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>W1 · The schedule per level</td><td>The tool reads a WU and an epic section, picks the level from where the work merges, and refuses bad values. Tests, the use case, the decision record.</td><td>Each level can have its own schedule; a project that sets none sees no change.</td><td>—</td></tr>
+    <tr><td>W2 · The rules name the levels</td><td>The instructions, the template and the architecture page name the two sections, with no numbers. Keel's rules file sets one round for WUs.</td><td>Your WU review is one round, from the first WU after this epic.</td><td>W1, and your reinstall</td></tr>
+  </tbody>
+</table>
+<p>The installed keel refuses a setting it does not know, so your rules-file commit needs the new keel first. W2 holds every rule file, so each of its commits is yours to type.</p>
+
+<h2 id="decide">What you decide</h2>
+<table data-c="decide">
+  <thead><tr><th>#</th><th>Question</th><th>Answer, and why</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>How are the levels written?</td><td><b>A WU section and an epic section</b>, each taking any of the three settings. Six new names would be longer and ungrouped.</td></tr>
+    <tr><td>2</td><td>Which value wins?</td><td><b>The level's, then the shared one, then the default</b>, one setting at a time. So one line changes one thing.</td></tr>
+    <tr><td>3</td><td>What is one WU round?</td><td><b>The WU cap set to 1, alone.</b> Medium findings get a recorded fix; a blocker waits for you. Or say "cap 2, only a blocker earns round 2".</td></tr>
+    <tr><td>4</td><td>How does the tool know the level?</td><td><b>From where the work merges.</b> Every reader already knows it, so none can disagree.</td></tr>
+    <tr><td>5</td><td>Where does your value go?</td><td><b>Keel's own rules file</b>, in your last W2 commit. The shipped template shows the sections with no value.</td></tr>
+    <tr><td>6</td><td>Do this epic's own WU reviews get one round?</td><td><b>No.</b> A setting applies once it is committed where the work merges, and W2 commits it last.</td></tr>
+  </tbody>
+</table>
+<p>Two more points are in the data file.</p>
+
+<h2 id="done">How you'll know it worked</h2>
+<ul data-c="done">
+  <li>In Keel, a WU review stops after round 1; an epic review runs today's schedule.</li>
+  <li>A project that sets no level behaves exactly as today.</li>
+  <li>A bad value at either level is refused at its commit and when a review starts.</li>
+  <li>Work reviewed before this epic still merges.</li>
+  <li>The epic test runs each level's schedule through the real hooks.</li>
+</ul>
+
+<h2 id="not">Not in this epic</h2>
+<ul data-c="not">
+  <li>New defaults: one set serves both levels.</li>
+  <li>A level for a single commit's review.</li>
+  <li>What reviewers look for, or the waiver and sign-off rules.</li>
+  <li>Re-reviewing anything already merged.</li>
+</ul>
+<p>For agents: the details are in the data file.</p>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true });
+  </script>
+</body>
+</html>

@@ -1,0 +1,164 @@
+artifact: epic-plan
+status: ready
+id: E-CRLEVEL
+title: "E-CRLEVEL · A WU review and an epic review each get their own schedule"
+date: "2026-11-26"
+page: 2026-11-26-e-crlevel-plan.html
+intent: >-
+  The owner's request of 2026-11-26. E-CRLIMIT made the review schedule three settings in [review] of the target's
+  committed .keel/config.toml (max_rounds, whole_range_rounds, fix_importants_from; defaults in
+  review::Policy::DEFAULT, one rule review::policy_in), but one schedule serves every review. The owner wants the
+  schedule to differ by level: the review of a WU tip against its epic, and the review of an epic tip against main.
+  The values for now, set in Keel's own .keel/config.toml: the epic review keeps what is current (the shared
+  settings, unset, so the defaults); the WU review gets only 1 round. A project that sets nothing per level must
+  behave exactly as today. Now, at the owner's request.
+owner-changes:
+  - {when: "A WU review runs", today: "It follows the one schedule every review follows", after: "It follows the WU level's settings; in Keel, one round"}
+  - {when: "A WU's one round finds medium findings, no blocker", today: "A second round may follow", after: "They are fixed and recorded under a fix-PASS; no second round"}
+  - {when: "A WU's one round finds a blocker", today: "A second round follows", after: "The review stops with the cap's waiver; you accept it at sign-off, or not"}
+  - {when: "An epic review runs", today: "The one schedule", after: "The epic level's settings; in Keel, unchanged"}
+  - {when: "A project sets no level", today: "One schedule", after: "Both levels follow the shared settings, exactly as today"}
+  - {when: "A level's setting is wrong", today: "Only the shared settings are checked", after: "Refused at the commit that adds it and when a review starts, naming the level"}
+use-cases:
+  - "UC-REV-3, amended: the schedule per level - [review.wu] and [review.epic] tables, each key falling back to the shared [review] key, then to the default; the level read from the review's target (main: epic; else: WU); bad values at either level refused (W1)"
+  - "UC-GATE-1, amended: a staged .keel/config.toml whose level table policy_in refuses is refused at commit, as a bad shared key is (W1)"
+  - "UC-REV-2 and UC-REV-1 unchanged: the cap's waiver and the nit cases keep their rules; only the cap they meet is the level's"
+expected:
+  - "On a target whose config sets no level table, keel preflight wu and keel preflight epic announce the same round and cap as before this epic, from the shared settings; every existing schedule test passes unchanged in what it expects."
+  - "A target setting [review.wu] gets that schedule for a WU review (preflight's 'review round <n> of <wu max_rounds>', the writer's refusals and next step, the cap's waiver 'review cap: <wu max_rounds> rounds, ...'), while an epic review of a tip whose target is main follows main's [review.epic] or shared settings; neither level's table changes the other's schedule."
+  - "Per key, a level's setting wins over the shared one, and the shared one over the default; a shared or default value above a level's own max_rounds is lowered to it; a value a level table writes above that level's max_rounds is refused."
+  - "With [review.wu] max_rounds = 1 alone: round 1 reads the whole range; importants with no blocker get a fix-PASS and the WU merges with no round 2; a round-1 blocker ends in the cap's waiver, which the owner's --accept-waiver signs."
+  - "A bad level value ([review.wu] max_rounds = 0, a level's whole_range_rounds above its max_rounds, a non-schedule key such as modules inside a level table, an unknown table such as [review.close], review.wu not a table) is refused: red 0·review-cap at preflight naming the table and key, refused by keel notes write cr, and refused staged by the pre-commit hook and keel mr commit."
+  - "keel preflight, keel notes write cr and keel mr confirm's review history pick the same level for the same review, by one rule; cr notes written before this epic still pass checks 3-5 and the walk, and no note gains or loses a field."
+  - "No shipped skill, templates/config.toml or docs/architecture.html states a schedule number outside the keel-code-review defaults table; Keel's own .keel/config.toml sets [review.wu] max_rounds = 1 and nothing else in the schedule."
+  - "The epic test (tests/suite/review.rs) passes through the real hooks of a repo keel init set up, with the epic level, the WU level and the shared settings each set to a schedule computed from the shared DEFAULTS."
+non-goals:
+  - "New defaults, or a default per level: one Policy::DEFAULT serves both levels."
+  - "A level for a single commit's review, or for the router's reviews of non-code files beyond pointing them to the level of the work they review."
+  - "What reviewers look for, the severities, the fix-PASS, the waivers and the sign-off rules: only the cap and rounds they meet come from the level."
+  - "A change to cr/v1's fields, a level stamp on notes, or a migration of old notes."
+  - "Re-signing or re-reviewing anything already merged."
+wu-summaries:
+  - wu: E-CRLEVEL.W1
+    wu-summary: >-
+      The schedule per level, in the tool. src/review.rs: policy_in reads [review]'s shared keys as today plus two
+      optional sub-tables, [review.wu] and [review.epic], each taking only the three schedule keys; it returns one
+      Policy per level, resolved per key (level, then shared, then Policy::DEFAULT); today's rule applies at each
+      level (a key the table writes above that level's max_rounds is refused; a shared or default value above it is
+      lowered to it); the shared keys keep today's check against the shared cap. One level rule, review::level: a
+      review whose target is the main branch (cfg.branches.main, by name or refs/heads/<main>) is an epic review,
+      any other a WU review. review::policy(repo, target) takes the main branch's name and returns the target's
+      level's Policy, so Schedule::read (preflight 0·review-cap in src/gate.rs and the cr writer in src/notes.rs) and
+      mr.rs review_history pick the level from the target they already have, with no new flag. Refusals name the
+      table ([review.wu] max_rounds = 0 ...); POLICY_FIX names the level tables. staged_config_refusal (src/main.rs)
+      needs no change beyond its tests: it already calls policy_in. Tests: unit tests in src/review.rs; the
+      schedule tests in tests/suite/verify_dod.rs gain level cases; tests/common/mod.rs keeps one DEFAULTS and gains
+      a way to write a level table from a Sched; the epic e2e tests/suite/review.rs (below). Distilled in the same
+      WU: UC-REV-3 and UC-GATE-1 (docs/use-cases/workflow.yaml), DEC-50 amended in place
+      (docs/decisions/review-docs.html), the decision and use-case indexes' scope lines. No rule-bearing file.
+    wu-maps-to: "The owner's request of 2026-11-26 (a schedule per level); UC-REV-3 and UC-GATE-1 (amended); DEC-50 (amended)."
+    wu-expected: >-
+      Integration (tests/suite/verify_dod.rs, red first), every expectation computed from the Sched written: a
+      target with only shared keys gives both levels that schedule; a target with [review.wu] = W and shared S gives
+      a WU review W per key with S filling the rest, and an epic review of a tip into main S; main's [review.epic]
+      = E gives the epic review E and leaves a WU review off it on S; [review.wu] max_rounds = 1 alone gives round 1
+      whole range, a fix-PASS for importants with no round 2 (preflight red 0·review-cap, the writer refusing a
+      round-2 verdict), a round-1 blocker ending in 'review cap: 1 rounds, 1 blockers open'; a WU with rounds
+      recorded under S whose target then lowers [review.wu] max_rounds gets no further round and its fix line names
+      the owner's waiver; keel mr confirm's history tags the rounds by the target's level. Bad level values (0, -1,
+      "3", 2.5, a level whole_range_rounds or fix_importants_from above that level's max_rounds, modules inside
+      [review.wu], [review.close], review.wu = 3) are red 0·review-cap naming table and key, refused by the cr
+      writer, and refused staged by the pre-commit hook and keel mr commit. Unit (src/review.rs): policy_in per
+      level (precedence, the clamp of an inherited value, each refusal), review::level on main, refs/heads/main, an
+      epic branch and another ref. E2E: tests/suite/review.rs (below).
+    wu-deps: none
+  - wu: E-CRLEVEL.W2
+    wu-summary: >-
+      The rules name the levels, and Keel's rules file sets the WU's one round. Rule-bearing text only, no code
+      path. skills/keel-code-review/SKILL.md section 5: the level tables, the per-key precedence and the level rule
+      (target main: epic; else: WU), stated once; the defaults table stays the one place for defaults and gains no
+      level column. skills/keel-workflow/SKILL.md (the cr/v1 and 0·review-cap rows), skills/keel-router/SKILL.md
+      (the independent-review table: the level's settings), references/messages.md ('Round <n> of at most
+      <max_rounds>' for the review's level) and references/brief-skeleton.md: name the level, no number. The same
+      files under .claude/skills/. templates/config.toml: commented [review.wu] and [review.epic] examples with
+      <n>, under one comment naming the precedence and pointing to the skill; no value. docs/architecture.html:
+      the [review] config row names the level tables and points to the template and the skill, no number.
+      .keel/config.toml: [review.wu] max_rounds = 1, and its [review] comment corrected. Commit order: the
+      skills, template and architecture page first; the .keel/config.toml commit only after the owner reinstalls
+      keel from the epic tip carrying W1 (the installed keel refuses [review.wu] as an unknown key, at pre-commit
+      and in keel mr commit). Each commit stages only rule-bearing files and is the owner's keel mr commit --as
+      vuluu, then a fresh worker re-gates the new tip (project-router 'WU with a rule-bearing file'). An
+      independent read-only review on opus at high effort reads the text against W1's tool before the sign-off.
+    wu-maps-to: "The owner's request of 2026-11-26 (WU 1 round, epic unchanged); the keel-code-review, keel-workflow and keel-router skills; UC-REV-3 as W1 amends it."
+    wu-expected: >-
+      Integration: waived - the WU changes no code path (exempt, never from the sign-off). Unit: waived, same
+      reason. Checked by: git grep over the shipped skills, their .claude copies, templates/ and
+      docs/architecture.html finds no schedule number outside the keel-code-review defaults table, and every place
+      naming the schedule names the level tables or points to section 5; skills/ and .claude/skills/ match (diff -r,
+      project-router aside); with the reinstalled keel, keel preflight wu on a scratch WU cut from the epic tip
+      announces 'of 1' and keel preflight epic on the epic tip announces the shared schedule's cap; keel check stays
+      green (skills and the template are embedded by include_str!); the independent review passes.
+    wu-deps: [E-CRLEVEL.W1]
+e2e-plan: >-
+  tests/suite/review.rs becomes this epic's e2e (E-CRLIMIT's today; W1 changes it, so the epic's test note names
+  it). A scratch repo keel init set up, its real hooks, no network, every expectation computed from the Sched each
+  table writes (one shared DEFAULTS; no value written equals a default). main's first commit sets [review.epic] to a
+  schedule EPIC. On the epic branch, which inherits it: WUs A, B and C run the shared defaults as today (the epic
+  table never reaches a WU review). A commit staging a bad level value ([review.wu] max_rounds = 0) is refused by
+  the pre-commit hook and nothing lands. The epic commits shared SET: WUs D and E follow SET (no wu table, so the
+  shared keys). The epic commits [review.wu] max_rounds = 1: WU F's round 1 finds importants only, preflight refuses
+  round 2, a fix-PASS answers round 1 and F merges; WU G's round 1 finds a blocker, the cap's waiver is written,
+  sign-off without --accept-waiver is refused, with it G merges. The epic: its own round 1 announces EPIC's cap
+  (main's epic table, not the epic branch's wu table or SET), the walk shows C, E and G waived, and it merges into
+  main. No waiver of the e2e layer.
+distillation-plan:
+  - "docs/use-cases/workflow.yaml: UC-REV-3 amended for the level tables, the per-key precedence and the level rule; UC-GATE-1 amended for a staged level table (W1)."
+  - "docs/decisions/review-docs.html: DEC-50 amended in place - the schedule per level, with the owner's request of 2026-11-26 as the reason and the rejected shapes (prefixed key names; a level table replacing the whole shared schedule; a --level flag on the writer) (W1)."
+  - "docs/decisions/decisions-index.yaml and docs/use-cases/use-cases-index.yaml: DEC-50's title and the scope lines (W1)."
+  - "T1, rule-bearing: docs/architecture.html's config row names the level tables (W2); the skills are shipped rules, edited in W2, not distilled."
+  - "At the epic close: the plan and result pairs archived to docs/.archive/ with keel notes write doc --distill naming the docs above."
+open-questions:
+  - "How are the levels written? As two tables under the review settings, [review.wu] and [review.epic], each taking any of the three keys; the keys in [review] itself stay the shared values. Rejected: six prefixed names (wu_max_rounds ...): more keys, nothing groups them, and a typo reads like a new key."
+  - "Which value wins? Per key: the level's, then the shared one, then the default. Rejected: a level table replacing the whole shared schedule, which would make one key in it reset the other two to the defaults."
+  - "What does a WU's one round mean? [review.wu] max_rounds = 1 alone. Round 1 reads the whole range; the other two keys are lowered to 1, so importants with no blocker are fixed under a fix-PASS; a blocker in round 1 ends in the cap's waiver, which the owner accepts at sign-off or not. Alternative if the owner wants it: max_rounds = 2 with fix_importants_from = 1, so only a blocker earns a second round."
+  - "How does the tool know the level? From the review's target: main is an epic review, anything else a WU review. preflight, the cr writer and the sign-off history already have the target, so they cannot disagree and no flag is added. The cr writer takes no level today; it finds its target from the branch (a wu/ branch: its epic; else main) or --target. Rejected: a --level flag on the writer (every caller must pass it, and it can contradict preflight's)."
+  - "Where does the owner's value go? Keel's own .keel/config.toml, [review.wu] max_rounds = 1, in W2's last commit, the owner's keel mr commit --as vuluu, after reinstalling keel from the epic tip. templates/config.toml shows both tables commented out, with no value, so new projects keep one schedule until they choose."
+  - "A shared value above a level's own cap: refused? No: lowered to it, as a default is. Only a value written in the level's own table above that level's max_rounds is refused. So the one key max_rounds = 1 works whatever the shared settings are."
+  - "What does the cr note record? Nothing new. The level is read from the target every time, as the schedule is; old notes stay valid, and a note whose round or scope differs from the level's count shows the history's existing 'the note records ...' suffix."
+  - "Do this epic's own WU reviews get one round? No: a setting applies once it is committed on the branch the work merges into, and W2 commits it last. W1 and W2 follow the current schedule; the installed keel counts them, no hand count. The first WU with one round is the first one cut after this epic merges."
+details:
+  installed-keel: >-
+    The installed keel (~/.cargo/bin/keel, built 2026-11-24, E-CRLIMIT's: it knows whole_range_rounds and refuses
+    an unknown [review] key) refuses [review.wu] at preflight, in the cr writer and staged at pre-commit and keel mr
+    commit. Hence the order: W1 merges into the epic; the owner reinstalls keel from the epic tip (cargo install,
+    the owner's own command; workers are denied it); then W2's .keel/config.toml commit. After the epic merges into
+    main, every keel that reads Keel's config must be this epic's or later.
+  current-code:
+    - "src/review.rs:10-28 Policy and Policy::DEFAULT; 30-31 KNOWN_KEYS (max_rounds, whole_range_rounds, fix_importants_from, modules, rubric); 33-34 POLICY_FIX"
+    - "src/review.rs:93-109 policy(repo, target): resolves the target, reads its committed .keel/config.toml; 112-123 policy_at; 125-155 policy_in (the one rule)"
+    - "src/review.rs:311-316 Schedule::read(repo, base, tip, target, code_paths) calls policy(repo, target)"
+    - "src/gate.rs:574 preflight calls Schedule::read with its target (level wu|epic given on the command line; target_of: epic -> main, wu -> its epic)"
+    - "src/notes.rs:637-650 range(): target = --target, else notes::target(cfg, branch): a wu/ branch's epic, else main; 1222-1226 write_cr calls Schedule::read with r.target"
+    - "src/mr.rs:165-172 review_history(repo, base, tip, target, own): policy(repo, target), falling back to Policy::DEFAULT with a line when refused"
+    - "src/main.rs:170-187 staged_config_refusal: validate, then review::policy_in(text)"
+    - "tests/common/mod.rs:409-490 whole, last_fix, round_pair, Sched, DEFAULTS, Sched::lines/announce/scope/tag/follows/no_round/cap"
+    - "tests/suite/review.rs: the E-CRLIMIT e2e (WUs A-E, SET = DEFAULTS + 1 each)"
+  rule-bearing:
+    - "skills/keel-code-review/SKILL.md section 5 (lines 209-272), sections 1-2 (30, 57, 64-65) and .claude/skills/ copy"
+    - "skills/keel-workflow/SKILL.md:135,174 and .claude/skills/ copy"
+    - "skills/keel-router/SKILL.md:422-430 and .claude/skills/ copy"
+    - "skills/keel-router/references/messages.md:40-41 and brief-skeleton.md:75, and .claude/skills/ copies"
+    - "templates/config.toml [review] comment block"
+    - "docs/architecture.html:117 the [review] schedule row"
+    - ".keel/config.toml [review] comment and the new [review.wu] table"
+  rule-bearing-wu: >-
+    W2 holds every rule-bearing file. W1 touches none (src/, tests/ and T2 docs under docs/use-cases and
+    docs/decisions, which the docs/*.html glob does not match). W2's commits each stage only rule-bearing files and
+    are the owner's keel mr commit --as vuluu; then a fresh worker re-gates the new tip; then the owner signs the WU.
+  files:
+    W1: [src/review.rs, src/gate.rs, src/notes.rs, src/mr.rs, src/main.rs, tests/common/mod.rs, tests/suite/verify_dod.rs, tests/suite/review.rs, docs/use-cases/workflow.yaml, docs/decisions/review-docs.html, docs/decisions/decisions-index.yaml, docs/use-cases/use-cases-index.yaml]
+    W2: [skills/keel-code-review/SKILL.md, skills/keel-workflow/SKILL.md, skills/keel-router/SKILL.md, skills/keel-router/references/messages.md, skills/keel-router/references/brief-skeleton.md, .claude/skills/keel-code-review/SKILL.md, .claude/skills/keel-workflow/SKILL.md, .claude/skills/keel-router/SKILL.md, .claude/skills/keel-router/references/messages.md, .claude/skills/keel-router/references/brief-skeleton.md, templates/config.toml, docs/architecture.html, .keel/config.toml]
+  rulings-binding:
+    - "E-CRLIMIT: nothing in code, messages, tests or docs depends on a default value; defaults once in keel-code-review section 5 and once in Policy::DEFAULT; tests hold one shared DEFAULTS and run non-default schedules with expectations computed from the settings."
+    - "E-CRLIMIT: the rules state the schedule once and name the keys; docs/architecture.html carries no number."
+    - "A fix commit on a branch needs its own test note; review fixes go in a WU branch or get their note right after."
