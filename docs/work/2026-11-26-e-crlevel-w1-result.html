@@ -16,13 +16,13 @@
   <main>
 
 <h2 id="happened">What happened</h2>
-<p data-c="happened">Steps 1 and 2 are done: the tool, its tests and records, and your rule-text commit. A review now reads the settings of its level: the WU settings when the work merges into an epic, the epic settings when it merges into main. Each setting falls back to the shared one, then to the default. A new setting, off unless set, lets a round's blockers get a recorded fix with no new round and no waiver. A project that sets nothing new runs exactly as before. Steps 3 to 5 follow.</p>
+<p data-c="happened">Steps 1 to 4 are done. A review now reads the settings of its level: the WU settings when the work merges into an epic, the epic settings when it merges into main. Each setting falls back to the shared one, then to the default. A new setting, off unless set, lets a round's blockers get a recorded fix with no new round and no waiver. A project that sets nothing new runs exactly as before. This WU's own reviews ran on the epic's settings, the defaults; Keel's new WU setting applies from the first WU after this epic merges.</p>
 
 <h2 id="checks">How you'll know it worked</h2>
 <table data-c="checks">
   <thead><tr><th>Check</th><th>Met?</th></tr></thead>
   <tbody>
-    <tr><td>In Keel, a WU review stops after round 1 and its blockers get a recorded fix; an epic review runs today's schedule.</td><td>The tool does it in every test. Keel's own setting lands in your step 4.</td></tr>
+    <tr><td>In Keel, a WU review stops after round 1 and its blockers get a recorded fix; an epic review runs today's schedule.</td><td>Met in every test; Keel's own setting is committed.</td></tr>
     <tr><td>A project that sets nothing new behaves exactly as today.</td><td>Met: every earlier schedule test passes unchanged.</td></tr>
     <tr><td>A bad value at any level is refused at its commit and when a review starts.</td><td>Met, naming the level and the setting.</td></tr>
     <tr><td>Work reviewed before this epic still merges.</td><td>Met: the review record keeps its fields.</td></tr>
@@ -53,9 +53,9 @@
 
 <h2 id="left">What is left, and who takes it</h2>
 <ul data-c="left">
-  <li>Step 2 is done: your commit de3d5779, re-checked and green.</li>
-  <li>Steps 3 and 4, yours: reinstall keel from this WU, then commit Keel's WU setting.</li>
-  <li>Step 5: the independent review of the rule text, your sign-off and the merge. This page is updated for steps 3 and 4 first.</li>
+  <li>Steps 2 and 4 are your commits de3d5779 and 79ad7bdb, both re-checked and green.</li>
+  <li>Step 5: a review worker records the last fix, then your sign-off and the merge.</li>
+  <li>Three wording points from the rule-text review, and one about a detached checkout, go to a backlog row.</li>
 </ul>
 
   </main>
