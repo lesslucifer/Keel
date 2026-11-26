@@ -9,14 +9,14 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>E-WSANDBOX.W2 · Ports, sites and packages, delivered</h1>
-      <p>Parts 2–4 of the epic on one branch, in two owner commits; the review's one blocker fixed.</p>
+      <p>Parts 2–4 of the epic on one branch, in owner commits as they land; every review round's findings fixed.</p>
       <div class="meta">T3 · WU result · 2026-11-26 · Keel · its data file, 2026-11-26-e-wsandbox-w2-result.yaml, sits beside this page</div>
     </div>
   </header>
   <main>
 
 <h2 id="happened">What happened</h2>
-<p data-c="happened">Parts 2–4 are built on one branch. The launcher opens local ports, the automatic reviewer decides each site with no list and no lock, one fixed helper sets up a scratch repo, and pnpm's store and its whole package tree live outside the worktree with <code>app/node_modules</code> linked at them. The 14 switched-off tests are deleted. The review found one blocker — my first route moved only pnpm's store, so the package tree still unpacked into the blocked <code>.vscode</code> path — and the second owner commit carries the fix.</p>
+<p data-c="happened">Parts 2–4 are built on one branch. The launcher opens local ports, the automatic reviewer decides each site with no list and no lock, one fixed helper sets up a scratch repo, and pnpm's store and its whole package tree live outside the worktree with <code>app/node_modules</code> linked at them. The 14 switched-off tests are deleted. The review found one blocker — my first route moved only pnpm's store, so the package tree still unpacked into the blocked <code>.vscode</code> path — and the owner commits carry the fixes.</p>
 
 <h2 id="check">How you'll know it worked</h2>
 <ul data-c="check">
@@ -42,12 +42,12 @@
   <li><code>pnpm make</code> stays your lane: Forge's packager needs a real tree.</li>
   <li><code>pnpm add</code> and <code>cargo add</code> stay reviewer-judged; the plan adds no grant entry.</li>
   <li>The live proofs wait for the epic's end-to-end run.</li>
-  <li>A second, independent review of the rule files found the port key in the wrong settings object and the pnpm tree outside the sandbox's writable roots; both are fixed.</li>
+  <li>An independent review of the rule files found the port key in the wrong settings object and the pnpm tree outside the sandbox's writable roots; its second round found a worker-plantable symlinked <code>app</code> hole. All are fixed.</li>
 </ul>
 
 <h2 id="left">What is left</h2>
 <ul data-c="left">
-  <li>A fresh reviewer writes the fix-PASS on this tip; then you sign and merge.</li>
+  <li>Your sign-off: the review cap is spent, so the tool prints the waiver route (or a raised cap is your call).</li>
   <li>The live proofs (frozen install under the launcher, adds, ports, scratch helper, sites, the empty-list probe) are the epic's, after the last part.</li>
   <li>The decision rows and use-case amendment are owed at the epic close.</li>
 </ul>

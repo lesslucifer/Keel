@@ -4396,12 +4396,18 @@ fn the_scratch_helper_refuses_a_path_outside_a_fresh_scratch_dir() {
     std::fs::write(nested.join(".keel-scratch"), "").unwrap();
     std::fs::create_dir(nested.join(".git")).unwrap();
     refuse(&nested);
-    // a marked dir whose .git is a symlink, not a real directory
+    // a marked dir whose .git is a live symlink to a real directory: `[ -d ]` alone would pass,
+    // so only the `!-L` branch refuses it
     let linked = tmp.join("keel-scratch.11112222");
     std::fs::create_dir(&linked).unwrap();
     std::fs::write(linked.join(".keel-scratch"), "").unwrap();
-    std::os::unix::fs::symlink(tmp.join("elsewhere"), linked.join(".git")).unwrap();
-    refuse(&linked);
+    let elsewhere = tmp.join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, linked.join(".git")).unwrap();
+    let o = common::cmd("sh").arg(&helper).arg("init").arg(&linked).env("TMPDIR", tmp).output().unwrap();
+    let err = String::from_utf8_lossy(&o.stderr).to_string();
+    assert!(!o.status.success() && err.contains("no real .git directory"), "a symlinked .git was accepted: {err}");
+    assert!(!linked.join("AGENTS.md").exists(), "a refused init ran keel init");
 }
 
 /// E-WSANDBOX.W4 (nit 7 of the independent review): the accepted path really runs `keel init` - the
@@ -4466,6 +4472,24 @@ fn launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree() {
     let home = &home["PNPM_HOME=".len()..];
     assert!(allow.as_array().unwrap().iter().any(|v| v.as_str() == Some(home)), "the pnpm home is not an allowWrite root: {allow}");
     assert!(Path::new(home).is_dir(), "the launcher did not create the pnpm home");
+}
+
+/// E-WSANDBOX.W3 (security, independent review round 2): the launcher must never write through a
+/// worker-planted symlinked `app` - it creates node_modules with the owner's rights, so a link to
+/// another worktree's app would poison that worktree's package tree. `app` must be a real directory
+/// inside the worktree, and the refusal comes before anything is created.
+#[test]
+fn launcher_refuses_a_symlinked_app_before_linking_node_modules() {
+    let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let other_app = elsewhere.path().join("app");
+    std::fs::create_dir(&other_app).unwrap();
+    std::os::unix::fs::symlink(&other_app, l.wt.join("app")).unwrap();
+    let (ok, out) = l.run_env(&["spawn", "a", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(!ok && out.contains("not a real directory"), "the launcher accepted a symlinked app: {out}");
+    assert!(!other_app.join("node_modules").exists(), "the launcher wrote node_modules through the symlinked app");
+    assert!(!t.path().join("keel-worker-pnpm").exists(), "the launcher created the pnpm home before refusing");
 }
 
 /// Backlog R33 (DEC-37): a commondir file in the main git dir would send
