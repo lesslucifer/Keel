@@ -11,8 +11,10 @@ intent: >-
   W4 owns how the launcher's allowedDomains changes and what an empty list does), scratch work is allowed through one
   fixed helper, the 14 #[ignore] notify_owner tests are deleted, and parts 2 - 4 land in one owner commit. This epic
   builds that shape, plus worker resume (W5) and the reuse rules (W6), and - the owner's scope note of the same day -
-  the router's (W7) and the watchdog's (W8) own bounds, since W1 found neither runs in a sandbox. Why now: the app
-  makes ports and packages routine, and every app WU so far needed an owner run.
+  the router's (W7) and the watchdog's (W8) own bounds, since W1 found neither runs in a sandbox. The owner's effort
+  ruling of 2026-11-26 joins as W9: later workers low, planner workers high, one policy both hosts read, because DSH
+  and the Claude Code launcher name effort differently. Why now: the app makes ports and packages routine, and every
+  app WU so far needed an owner run.
 owner-changes:
   - {when: "A worker's work needs a local port (the app's end-to-end test, a test server)", today: "Refused; you run it and send the log", after: "The worker serves and connects on any port; it binds every interface and reaches every local listener"}
   - {when: "A WU changes the app's packages", today: "You install them by hand", after: "The worker adds them with pnpm or cargo; a package that ships a blocked folder is installed through a store outside its worktree"}
@@ -22,12 +24,14 @@ owner-changes:
   - {when: "You want to know what a worker may do", today: "Spread over a script, a guard and two decisions", after: "One table: each limit, why, and what a widening exposes"}
   - {when: "A stopped worker's WU needs it again", today: "Never revived; a fresh worker re-reads everything without the work history", after: "The router brings it back by name, with its history and every limit rebuilt from the committed rules"}
   - {when: "A follow-up or a fix is due", today: "The skills disagree: the live author, or a fresh worker", after: "The router reuses a worker when the task is related and its context is under your ceilings, else starts fresh; it can read each worker's context size and cache state"}
+  - {when: "A later worker's effort", today: "medium by default; high only for design, review and debugging", after: "low for a worker, high for a planner, from one policy both hosts read"}
   - {when: "You ask what the router or the watchdog may do", today: "Unwritten; both run outside any sandbox", after: "One table each, pinned by a test, with the one fork named for you"}
 use-cases:
   - "UC-ROUTE-5, amended (W2 - W4, as ruled): the worker's environment - local ports on any address, the auto reviewer deciding each site (the host base kept or emptied), the fixed scratch helper, package installs, and what its shell writes."
   - "UC-ROUTE-5 and UC-ROUTE-6, amended (W5): a stopped worker is resumed by name with every launch flag rebuilt; its 'a stopped worker revived' failure is replaced by 'a worker resumed with any flag or guard missing, or into a drifted worktree'; the guard admits the resume shape."
   - "UC-ROUTE-1 and UC-ROUTE-6, amended (W6): the router picks reuse or a fresh worker by the owner's locked rule and reads each worker's context and cache state; the guard admits the status shape."
   - "UC-ROUTE-1 and UC-ROUTE-6, amended (W7, W8): the router's and the watchdog's bounds, each written in one table and pinned by the guard test; neither gains a sandbox."
+  - "UC-ROUTE-5, amended (W9): the spawn's effort comes from the one policy by role - low for a worker, high for a planner - and each host gets it explicitly (Claude Code --effort, DSH worker_spawn effort). UC-ROUTE-1 names no effort; it is unchanged."
   - "No other use case. W1 changes none (a findings report)."
 expected:
   - "A findings page (W1) answered every point this plan marked unverified, each with raw probe output or the file:line that settles it (merged)."
@@ -38,11 +42,12 @@ expected:
   - "No change gives a worker the owner's keys, the router's powers or an unbounded network; the epic review checks every widening against its stated bound."
   - "W5: a worker stopped by the launcher and resumed with it keeps its earlier conversation and session id, carries every launch flag a spawn carries, and is still refused a Write outside its worktree. W6: no skill or instruction text still contradicts the locked reuse rules, and the status read prints each live worker's context, peak, idle minutes and warm or cold from usage records alone."
   - "W7, W8: each has one table of its bounds (tools, Bash shapes, writes, mode, the scripts it may run unsandboxed), a guard test pins each admitted shape, and neither gains a sandbox."
+  - "W9: one effort policy is the only wording - worker low, planner high - the launcher refuses an effort outside it, the router passes it on both hosts (Claude Code --effort; DSH worker_spawn effort always given, never omitted), and no skill still says medium as the default."
 non-goals:
   - "The shared git dir's allow list (backlog R51) and the other residuals of DEC-37 (R31 - R39, R41) unless a ruling here touches them."
   - "A rule for workers changing other worktrees of the same repo: open, not built here (open-questions; it would change DEC-37 and the worker file guard)."
   - "gh in a worker (backlog R21)."
-  - "The DSH host's preset and its worker plugin's cold resume (backlog D3); this epic is Claude Code's launcher only."
+  - "The DSH host's preset (Always Auto Review) and its worker plugin's cold resume (backlog D3): W9 only records the policy the router follows on DSH, not the preset; the launcher built here is Claude Code's."
   - "Reviewer independence: a review worker stays fresh every round and the author never reviews its own diff; W6 changes neither."
   - "Packaging, signing or notarising the app."
   - "Any grant of the owner's keys, tokens, push or sign-off to a worker."
@@ -174,6 +179,28 @@ wu-summaries:
       other tool; the launcher's watchdog start carries only the hook settings; the facts hook checks the .git link
       first. E2e: none live (proven by the fixture test).
     wu-deps: [E-WSANDBOX.W7]
+  - wu: E-WSANDBOX.W9
+    wu-summary: >-
+      One effort policy for both hosts (owner ruling 2026-11-26: later workers use low effort, planner workers high;
+      the DSH route exposes off | low | high (default) | max, the Claude Code launcher's committed [router] says
+      worker_efforts ["medium","high"] and worker_default_effort "medium"; the owner: "it's different wording between
+      DSH & claude"). W9 writes one host-neutral policy with an explicit per-host mapping: the [router] keys' shape
+      (recommended: keep worker_default_effort = "low", add planner_effort = "high", worker_efforts = ["low","high"];
+      the alternative is one worker_effort policy string), the launcher's validation against it (its parser must learn
+      the new key: an unknown [router] line refuses the whole policy today), the router's use on DSH (worker_spawn's
+      effort, always passed explicitly: omitting it takes the route's high default) and on Claude Code (--effort), the
+      facts (project-router, both keel-router copies and their references, docs/architecture.html, DEC-39), and the
+      tests (the launcher pin tests in tests/suite/router.rs, a text test that the skill wording names the same keys).
+      Rule-bearing: .keel/config.toml, scripts/router-worker.sh, the skills, docs/architecture.html and
+      docs/decisions/router.html (DEC-39 Amended); one owner keel mr commit.
+    wu-maps-to: "The owner's ruling of 2026-11-26 (effort for later workers and planners); UC-ROUTE-5 (amended); DEC-39."
+    wu-expected: >-
+      Integration: the launcher's pin tests show the policy's keys, the worker role's default, and that a spawn's
+      effort outside worker_efforts is refused; a text test finds one wording in the skills, the same key names, and no
+      skill still naming medium as the worker default. E2e: in the probe clone a worker spawn carries --effort low and
+      a planner's carries --effort high; on DSH the skill's dispatch row names worker_spawn's effort as always given
+      (a live DSH spawn is the host preset's, a non-goal).
+    wu-deps: [E-WSANDBOX.W3]
 e2e-plan: >-
   After the last change WU, a fresh worker spawned by the launcher in this epic's worktree runs the ruled probe list
   and reports raw output; each line must match the ruling: bind 127.0.0.1:0 and 0.0.0.0:0 (both succeed, every
@@ -185,7 +212,9 @@ e2e-plan: >-
   a word it was told before the stop, keeps its session id, is refused a Write outside its worktree, and the router's
   status read shows its context, peak, idle minutes and cold cache, matching the transcript. For W7 and W8 no live
   probe exists: their bound is the guard, and the epic's e2e for them is the guard test that admits each ruled shape
-  and refuses the rest.
+  and refuses the rest. For W9: in the probe clone a worker spawn carries --effort low and a planner's carries
+  --effort high in its command line; on DSH the skill's dispatch row names worker_spawn's effort and says it is always
+  given, proven by the text test (a live DSH spawn is the host preset's, a non-goal).
 distillation-plan:
   - "docs/decisions/router.html: DEC-37 (grants, the file guard) and DEC-46 (point 9, the sandbox: ports, hosts, writes) take Amended rows, one per ruling, each with what it exposes and its bound."
   - "docs/use-cases/router.yaml: UC-ROUTE-5's environment and resume sentences; UC-ROUTE-1 and UC-ROUTE-6 for reuse, status and the two new bounds."
@@ -196,6 +225,7 @@ distillation-plan:
   - "W5: DEC-30, DEC-44 and DEC-46 take Amended rows (resume by name with every flag rebuilt; stop as the open question decides); UC-ROUTE-5 and UC-ROUTE-6; the keel-router skill's worker tables and worker-ops 'No resume' item and the project-router Workers section; backlog R23 closed."
   - "W6: DEC-43 and DEC-44 take Amended rows (the locked reuse rules, the status read), or one new decision citing both; UC-ROUTE-1; the keel-router skill's 'One live session per WU' and review table, worker-ops and checklists; backlog R53 closed."
   - "W7, W8: DEC-37 and DEC-46 take Amended rows for the router's and the watchdog's bounds, or one new decision citing both; UC-ROUTE-1 and UC-ROUTE-6; the keel-router skill's router posture section; a backlog row if the sandbox fork is deferred."
+  - "W9: DEC-39 takes an Amended row (the low/high policy and its per-host mapping); UC-ROUTE-5's effort sentence; the project-router Workers section (the spawn recipe and the review row), both keel-router copies (the spawn advice and the host dispatch table) and their references; docs/architecture.html's [router] keys row."
 open-questions:
   - "Should a worker be able to open a local port? RULED (owner, 2026-11-26): yes - allowLocalBinding true in the launcher, serve and connect on any port. Recorded with its cost: it binds every interface and reaches every local listener."
   - "What happens to the 14 ignored notify_owner tests? RULED: delete them completely, in W2."
@@ -203,14 +233,18 @@ open-questions:
   - "May the auto reviewer open a website for one command? RULED: no pinned list and no strictAllowlist; the reviewer decides each site. Accepted cost: a site it allows can receive what the worker read. How the launcher's allowedDomains changes (kept as a base, emptied) and what an empty list does are W4's; if empty refuses every host, the base stays and the reviewer widens each call."
   - "How do we stop harmless scratch work being refused? RULED: scratch is allowed, through one fixed helper on the grant. The mode stays auto."
   - "Do changes land in one owner commit or one per part? RULED: W2, W3 and W4 in one owner commit. Structure (recommended): one WU branch with three parts - one review, one signature, one commit, one merge. Three WU branches with a joint commit is not buildable: each tip would need its own rule-bearing commit, and a joint commit after the merges would bind no WU's signed tip."
+  - "What effort do later workers use? RULED (owner, 2026-11-26): low for later workers, high for planner workers. The DSH route exposes off | low | high (default) | max; the Claude Code launcher's committed [router] says worker_efforts [\"medium\",\"high\"], worker_default_effort \"medium\"; the owner: 'it's different wording between DSH & claude. Maybe we can have a WU to resolve that.' W9 resolves it; the key shape and the planner role are the two design questions below."
   - "May a worker change another worktree of the same repo? OPEN, not ruled (owner comment 2026-11-26). Recommended default: no - a worker edits only its own worktree, and another worktree stays an owner step. It would change DEC-37 (the write boundary) and scripts/router-file-guard.sh (which worktrees, which files) and their tests; it needs its own bound before it is granted."
   - "Do the router and the watchdog stay outside a sandbox? OPEN. Recommended default: yes - their guard is the bound, and a sandbox would stop the router running the launcher. W7 and W8 record each bound and surface the fork; a sandbox is a widening of the guard, not of a worker's sandbox."
   - "How does a stopped worker come back, and what does stop keep? OPEN. Default: a launcher command, resume <name>, that rebuilds every flag from the committed rules and refuses a changed worktree or brief; never Claude Code's own claude respawn, which reuses flags the session itself can change. stop stays 'claude stop, then claude rm' if your probe (details.w5-resume.owner-probe) shows a resume after rm keeps the history; if not, stop keeps the session and a new retire removes it. The router still stops a worker once its WU is merged; W6's ceilings decide whether a resume or a fresh worker is cheaper."
   - "Are the two context ceilings settings? OPEN. Default: yes, [router] keys in .keel/config.toml (reuse_max_context_cold = 200000, reuse_max_context_warm = 400000) read by the launcher's status, which prints them; the numbers are written in that one place only, and the skills name the keys, not the numbers."
   - "When is a worker's cache warm? OPEN, for W6 to confirm before it builds. Default: warm while less time has passed since its last turn than the lifetime its last cache write used (1 hour for a 1-hour write, which every launcher worker shows; else 5 minutes), cold otherwise. Claude Code's code holds both lifetimes and labels each write by them; whether a cache read extends the lifetime is W6's to confirm."
   - "Who decides that a fix goes to a fresh worker? OPEN. Default: the router applies rule 1 (same WU or a follow-up, under the ceiling: the live author); the author may decline in its report ('take it fresh') and the router then starts a fresh one; past a ceiling the fix goes fresh. Owner fork: whether 'up to the worker' also lets the author keep a fix past a ceiling."
+  - "How do the committed [router] keys name the effort policy? OPEN, W9's design. Recommended default: keep the flat grammar - worker_default_effort = \"low\", a new planner_effort = \"high\", worker_efforts = [\"low\",\"high\"] - one key per role, because the launcher's parser accepts only key = \"word\" or a list and validates --effort against worker_efforts. Alternative: one worker_effort policy string, which needs a new grammar and still a second role. Either way medium and xhigh leave the policy (DSH has neither) and off and max stay unused."
+  - "Which workers take the planner role? OPEN. Recommended default: the existing 'design, review and debugging' set, so a review worker is a planner (high) and every other worker is low; that keeps today's project-router rule and writes it down. The owner may narrow it to planning only."
+  - "What happens to a worker that asks for medium after W9? OPEN. Recommended default: the launcher refuses it (medium leaves worker_efforts), so the ruling is enforced rather than advised; an owner commit can widen the list again."
 details:
-  status-of-this-plan: "Written by worker e-wsandbox-plan (opus, high) on epic/E-WSANDBOX off main 39d9a5c; amended 2026-11-26 by e-wsandbox-plan2 at 956ba9d (W5, W6). Rewritten 2026-11-26 by worker e-wsandbox-plan3 at cab0968f, folding in the owner's W1 rulings (docs/work/2026-11-26-e-wsandbox-w1-findings.yaml, details.rulings) and the owner's three scope notes below. Facts come from that pair's details, this worktree's files and git history."
+  status-of-this-plan: "Written by worker e-wsandbox-plan (opus, high) on epic/E-WSANDBOX off main 39d9a5c; amended 2026-11-26 by e-wsandbox-plan2 at 956ba9d (W5, W6). Rewritten 2026-11-26 by worker e-wsandbox-plan3 at cab0968f, folding in the owner's W1 rulings (docs/work/2026-11-26-e-wsandbox-w1-findings.yaml, details.rulings) and the owner's three scope notes below. Facts come from that pair's details, this worktree's files and git history. Amended again 2026-11-26 by e-wsandbox-plan3 at 4843f8df with W9 (the owner's effort ruling; facts from .keel/config.toml, scripts/router-worker.sh, the skills and the DSH route's model listing)."
   rulings-source: "docs/work/2026-11-26-e-wsandbox-w1-findings.yaml, details.rulings (owner, 2026-11-26): q1 ports, q1-ports-detail, q2 ignored tests, q3 packages, q4 websites, q5 scratch, q6 commits. The owner's exact words there are the ruling; this plan records their build shape, not a wider reading."
   one-commit: |-
     The structural answer q6 forces (owner: 'All at once: one owner commit for W2, W3 and W4').
@@ -298,6 +332,57 @@ details:
       - "Mode acceptEdits or bypassPermissions/dontAsk: not proposed (DEC-37)."
     point-4:
       - "Ruled: the router and the watchdog get their own parts; record each bound, pin it, surface the sandbox fork. No power is added."
+  w9-effort-policy:
+    ruling: "Owner, 2026-11-26: 'From now, later workers use low effort except planner workers, who use high.' Asked about the DSH/Claude Code wording: 'it's different wording between DSH & claude. Maybe we can have a WU to resolve that.' The ruling is the policy; the key shape, the planner role and what a worker may still ask for are the open questions."
+    facts:
+      claude-code: >-
+        .keel/config.toml:61-62: worker_efforts = ["medium", "high"], worker_default_effort = "medium".
+        scripts/router-worker.sh:469-471 defaults --effort to worker_default_effort and refuses one outside
+        worker_efforts; :544 passes --effort; :81 and :586 record it in the run dir and the RUNNING line; read_policy
+        (:181-208) refuses any unknown line in [router] (the catch-all sets bad=1), so a new key such as
+        planner_effort refuses the whole policy until the parser learns it. DEC-39 is the decision ('workers run on
+        opus at medium or high effort; the policy lives in .keel/config.toml [router] and the launcher enforces it').
+        project-router SKILL.md:67 says 'opus, --effort medium by default, --effort high for design, review and
+        debugging'; :42 runs the review worker at high.
+      dsh: >-
+        The DSH route (provider deepseek-official, model deepseek-flash) exposes off | low | high (default) | max
+        (list_subagent_models, 2026-11-26); worker_spawn's effort is optional and omitted means the route's default,
+        so omitting it is the high trap. keel-router SKILL.md:275-277 is the host dispatch table (Claude Code launcher
+        vs DSH worker_spawn) and :335-337 says the effort may be the policy's default.
+      today-differs: "The launcher's policy names medium/high with medium as the default; the DSH route has no medium, defaults to high, and adds off and max. That is the wording the owner asked a WU to resolve."
+    policy: >-
+      One host-neutral policy: a role names a level both hosts carry - worker = low, planner = high. off and max are
+      not used (the policy never asks for them); medium and xhigh leave worker_efforts, because the ruling replaces
+      them and DSH has neither.
+    key-shape-recommended: >-
+      Keep the flat [router] grammar: worker_default_effort = "low"; a new planner_effort = "high"; worker_efforts =
+      ["low", "high"]. The launcher's parser accepts only key = "word" or key = ["word", ...] and validates --effort
+      against worker_efforts, so one worker_effort policy string would need a new grammar and still a second role.
+      Alternative considered and not recommended as the default: one worker_effort string with the role table in the
+      skill, which hides the second role outside the committed keys.
+    mapping: >-
+      Claude Code: the router passes --effort low for a worker (or omits it: the launcher default is low) and --effort
+      high for a planner; the launcher refuses anything outside worker_efforts (medium included, once it is
+      narrowed). DSH: the router passes worker_spawn's effort = low or high explicitly and never omits it (omission is
+      the high default). The launcher has no role field: the router chooses by the brief's role, and which tasks count
+      as planner is the open question.
+    facts-to-update: >-
+      project-router SKILL.md:42 (the review row's --effort high) and :67 (the 'medium by default' sentence); both
+      keel-router copies (skills/keel-router and .claude/skills/keel-router, kept equal by
+      init::every_keel_router_file_equals_its_self_hosted_copy): SKILL.md:275-277 and :335-337, plus
+      references/worker-ops.md:4,104-105 and references/checklists.md:29 if they repeat the old default;
+      docs/architecture.html:119 (the [router] keys row); DEC-39 in docs/decisions/router.html (Amended row);
+      .keel/config.toml and scripts/router-worker.sh.
+    tests: >-
+      tests/suite/router.rs: worker_policy_reads_an_optional_watchdog_model (the policy read) and
+      launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validated_mode (the --effort
+      validation); a new text test (e.g. effort_policy_is_one_wording_across_the_skills) reads the committed [router]
+      keys and the skill texts and asserts the key names match and no skill names medium as the worker default; a
+      launcher test that --effort medium is refused and high is accepted.
+    order: >-
+      After W2-W4 (their one commit edits the launcher) and before W5 (its resume flag builder reads the policy).
+      Trade-off: one small launcher commit before W5; the W2-W4 and W9 workers themselves still spawn under the old
+      medium default, since W9 cannot govern its own worker.
   rule-bearing-by-wu:
     W1: "none (docs/work/ only)"
     W2: "scripts/router-worker.sh (the sandbox key); tests/suite/router.rs (the pin); tests/suite/notify_owner.rs (the deletion, code)"
@@ -307,13 +392,16 @@ details:
     W6: "skills/keel-router/SKILL.md ('One live session per WU', the review table's fix row, the worker tables), references/worker-ops.md and references/checklists.md, with their .claude/skills mirrors; .claude/skills/project-router; .claude/agents/router.md if the read needs a tool line; scripts/router-worker.sh (status, or the watchdog's facts); scripts/router-guard.jq and .claude/settings.json (the status shape); .keel/config.toml (the two ceilings, if ruled settings); docs/decisions/router.html (DEC-43, DEC-44). Plain: docs/use-cases/router.yaml UC-ROUTE-1 and UC-ROUTE-6; docs/backlog/e-router-v2.yaml R53. Code: tests/suite/router.rs."
     W7: "scripts/router-guard.jq; .claude/agents/router.md; .claude/settings.json; skills/keel-router and .claude/skills/keel-router (the router posture section); docs/decisions/router.html (DEC-37, DEC-46 Amended rows); docs/use-cases/router.yaml UC-ROUTE-1 and UC-ROUTE-6. Code: tests/suite/router.rs."
     W8: "scripts/router-worker.sh (watchdog mode); scripts/router-guard.jq; docs/decisions/router.html (DEC-45, DEC-46 Amended rows); docs/use-cases/router.yaml UC-ROUTE-1 and UC-ROUTE-6. Code: tests/suite/router.rs."
+    W9: ".keel/config.toml ([router] keys); scripts/router-worker.sh (read_policy learns planner_effort and validates it); skills/keel-router and .claude/skills/keel-router (SKILL.md and the references that repeat the policy); .claude/skills/project-router; docs/architecture.html; docs/decisions/router.html (DEC-39 Amended row); docs/use-cases/router.yaml UC-ROUTE-5. Code: tests/suite/router.rs."
   commit-order: >-
     Parts 2, 3 and 4 are one branch and one owner commit, in that code order: W2 ports, W4 sites and scratch (the host
-    base decision), W3 packages (the registry follows W4's answer). W5, W6, W7 and W8 follow one at a time: each WU
-    branch is cut from the epic tip after the previous part merged, so no two parts edit the launcher, the guard or
-    the settings in parallel. W7 and W8 also touch the guard and settings; they land last, after W5 and W6's guard
-    shapes, so each guard edit is reviewed against the last one. W5 and W6 depend on W1's facts only, not on points 1
-    - 3; if the owner takes resume first, W5 and W6 go first, W2 - W4 follow, then W7 and W8.
+    base decision), W3 packages (the registry follows W4's answer). W9 follows that group and precedes W5: it edits
+    .keel/config.toml and the launcher's read_policy, which W5's resume flag builder reads, so writing the policy
+    once avoids teaching W5 the old key set. Then W5, W6, W7 and W8 follow one at a time: each WU branch is cut from
+    the epic tip after the previous part merged, so no two parts edit the launcher, the guard or the settings in
+    parallel. W7 and W8 also touch the guard and settings; they land last, after W5 and W6's guard shapes, so each
+    guard edit is reviewed against the last one. W5 and W6 depend on W1's facts only, not on points 1 - 3; if the
+    owner takes resume first, W5 and W6 go first, then W2 - W4, W9, W7 and W8.
   w5-resume:
     request: "Owner 2026-11-26: 'that rule is absolutely wrong, I DO want the worker to be able to resume, let's add that to the wsandbox to fix'. Reason: reuse saves tokens; a fresh session re-reads everything."
     rule-today: "scripts/router-worker.sh:24-27 (stop runs claude stop then claude rm; 'A stopped worker is never revived (DEC-46: a plain --bg --resume drops every launch flag)'); DEC-30, DEC-44, DEC-46; UC-ROUTE-5; keel-router SKILL.md:267, 282, 314-315 and references/worker-ops.md:146-149 (both copies); project-router Workers ('there is no resume'); tests/suite/router.rs:1985-1999, 2013-2030, 4758-4800."
