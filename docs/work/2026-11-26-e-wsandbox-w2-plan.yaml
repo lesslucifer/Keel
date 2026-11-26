@@ -73,7 +73,9 @@ details:
       One WU branch (wu/E-WSANDBOX/w2-ports) with three parts in code order: W2 ports, W4 sites and scratch, W3
       packages. The worker commits everything not rule-bearing (docs/work pair, docs/backlog, tests). The
       rule-bearing files are staged together and the owner runs one keel mr commit; the owner then re-gates on the new
-      tip and merges --no-ff into epic/E-WSANDBOX.
+      tip and merges --no-ff into epic/E-WSANDBOX. Review round 1's one blocker (the store move alone left the
+      package tree in the worktree) was fixed on the same branch: the corrected launcher, install page and
+      project-router facts are staged for a second owner keel mr commit, then the tip is re-gated again.
     staged-by-worker:
       - "scripts/router-worker.sh (allowLocalBinding, PNPM_HOME, registry.npmjs.org, the helper grant)"
       - "scripts/router-scratch.sh (new, and its rule_bearing entry in .keel/config.toml)"
