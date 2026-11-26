@@ -604,6 +604,7 @@ fn stub_claude(stub: &Path) {
         "#!/bin/sh\nS=$STUB_STATE\nprintf '%s ' \"$PWD\" >> \"$S/calls\"; printf '[%s]' \"$@\" >> \"$S/calls\"; echo >> \"$S/calls\"\n",
         "env | grep '^GIT_' >> \"$S/git-env\"\n",
         "env | grep '^PNPM_HOME=' >> \"$S/pnpm-env\"\n",
+        "env | grep '^pnpm_config_modules_dir=' >> \"$S/pnpm-env\"\n",
         "[ -s \"$S/sessions.json\" ] || echo '[]' > \"$S/sessions.json\"\n",
         "case \"$1\" in\n",
         "  agents) if [ -e \"$S/agents-ok\" ]; then k=$(cat \"$S/agents-ok\"); [ \"$k\" -gt 0 ] || { echo 'Error: no supervisor' >&2; exit 1; }; echo $((k - 1)) > \"$S/agents-ok\"; fi\n",
@@ -4381,19 +4382,36 @@ fn the_scratch_helper_refuses_a_path_outside_a_fresh_scratch_dir() {
     refuse(outside.path());
 }
 
-/// E-WSANDBOX.W3 (owner q3): pnpm's store lives outside the worker's worktree - the launcher's
-/// PNPM_HOME is a folder in the temp folder, and the sandbox allowWrite gains nothing for it.
+/// E-WSANDBOX.W3 (owner q3), corrected in review round 1: the whole pnpm package tree lives outside
+/// the worker's worktree, not just the content store - the launcher sets pnpm's modules dir under the
+/// temp folder and links the git-ignored app/node_modules at it, so a package's .vscode path is never
+/// materialised under the worktree, where the sandbox denies it. A real install is left alone, and the
+/// sandbox allowWrite gains nothing for any of it.
 #[test]
-fn launcher_gives_a_worker_a_private_pnpm_home_outside_its_worktree() {
+fn launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree() {
     let l = launcher();
     let t = tempfile::tempdir().unwrap();
+    let real = l.wt.join("app/node_modules");
+    std::fs::create_dir_all(&real).unwrap();
+    std::fs::write(real.join("keep.txt"), "keep").unwrap();
     let (ok, out) = l.run_env(&["spawn", "a", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
     assert!(ok, "{out}");
+    assert!(!std::fs::symlink_metadata(&real).unwrap().file_type().is_symlink(), "a real node_modules was replaced");
+    assert_eq!(std::fs::read_to_string(real.join("keep.txt")).unwrap(), "keep");
+    l.stop("a");
+    std::fs::remove_dir_all(&real).unwrap();
+    let (ok, out) = l.run_env(&["spawn", "b", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
     let env = std::fs::read_to_string(l.state.join("pnpm-env")).unwrap();
-    let want = format!("PNPM_HOME={}/keel-worker-pnpm", t.path().display());
-    assert!(env.lines().last() == Some(want.as_str()), "the worker's pnpm home is not the ruled one: {env:?}");
-    assert!(Path::new(&want["PNPM_HOME=".len()..]).is_dir(), "the launcher did not create the pnpm home");
-    let a = worker_argv(&l.state, "a");
+    let home = format!("PNPM_HOME={}/keel-worker-pnpm", t.path().display());
+    assert!(env.lines().any(|l| l == home), "the worker's pnpm store is not in the temp folder: {env:?}");
+    let line = env.lines().rev().find(|l| l.starts_with("pnpm_config_modules_dir=")).expect("the modules dir is not set");
+    let modules = Path::new(&line["pnpm_config_modules_dir=".len()..]);
+    assert!(modules.starts_with(t.path().join("keel-worker-pnpm")), "the package tree is not in the worker's temp folder: {modules:?}");
+    let link = l.wt.join("app/node_modules");
+    assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink(), "app/node_modules is not a link");
+    assert_eq!(std::fs::read_link(&link).unwrap(), modules, "the link does not point at the ruled modules dir");
+    let a = worker_argv(&l.state, "b");
     let settings: serde_json::Value = serde_json::from_str(&option(&a, "--settings")).unwrap();
     let allow = settings["sandbox"]["filesystem"]["allowWrite"].to_string();
     assert!(!allow.to_lowercase().contains("pnpm"), "a pnpm path widened the sandbox: {allow}");
