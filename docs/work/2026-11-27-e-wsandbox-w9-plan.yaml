@@ -90,7 +90,7 @@ details:
     committed config (as `review::policy` does), or the note records the pathspec/policy commit.
   open-items:
     - "A live DSH worker_spawn with an explicit effort is blocked by the host defect named above; the router's mapping is the skill's, proven by the text test (epic e2e records the live Claude Code spawn)."
-    - "DEC-39's Amended row and UC-ROUTE-5's effort sentence are written here (the epic plan's distillation-plan names W9); the rest of the epic's distillation stays at epic close."
+    - "DEC-39's choice is amended in place (the distill rule folds an amendment into the choice) and UC-ROUTE-5's effort sentence is rewritten here (the epic plan's distillation-plan names W9); the rest of the epic's distillation stays at epic close."
     - "No cr note, result report or WU sign-off in this worker's run: the router runs the one scheduled review round and the owner signs."
   gates:
     - "keel check raw; keel verify-doc on this pair and every changed doc."
