@@ -1,0 +1,75 @@
+artifact: wu-result
+status: ready
+id: E-CRLEVEL.W1
+epic: E-CRLEVEL
+title: "E-CRLEVEL.W1 result · A review schedule per level, the tool side"
+date: "2026-11-26"
+page: 2026-11-26-e-crlevel-w1-result.html
+outcome: >-
+  Step 1 of the owner's steps delivered (the code, its tests and the T2 docs); steps 2-5 (the rule text, the
+  reinstall, Keel's .keel/config.toml, the independent review and the sign-off) are the owner's and later workers'.
+  review::policy_in reads [review]'s shared schedule keys and two optional level tables, [review.wu] and
+  [review.epic], each taking only the schedule keys; per key the level's value wins, then [review]'s, then
+  review::Policy::DEFAULT. A value a level table writes above its level's max_rounds is refused naming the table and
+  key; an inherited one is lowered to it. A fourth key, fix_blockers_from (Policy gains Option<u32>, None in
+  DEFAULT): from that round on a round's findings, blockers too, are fixed under a fix-PASS, no round follows, and
+  the cap's waiver is refused. review::level reads the level from the target (main by name or refs/heads/<main>:
+  epic; any other: WU), so preflight 0·review-cap, keel notes write cr and keel mr confirm's review history pick the
+  same level with no new flag. cr/v1 is unchanged: a blocker fix-PASS writes the fields any fix-PASS writes; the
+  history row names the blockers it answers, read from the round's own note, and the files it changed; no
+  --accept-waiver is asked. A file with no level table and no fix_blockers_from gives both levels the schedule it
+  gave before: every existing schedule test passes unchanged in what it expects.
+deviations:
+  - "review::policy takes the main branch's name: policy(repo, target, main), as do Schedule::read and mr::review_history. Each caller passes [branches] main from the config it already loaded, the same value that names an epic's target, so the level and the target cannot disagree. The brief wrote policy(repo, target)."
+  - "policy_in returns both levels (review::Policies {wu, epic}); a bad value at one level refuses the file for both, at preflight, in the writer and staged. One rule, whichever level reads it."
+  - "A level table cannot unset a fix_blockers_from that [review] writes (TOML has no unset): it reaches both levels, lowered to each level's max_rounds. This follows the per-key rule; Keel writes the key in [review.wu] only, so the epic level keeps the cap's waiver."
+  - "UC-REV-2 amended too (the cap's waiver only below fix_blockers_from), as the plan's distillation-plan says; the brief named UC-REV-3 and UC-GATE-1. DEC-26's sentence on what the CLI reads from [review] amended, as its key list was stale."
+  - "The fix-PASS writer says 'answering its N blockers' and review::Fix carries the count; nothing of it is recorded on the note."
+  - "A [review.wu.deep] sub-table is refused as '[review.wu] deep is not a schedule key'."
+  - "The real-run example: a scratch-repo run of the built binary was denied by the session's auto-mode permission check and not retried; the page's example is the flow the integration tests and the e2e run through the real binary and hooks."
+evidence:
+  commits:
+    - "3a8993f2 test(E-CRLEVEL.W1): the schedule per level - [review.wu], [review.epic], fix_blockers_from; red on the old code"
+    - "9fe08a27 feat(E-CRLEVEL.W1): the review schedule per level - [review.wu], [review.epic] over [review], and fix_blockers_from"
+    - "5ea89219 docs(E-CRLEVEL.W1): the schedule per level and fix_blockers_from in UC-REV-3, UC-REV-2, UC-GATE-1 and DEC-50"
+    - "this result pair's commit"
+  red-first: >-
+    The 7 new integration and e2e tests, run against the epic tip's src (33b01f21) with the new tests: all 7 failed;
+    the 4 unchanged schedule tests run beside them passed.
+  unit: >-
+    src/review.rs over POLICIES (fix_blockers_from unset) and FB_POLICIES (1/1/1/1, 3/2/3/2, 4/1/4/2, 4/2/2/2,
+    5/2/2/4, 3/1/2/3): a_review_whose_target_is_main_is_an_epic_review_and_any_other_a_wu_review,
+    each_level_takes_its_table_over_review_over_the_default_per_key,
+    from_fix_blockers_from_on_every_finding_is_fixed_under_a_fix_pass_and_no_round_follows,
+    no_round_follows_a_round_from_fix_blockers_from_on_whatever_it_found (every schedule up to max_rounds 5),
+    the_history_tag_of_a_fix_pass_names_the_blockers_it_answers, and the E-CRLIMIT tests adapted (Policies,
+    Fix.blockers, the known-keys message). src/main.rs: the staged check's level cases.
+  integration: >-
+    tests/suite/verify_dod.rs, every expectation computed from the Sched each table writes (SHARED, WU_LEVEL and
+    EPIC_LEVEL derived from DEFAULTS): a_wu_review_follows_its_targets_wu_table_and_an_epic_review_mains_epic_table_neither_reaching_the_other,
+    a_wu_level_of_one_round_alone_ends_a_round_1_blocker_in_the_caps_waiver,
+    from_fix_blockers_from_on_a_rounds_blocker_is_fixed_under_a_fix_pass_with_no_round_and_no_cap_waiver (max 1 /
+    fb 1, max 3 / fb 2, fb 2 below fix_importants_from 4 in [review]),
+    a_target_lowering_its_wu_level_after_rounds_were_recorded_stops_the_review_at_the_new_cap,
+    a_bad_value_at_either_level_is_red_at_preflight_and_refused_by_the_writer_naming_its_table_and_key,
+    a_bad_level_value_staged_is_refused_by_the_pre_commit_hook_and_keel_mr_commit.
+  e2e: >-
+    tests/suite/review.rs epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver: main sets
+    [review.epic] EPIC; WUs A-C on the shared defaults; a staged [review.wu] max_rounds = 0 refused by the real
+    hook; WUs D and E on SET; [review.wu] max_rounds = 1: WU F's importants get a fix-PASS, WU G's blocker the cap's
+    waiver; fix_blockers_from = 1 added: WU H's blocker gets a fix-PASS, the cap's waiver refused, signed with no
+    --accept-waiver; the epic's round 1 announces EPIC's cap, the walk shows C, E and G waived, merged into main.
+  checks: "cargo fmt --check, cargo clippy --all-targets -- -D warnings, cargo test (162 unit; 458 suite, 14 ignored as before), keel verify-doc on the docs touched: green."
+distillation:
+  - "docs/use-cases/workflow.yaml: UC-REV-3 (the level rule, the level tables, per-key precedence, the clamp, the refusals, fix_blockers_from, the history row), UC-REV-2 (the cap's waiver only below fix_blockers_from), UC-GATE-1 (a staged level table)."
+  - "docs/decisions/review-docs.html: DEC-50 amended in place - the schedule per level and fix_blockers_from, the owner's request and rulings of 2026-11-26, the accepted cost, the rejected shapes; DEC-26's sentence; the page's scope line and date."
+  - "docs/decisions/decisions-index.yaml and docs/use-cases/use-cases-index.yaml: DEC-50's and UC-REV-3's titles, the scope lines."
+follow-ups:
+  - "E-CRLEVEL.W1, owner step 2: the rule text (skills/keel-code-review, keel-workflow, keel-router and its references, their .claude/skills copies, templates/config.toml, docs/architecture.html), the owner's keel mr commit; a fresh worker re-gates after each."
+  - "E-CRLEVEL.W1, owner steps 3-4: reinstall keel from the WU tip, then Keel's .keel/config.toml [review.wu] max_rounds = 1, fix_blockers_from = 1 and its [review] comment; a fresh worker re-gates."
+  - "E-CRLEVEL.W1, owner step 5: the independent read-only review of the rule text, the sign-off and the merge into the epic; this result is updated for steps 2-4 before it."
+  - "E-CRLEVEL close: distil and archive the plan and result pairs, the epic review on the current schedule."
+details:
+  files: [src/review.rs, src/gate.rs, src/notes.rs, src/mr.rs, src/main.rs, tests/common/mod.rs, tests/suite/verify_dod.rs, tests/suite/review.rs, docs/use-cases/workflow.yaml, docs/use-cases/use-cases-index.yaml, docs/decisions/review-docs.html, docs/decisions/decisions-index.yaml]
+  functions: "review::{Policy.fix_blockers_from, Policy::answers_all, Policy::importants_from, Level, level, Policies, Keys, keys, resolve, policy_in, policy, policy_at, round_follows, next_round, fixable, Fix.blockers, cap, next_step, tags, blockers_of, Schedule::read}; mr::review_history; notes::write_cr's fix-PASS line."
+  plan: "docs/work/2026-11-26-e-crlevel-plan.yaml (the one-part epic's plan pair, artifact [epic-plan, wu-plan])."
