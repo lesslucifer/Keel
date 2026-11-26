@@ -18,8 +18,9 @@ deviations:
     launcher then wrote node_modules through it with the owner's rights (cross-worktree package-tree poisoning).
     Fixed: app must be a real directory inside the worktree, checked before anything is created; the normal case
     still links, and a real node_modules is still never replaced."
-  - "The CR-scope change (scripts/ in code_paths, scripts/* in [review] modules) was reverted from this branch:
-    it would make the tip's config differ from the epic's at the merge gate. It moves to its own rule WU."
+  - "Owner addendum (kept): scripts/ joins code_paths and [review] modules gains scripts/* in the third owner
+    commit (f949aa34), so the cr binds the router scripts once this lands on the epic; a branch cannot change its
+    own gate, so it takes effect at the target, not on this WU's merge."
   - "Review round 1's blocker (owner commit 707bb5a2, cr note): moving only pnpm's content-addressable store
     still materialised the package tree (xmlbuilder 15.1.1's .vscode/launch.json) inside the worktree, which the
     sandbox denies at any depth. Fixed in the second owner rule commit (28674051): the launcher sets pnpm's
@@ -98,7 +99,7 @@ details:
       - "707bb5a2 (scripts/router-worker.sh, scripts/router-scratch.sh, .keel/config.toml, .claude/agents/worker.md, skills/keel-router/SKILL.md, .claude/skills/keel-router/SKILL.md, .claude/skills/project-router/SKILL.md, docs/install.html)"
       - "28674051 (scripts/router-worker.sh, docs/install.html, .claude/skills/project-router/SKILL.md)"
       - "f949aa34 (scripts/router-worker.sh, scripts/router-scratch.sh, .claude/skills/project-router/SKILL.md, .keel/config.toml)"
-      - "staged after the round-2 review (scripts/router-worker.sh, .keel/config.toml, .claude/skills/project-router/SKILL.md)"
+      - "staged after the round-2 review (scripts/router-worker.sh; the config and project-router facts stay as f949aa34 landed them)"
   mechanism: >-
     pnpm 11 reads pnpm_config_modules_dir from the environment (probed). The launcher points it at
     $TMPDIR/keel-worker-pnpm/modules-<cksum of the worktree>, exports PNPM_HOME beside it, and links the
