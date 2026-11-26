@@ -4272,7 +4272,9 @@ fn launcher_starts_a_worker_on_project_settings_alone_with_no_mcp_server() {
 
 /// E-ROUTER3.W8 (DEC-46, points 9 and 13): the worker's shell runs in Claude Code's sandbox, which
 /// writes its worktree, the shared git dir but its config and hooks, and cargo's cache, reads no ssh
-/// key or push channel, and reaches five hosts. What the sandbox does is probe P3's; this pins the JSON.
+/// key or push channel, and reaches the host base. What the sandbox does is probe P3's; this pins the JSON.
+/// E-WSANDBOX.W2 (owner q1): allowLocalBinding true, so the worker serves any port and address; the
+/// cost is the ruling's - it binds every interface and reaches every local listener.
 #[test]
 fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
     let l = launcher();
@@ -4285,6 +4287,7 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
             "enabled": true,
             "autoAllowBashIfSandboxed": true,
             "allowUnsandboxedCommands": false,
+            "allowLocalBinding": true,
             "filesystem": {
                 "allowWrite": [g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
                     "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"],
