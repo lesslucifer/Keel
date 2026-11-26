@@ -572,14 +572,28 @@ if [ -n "$review" ]; then set -- "$@" "Bash(git add)" "Bash(git add *)" "Bash(gi
 else set -- "$@" "Bash(keel notes write cr)" "Bash(keel notes write cr *)"; fi
 # the prompt follows a single-valued option: after a list option it would be read as a tool name
 set -- "$@" --permission-mode "$pm" "You are a fresh worker session. Read $f in full and do exactly what it says. When your work is finished, send one self-contained report by SendMessage to the router your brief names, then end your turn; you stay alive for follow-up tasks. First action: git rev-parse --show-toplevel must print $wt (if it prints anything else, report that and stop); then git branch --show-current, git log --oneline -6, git status --short. Your shell runs in a sandbox: give every network command a timeout (a host outside the sandbox makes it wait), and report a refusal or \"Operation not permitted\", never route around it."
-# E-WSANDBOX.W3 (owner q3): pnpm's store and virtual store live outside every worktree. pnpm's home
-# (PNPM_HOME; the default store is $PNPM_HOME/store) moves to a folder in the temp folder the worker's
-# shell may already write, so a package shipping a hard-coded deny (xmlbuilder 15.1.1's
-# .vscode/launch.json) unpacks outside the worktree, and the owner's ~/Library/pnpm is never touched.
+# E-WSANDBOX.W3 (owner q3), corrected in review round 1: moving the content-addressable store alone
+# is not enough - pnpm materialises the package tree (xmlbuilder 15.1.1's .vscode/launch.json) inside
+# node_modules, which the sandbox denies at any depth under the worktree (W1 finding d). So the whole
+# package tree moves: the launcher sets pnpm's modules dir outside the worktree (pnpm 11 reads
+# pnpm_config_modules_dir from the environment; probed in a scratch dir) and points the worktree's
+# git-ignored app/node_modules at it, so pnpm scripts, Node and Vite resolve through the link. PNPM_HOME
+# keeps the content store beside it and the owner's ~/Library/pnpm is never touched. Trade-off: Forge's
+# packager needs a real tree, so `pnpm make` stays an owner install; a worktree that already holds a
+# real app/node_modules is left alone, never replaced.
 tmp=${TMPDIR:-/tmp}
 PNPM_HOME=${tmp%/}/keel-worker-pnpm
 mkdir -p "$PNPM_HOME" || die "cannot create the worker's pnpm home $PNPM_HOME"
 export PNPM_HOME
+pnpm_modules=$PNPM_HOME/modules-$(printf '%s\n' "$wt" | cksum | cut -d' ' -f1)
+export pnpm_config_modules_dir=$pnpm_modules
+if [ -d "$wt/app" ]; then
+  if [ -e "$wt/app/node_modules" ] && [ ! -L "$wt/app/node_modules" ]; then
+    : # a real install is never replaced
+  else
+    ln -sfn "$pnpm_modules" "$wt/app/node_modules" || die "cannot link $wt/app/node_modules"
+  fi
+fi
 cd "$wt"
 rc=0; started=$("$C" "$@" 2>&1) || rc=$?
 lr=1; [ "$rc" -ne 0 ] || { listed && lr=0 || lr=$?; }
