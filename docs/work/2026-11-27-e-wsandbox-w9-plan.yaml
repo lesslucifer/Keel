@@ -1,0 +1,97 @@
+artifact: wu-plan
+status: ready
+id: E-WSANDBOX.W9
+epic: E-WSANDBOX
+title: "E-WSANDBOX.W9 plan: one effort policy, two host mappings"
+date: "2026-11-27"
+page: 2026-11-27-e-wsandbox-w9-plan.html
+requirement: >-
+  One host-neutral effort policy - a worker at low effort, a planner worker at high - is the only effort wording:
+  the `[router]` keys hold it, the Claude Code launcher maps the two roles to `--effort low|high` and refuses a
+  level outside `worker_efforts`, and the router passes the level explicitly on both hosts (Claude Code `--effort`,
+  DSH `worker_spawn`'s `effort`).
+maps-to: "The owner's ruling of 2026-11-26 (later workers low, planner workers high); UC-ROUTE-5 (amended); DEC-39 (amended)."
+expected: >-
+  The launcher's committed-policy pin shows `worker_efforts = ["low", "high"]`, `worker_default_effort = "low"` and
+  `planner_effort = "high"`, and a policy missing `planner_effort` or naming it outside the list is refused whole; a
+  spawn with `--role planner` carries `--effort high` and one with no role carries `--effort low` on the worker's
+  argv; `--effort medium` is refused by name; one skill states the policy with the same keys and no skill still
+  names medium as the worker default; the rule-bearing files are staged together for one owner `keel mr commit`.
+test-plan:
+  unit: >-
+    tests/suite/router.rs: the policy reader (via the launcher's refusals) accepts `planner_effort` in the flat
+    grammar, refuses a missing, repeated, malformed or out-of-list `planner_effort`, and refuses `--role` combined
+    with `--effort` or given an unknown role.
+  integration: >-
+    tests/suite/router.rs: the committed-policy pin shows the ruled `[router]` section; a worker spawn carries
+    `--effort low` and a planner spawn `--effort high` on the argv, in the run dir and on the `RUNNING` line; a
+    spawn asking for `medium` (or any level outside `worker_efforts`) is refused before any start; a text test reads
+    the project-router and both keel-router copies and finds the ruled key names and no medium default.
+  e2e: >-
+    In the probe clone after the owner commit (epic e2e): a worker spawn carries `--effort low` and a planner's
+    `--effort high` in its command line. A live DSH `worker_spawn` is the host preset's, a non-goal; the DSH mapping
+    is proven by the text test, and the host's current defect is named under `details.dsh-defect`.
+details:
+  chosen:
+    q1-key-shape: >-
+      Keep the flat grammar, one key per role: `worker_default_effort = "low"` (the worker role), a new
+      `planner_effort = "high"`, and `worker_efforts = ["low", "high"]`. The launcher's parser accepts only
+      `key = "word"` or a list, so one policy string would need a new grammar and still a second role. Both role keys
+      must sit in `worker_efforts`, checked like the default.
+    q3-medium: >-
+      The launcher refuses `medium` by name: it leaves `worker_efforts`, so the ruling is enforced, not advised. An
+      owner commit can widen the list again.
+  policy:
+    worker_model: "opus"
+    worker_efforts: ["low", "high"]
+    worker_default_effort: "low"
+    planner_effort: "high"
+    worker_permission_mode: "auto"
+    watchdog_model: "haiku"
+  role:
+    worker: "A worker whose deliverable is code, docs, a fix, a build, a check or a review: low."
+    planner: "A worker whose deliverable is a plan or a design: high. Reviews, builds, fixes and checks are workers, not planners; the old 'design, review and debugging' set is dropped, because a review is not planning."
+  mapping:
+    claude-code: >-
+      `scripts/router-worker.sh spawn <name> <worktree> <brief> <model> [--role worker|planner]`: the role picks the
+      policy's level and the launcher passes it as `--effort`. `--effort <level>` stays as the explicit form, and must
+      be in `worker_efforts`; giving `--role` and `--effort` together is refused. The launcher always passes
+      `--effort`.
+    dsh: >-
+      `worker_spawn` gets `effort` always, never omitted: `low` for a worker, `high` for a planner (omitting it takes
+      the route's `high` default). The policy's level names the effort id, so the two hosts read one policy.
+  dsh-defect: >-
+    Found while writing this WU: the harness on this host rejects a per-worker `effort` at `worker_spawn`, so the
+    documented DSH call cannot run live yet. A DSH defect, named here and not worked around in code; the text test
+    pins the skill wording until the host accepts it.
+  rule-bearing-map:
+    staged-for-one-owner-commit:
+      - ".keel/config.toml ([router] keys: low/high, planner_effort)"
+      - "scripts/router-worker.sh (read_policy learns planner_effort; spawn learns --role; refusals)"
+      - "skills/keel-router/SKILL.md and .claude/skills/keel-router/SKILL.md (the host-neutral rule and the mapping)"
+      - ".claude/skills/project-router/SKILL.md (Keel's policy and the spawn recipe)"
+      - "docs/architecture.html (the [router] keys row)"
+    committed-by-worker:
+      - "tests/suite/router.rs (not rule-bearing)"
+      - "docs/work/2026-11-27-e-wsandbox-w9-plan.html and .yaml"
+      - "docs/backlog/e-router-v2.yaml (row R54)"
+      - "docs/decisions/router.html (DEC-39 amended: not rule-bearing by config)"
+      - "docs/use-cases/router.yaml (UC-ROUTE-5: not rule-bearing by config)"
+  tests:
+    files: [tests/suite/router.rs]
+    launcher-pin: tests/suite/router.rs::launcher_refuses_unsafe_targets_and_runs_one_worker_per_name
+    policy-pin: tests/suite/router.rs::committed_worker_policy_is_low_for_a_worker_and_high_for_a_planner_in_auto_mode
+    role-argv: tests/suite/router.rs::launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validated_mode
+    skill-text: tests/suite/router.rs::one_effort_policy_is_stated_in_the_skills_as_the_launcher_enforces_it
+  backlog-row: >-
+    R54 in docs/backlog/e-router-v2.yaml: `keel mr confirm` and a by-hand `verify-dod` hash `code_diff_hash` from the
+    cwd checkout's working-tree `code_paths`, while the merge hook uses the target's committed config, so an owner can
+    sign a note the hook must reject and the error blames the code. Fix direction: `code_binds` reads the target's
+    committed config (as `review::policy` does), or the note records the pathspec/policy commit.
+  open-items:
+    - "A live DSH worker_spawn with an explicit effort is blocked by the host defect named above; the router's mapping is the skill's, proven by the text test (epic e2e records the live Claude Code spawn)."
+    - "DEC-39's Amended row and UC-ROUTE-5's effort sentence are written here (the epic plan's distillation-plan names W9); the rest of the epic's distillation stays at epic close."
+    - "No cr note, result report or WU sign-off in this worker's run: the router runs the one scheduled review round and the owner signs."
+  gates:
+    - "keel check raw; keel verify-doc on this pair and every changed doc."
+    - "keel preflight and keel verify-dod are owed after the owner commit (they bind the tip)."

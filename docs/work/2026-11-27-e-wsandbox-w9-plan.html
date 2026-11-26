@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b0864419f34851f0dfb2d7c">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-WSANDBOX.W9 plan: one effort policy</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-WSANDBOX.W9 · One effort policy for every host</h1>
+      <p>A worker starts at the level your ruling names, on either host, and a planner gets more than a builder.</p>
+      <div class="meta">T3 · WU plan · 2026-11-27 · Keel · its data file, 2026-11-27-e-wsandbox-w9-plan.yaml, sits beside this page</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">Workers start at one effort level read from one file, but the two hosts that start them name effort differently. The file still says medium by default and high for design, review and debugging, so a review runs at planner effort; on the newer host an omitted effort silently runs at high. On 26 November you ruled: later workers low, planner workers high. This unit writes that one policy and the mapping each host needs.</p>
+
+<h2 id="get">What you get</h2>
+<table data-c="get">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>A worker starts</td><td>Medium, unless the router remembers to ask</td><td>Low</td></tr>
+    <tr><td>A planner starts (its deliverable is a plan or a design)</td><td>High only when the router remembers</td><td>High, from the policy, on both hosts</td></tr>
+    <tr><td>Someone asks for medium</td><td>Accepted</td><td>Refused by name</td></tr>
+    <tr><td>The router starts a worker on the newer host</td><td>Effort left to the host, which means high</td><td>The policy's level, always passed</td></tr>
+  </tbody>
+</table>
+
+<h2 id="how">How it works</h2>
+<ul data-c="how">
+  <li>The config carries one level per role: low by default, high for a planner, and the allowed levels are low and high. A policy missing the planner level is refused whole.</li>
+  <li>On the older host the launcher takes a role, worker or planner, and passes the matching level to the tool. Any level outside the policy is refused before a session starts.</li>
+  <li>On the newer host the router passes the level as the worker's effort every time, because leaving it out means the host's high.</li>
+  <li>One skill holds the numbers; the generic router skill holds the host mechanics and points at it. No skill still calls medium the default.</li>
+</ul>
+
+<h2 id="approve">How you approve</h2>
+<p data-c="approve">One branch. I commit the tests, this pair, the decision note and the backlog row. The config, the launcher, both router skills and the architecture page are staged together for your one <code>keel mr commit</code>.</p>
+
+<h2 id="makes">What it makes</h2>
+<p data-c="makes">Every worker starts at the level your ruling names, a planner gets high without anyone remembering, and one policy explains both hosts.</p>
+
+<h2 id="decide">What you decide</h2>
+<table data-c="decide">
+  <thead><tr><th>Question</th><th>Answer first</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Which worker is a planner?</td><td>One whose deliverable is a plan or a design</td><td>A review is not planning, so reviews, builds and fixes stay low</td></tr>
+    <tr><td>What happens to medium?</td><td>Refused</td><td>The policy says low or high; your commit can widen the list again</td></tr>
+    <tr><td>The newer host's defect</td><td>Name it, do not patch around it</td><td>It rejects a per-worker effort today; the skill still says to pass it</td></tr>
+  </tbody>
+</table>
+
+<h2 id="know">How you'll know it worked</h2>
+<p data-c="know">A worker's command line carries low and a planner's carries high; a medium request is refused; the policy pin and a skill-text test agree with the config; the old medium wording is gone; <code>keel check</code> is green.</p>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
