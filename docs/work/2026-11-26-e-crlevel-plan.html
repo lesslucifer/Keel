@@ -10,13 +10,13 @@
     <div class="inner">
       <h1>E-CRLEVEL · A WU review and an epic review each get their own schedule</h1>
       <p>Your request of 26 November: a WU review gets one round; the epic review keeps today's schedule.</p>
-      <div class="meta">v2, with your rulings · 2026-11-26 · Keel · T3 epic plan · its data file, 2026-11-26-e-crlevel-plan.yaml, sits beside this page</div>
+      <div class="meta">v3, with your rulings · 2026-11-26 · Keel · T3 epic and WU plan, one part · its data file, 2026-11-26-e-crlevel-plan.yaml, sits beside this page</div>
     </div>
   </header>
   <main>
 
 <h2 id="problem">The problem</h2>
-<p data-c="problem">One review schedule serves every review. A WU review and an epic review get the same rounds. You want a shorter WU review: one round. The epic review stays as it is.</p>
+<p data-c="problem">One review schedule serves every review. A WU review and an epic review get the same rounds. You want a shorter WU review: one round, whose findings, blockers too, are fixed rather than left open. The epic review stays as it is.</p>
 
 <h2 id="for-you">What changes for you</h2>
 <table data-c="for-you">
@@ -24,10 +24,10 @@
   <tbody>
     <tr><td>A WU review runs</td><td>The one schedule</td><td>The WU settings; in Keel, one round</td></tr>
     <tr><td>That round finds medium findings</td><td>A second round may follow</td><td>They are fixed and recorded; no second round</td></tr>
-    <tr><td>That round finds a blocker</td><td>A second round follows</td><td>The review stops; you decide at sign-off</td></tr>
+    <tr><td>That round finds a blocker</td><td>A second round follows</td><td>In Keel, fixed and recorded too; no second round, no waiver</td></tr>
     <tr><td>An epic review runs</td><td>The one schedule</td><td>The epic settings; in Keel, unchanged</td></tr>
-    <tr><td>A project sets no level</td><td>One schedule</td><td>Exactly as today</td></tr>
-    <tr><td>A level's setting is wrong</td><td>Not possible</td><td>Refused at its commit, naming the level</td></tr>
+    <tr><td>A project sets nothing new</td><td>One schedule</td><td>Exactly as today</td></tr>
+    <tr><td>A setting is wrong</td><td>Checked for the shared settings</td><td>Refused at its commit, naming the level</td></tr>
   </tbody>
 </table>
 
@@ -35,8 +35,8 @@
 <ol data-c="example">
   <li>WU A's round 1 reads the whole work and finds two medium findings.</li>
   <li>The author fixes them and records the fix. No round 2 runs.</li>
-  <li>WU B's round 1 finds a blocker. The review stops, recorded as waived.</li>
-  <li>At sign-off you read the open blocker and accept the waiver, or not.</li>
+  <li>WU B's round 1 finds a blocker. The author fixes it and records the fix, the same way.</li>
+  <li>At sign-off you see B's fix and the files it changed. Nobody reviewed it again: that is the cost you accepted.</li>
   <li>The epic review then runs today's schedule.</li>
 </ol>
 
@@ -44,8 +44,9 @@
 <table data-c="terms">
   <tbody>
     <tr><td>Level</td><td>Which review it is. Work that merges into main gets an epic review; work that merges into an epic gets a WU review.</td></tr>
-    <tr><td>Shared settings</td><td>Today's three review settings. They apply to both levels unless a level sets its own.</td></tr>
-    <tr><td>Blocker, medium finding</td><td>Both must be fixed before merge; a medium one may be fixed without a new round.</td></tr>
+    <tr><td>Shared settings</td><td>Today's review settings. They apply to both levels unless a level sets its own.</td></tr>
+    <tr><td>Recorded fix</td><td>A fix written down against the round it answers, with no new review.</td></tr>
+    <tr><td>Blocker fix setting</td><td>New, off unless set: from the round it names, blockers too get a recorded fix.</td></tr>
   </tbody>
 </table>
 
@@ -53,48 +54,54 @@
 <div class="diagram" data-c="order">
 <pre class="mermaid">
 flowchart LR
-  W1["W1 The tool reads a schedule per level"] --> R["You reinstall keel from the epic"]
-  R --> W2["W2 The rules name the levels"]
+  C["Code and tests, reviewed"] --> T["Your rule-text commits"]
+  T --> R["You reinstall keel"]
+  R --> K["Your Keel rules-file commit"]
+  K --> S["You sign the WU"]
 </pre>
-<div class="caption">An arrow means "starts after".</div>
+<div class="caption">One part, W1. An arrow means "starts after".</div>
 </div>
 <table data-c="parts">
-  <thead><tr><th>Part</th><th>What it builds</th><th>What you get</th><th>After</th></tr></thead>
+  <thead><tr><th>Step</th><th>Who</th><th>What happens</th></tr></thead>
   <tbody>
-    <tr><td>W1 · The schedule per level</td><td>The tool reads a WU and an epic section, picks the level from where the work merges, and refuses bad values. Tests, the use case, the decision record.</td><td>Each level can have its own schedule; a project that sets none sees no change.</td><td>—</td></tr>
-    <tr><td>W2 · The rules name the levels</td><td>The instructions, the template and the architecture page name the two sections, with no numbers. Keel's rules file sets one round for WUs.</td><td>Your WU review is one round, from the first WU after this epic.</td><td>W1, and your reinstall</td></tr>
+    <tr><td>1</td><td>Workers</td><td>The tool learns the levels and the blocker fix setting, and refuses bad values; tests and records. The WU review runs.</td></tr>
+    <tr><td>2</td><td>You</td><td>Commit each rule-text change: the skills, the template, the architecture page. A worker re-checks after each.</td></tr>
+    <tr><td>3</td><td>You</td><td>Reinstall keel from the WU. The old one refuses the new settings.</td></tr>
+    <tr><td>4</td><td>You</td><td>Commit Keel's rules file last: one WU round, blockers fixed from round 1. A worker re-checks.</td></tr>
+    <tr><td>5</td><td>You</td><td>Read the independent review of the rule text, sign the WU and merge it; then the epic close.</td></tr>
   </tbody>
 </table>
-<p data-c="parts-note">The installed keel refuses a setting it does not know, so your rules-file commit needs the new keel first. W2 holds every rule file, so each of its commits is yours to type.</p>
+<p data-c="parts-note">This epic's own reviews run today's schedule: a setting applies once it is committed where the work merges, and step 4 lands it only when the WU merges.</p>
 
 <h2 id="decide">What you decided</h2>
 <table data-c="decide">
   <thead><tr><th>#</th><th>Question</th><th>Your ruling, 26 November</th></tr></thead>
   <tbody>
-    <tr><td>1</td><td>How are the levels written?</td><td><b>A WU section and an epic section</b>, each taking any of the three settings.</td></tr>
+    <tr><td>1</td><td>How are the levels written?</td><td><b>A WU section and an epic section</b>, each taking any schedule setting.</td></tr>
     <tr><td>2</td><td>Which value wins?</td><td><b>The level's, then the shared one, then the default</b>, one setting at a time.</td></tr>
-    <tr><td>3</td><td>What is one WU round?</td><td><b>The WU cap set to 1, alone.</b> Medium findings get a recorded fix. <b>Still open:</b> what a blocker gets. Your comment asks that it be fixed, not waived; that changes the waiver rule, so it waits for your choice.</td></tr>
-    <tr><td>4</td><td>How does the tool know the level?</td><td><b>From where the work merges.</b></td></tr>
-    <tr><td>5</td><td>Where does your value go?</td><td><b>Keel's own rules file</b>, in your last W2 commit, after you reinstall keel.</td></tr>
-    <tr><td>6</td><td>Do this epic's own WU reviews get one round?</td><td><b>No.</b> The setting is committed last.</td></tr>
+    <tr><td>3</td><td>What is one WU round?</td><td><b>The WU cap set to 1, with blockers fixed from round 1.</b> Every finding gets a recorded fix; no waiver.</td></tr>
+    <tr><td>4</td><td>A blocker fix nobody re-reviews?</td><td><b>Accepted.</b> You read it at sign-off. The epic keeps the cap's waiver.</td></tr>
+    <tr><td>5</td><td>How does the tool know the level?</td><td><b>From where the work merges.</b></td></tr>
+    <tr><td>6</td><td>How many parts?</td><td><b>One:</b> the rule text is small.</td></tr>
+    <tr><td>7</td><td>Where does your value go?</td><td><b>Keel's own rules file</b>, your last commit, after the reinstall.</td></tr>
   </tbody>
 </table>
 <p data-c="decide-note">Two more rulings are in the data file.</p>
 
 <h2 id="done">How you'll know it worked</h2>
 <ul data-c="done">
-  <li>In Keel, a WU review stops after round 1; an epic review runs today's schedule.</li>
-  <li>A project that sets no level behaves exactly as today.</li>
-  <li>A bad value at either level is refused at its commit and when a review starts.</li>
+  <li>In Keel, a WU review stops after round 1 and its blockers get a recorded fix; an epic review runs today's schedule.</li>
+  <li>A project that sets nothing new behaves exactly as today.</li>
+  <li>A bad value at any level is refused at its commit and when a review starts.</li>
   <li>Work reviewed before this epic still merges.</li>
-  <li>The epic test runs each level's schedule through the real hooks.</li>
+  <li>The epic test runs several schedules through the real hooks.</li>
 </ul>
 
 <h2 id="not">Not in this epic</h2>
 <ul data-c="not">
   <li>New defaults: one set serves both levels.</li>
   <li>A level for a single commit's review.</li>
-  <li>What reviewers look for, or the waiver and sign-off rules.</li>
+  <li>What reviewers look for, or your own waiver.</li>
   <li>Re-reviewing anything already merged.</li>
 </ul>
 <p data-c="agents-note">For agents: the details are in the data file.</p>
