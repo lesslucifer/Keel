@@ -1093,7 +1093,7 @@ fn cr_verdict(verdict: &str, reason: Option<&str>, blockers: u32, importants: u3
             format!("--reason given with --verdict {verdict}: this writer records no reason of a session's own"),
             &format!("drop --reason. The one waiver it writes is the review cap's, whose reason the tool writes; {OWNER_WAIVES}"),
         ),
-        ("PASS", None) if blockers + importants > 0 => {
+        ("PASS", None) if blockers > 0 || importants > 0 => {
             refuse("PASS claimed with verified blockers/importants".into(), "record FAIL, or fix the findings first")
         }
         ("PASS" | "FAIL", None) => Ok(CrWrite::Review),

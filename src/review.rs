@@ -423,10 +423,17 @@ pub(crate) fn next_round(earlier: &[Entry], p: &Policy, unchanged: &dyn Fn(&str)
     let what = if n > max {
         format!("no review round {n} runs: the cap is {max} rounds, and round {last} ran on {}", short(c))
     } else if let Some(f) = p.fix_blockers_from.filter(|_| p.answers_all(last)) {
-        format!(
-            "no review round {n} runs: from round {f} on (fix_blockers_from) a round's findings, blockers too, are fixed under a fix-PASS, and round {last} on {} is one",
-            short(c)
-        )
+        if then(note, last, p) == Then::FixPass {
+            format!(
+                "no review round {n} runs: from round {f} on (fix_blockers_from) a round's findings, blockers too, are fixed under a fix-PASS, and round {last} on {} is one",
+                short(c)
+            )
+        } else {
+            format!(
+                "no review round {n} runs: from round {f} on (fix_blockers_from) no round follows a round, and round {last} on {} counted no finding a fix-PASS could answer",
+                short(c)
+            )
+        }
     } else {
         format!("review round {n} runs only after round {last} found a blocker, and round {last} on {} found none", short(c))
     };
@@ -491,7 +498,7 @@ pub(crate) fn fixable(note: &CrNote, round: u32, p: &Policy) -> Result<(), Strin
     debug_assert!(from <= p.max_rounds, "policy_in keeps fix_importants_from within max_rounds: {p:?}");
     match (note.verdict.as_str(), note.blockers, note.importants) {
         ("PASS", ..) => Ok(()),
-        ("FAIL", b, i) if b + i > 0 && p.answers_all(round) => Ok(()),
+        ("FAIL", b, i) if (b > 0 || i > 0) && p.answers_all(round) => Ok(()),
         ("FAIL", 0, i) if i > 0 && round >= from => Ok(()),
         ("FAIL", 0, i) if i > 0 => Err(format!("round {round} found {i} importants; before round {from} importants need a new round")),
         ("FAIL", b, _) if b > 0 => Err(match p.fix_blockers_from {
@@ -615,7 +622,8 @@ pub(crate) fn cap(own: Option<&CrNote>, earlier: &[Entry], p: &Policy, tip: &str
     let max = p.max_rounds;
     match own {
         Some(n) if kind(n) == Kind::Round && then(n, round, p) == Then::Cap => Ok(cap_reason(max, n.blockers)),
-        Some(n) if kind(n) == Kind::Round && n.verdict == "FAIL" && n.blockers > 0 && p.answers_all(round) => Err((
+        // From fix_blockers_from on, then() hands a failed round's blockers to a fix-PASS: the cap never stops them.
+        Some(n) if kind(n) == Kind::Round && n.verdict == "FAIL" && n.blockers > 0 && then(n, round, p) == Then::FixPass => Err((
             format!(
                 "the cap's waiver is refused on {}: its review, round {round} of {max}, found {} blockers, and from round {} on (fix_blockers_from) a blocker is fixed under a fix-PASS, never waived by the cap",
                 short(tip),
