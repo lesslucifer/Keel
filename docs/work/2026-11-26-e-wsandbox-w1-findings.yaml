@@ -10,7 +10,8 @@ outcome: >-
   in the installed binary, below) or a probe in this worker's sandbox, except four live confirmations that need a
   launcher change or a port; those are owner steps in the probe clone. Two plan facts are corrected: a worktree's
   own settings.local.json cannot add hosts or loopback binding under the launcher, and R40's live check did run
-  (2026-11-12, all as expected). Each of the six open questions has a sharpened default; no ruling is made here.
+  (2026-11-12, all as expected). Each of the six open questions has a sharpened default; the owner ruled q1, q2,
+  q3, q5 and q6 on 2026-11-26 (details.rulings), q4 stays open.
 deviations:
   - "No WU plan pair: W1 changes no code or rule, and the epic plan's wu-summary is its plan (the brief's instruction; keel-plan names a WU plan before a WU's code). Reversible: a WU plan pair can be added before sign-off."
   - "The live probes of a widened sandbox (Unix socket dir, strictAllowlist, loopback binding) were not run: each needs a launcher --settings change or a port. They are owner steps in the probe clone (details.owner-steps)."
@@ -27,7 +28,10 @@ distillation: >-
   false); backlog R40 closes as run on 2026-11-12; R42 loses the local-settings cause; the plan's
   distillation-plan carries the rest.
 follow-ups:
-  - "The six rulings: the owner, on this page; then W2, W3, W4 as ruled (E-WSANDBOX)."
+  - "The q4 ruling (websites): the owner, on this page; then W2, W3, W4 as ruled, in one owner commit (q6 ruling) (E-WSANDBOX)."
+  - "Delete the 14 #[ignore] tests in tests/suite/notify_owner.rs (q2 ruling): a later part the router places (E-WSANDBOX)."
+  - "Review the router's and the watchdog's bounds in their own parts (owner comment 2026-11-26: this WU is workers only): the router and the owner add them to the epic plan (E-WSANDBOX)."
+  - "pnpm for workers (q3 ruling): registry.npmjs.org on the pinned list and xmlbuilder's .vscode folder handled (store outside the worktree, or another way): E-WSANDBOX.W3."
   - "Optional live confirmation of findings (c), (e) and (b): owner steps 1 and 2 in the probe clone (details.owner-steps), before W2 or W4 builds on them (E-WSANDBOX.W2, W4)."
   - "Backlog R40 to closed, R42's candidate causes trimmed, DEC-37/DEC-46 host-widening sentence corrected: E-WSANDBOX epic close (distillation-plan)."
   - "WebFetch is not gated by strictAllowlist (in-process tool); under auto the classifier still judges it: E-WSANDBOX.W4 decides a WebFetch deny on the worker or records a residual in R41."
@@ -133,6 +137,22 @@ details:
     q4-websites: {verified: "e (strictAllowlist in --settings ends per-call widening); local settings already cannot widen", unverified: "live run (owner step 1); WebFetch stays with the classifier", default: "Yes, pin it: strictAllowlist true in the launcher; a new site is your commit. WebFetch: deny it or record it.", example: "A Bash call with allowed_domains [registry.npmjs.org]: today auto may approve it, and what the worker read can then be sent there; with strictAllowlist the tool refuses it at once."}
     q5-scratch: {verified: "f (rules from --settings only; the grant skips the classifier)", unverified: "the helper's e2e", default: "The fixed helper on the grant, as planned; optionally an autoMode.environment line in the launcher with $defaults kept. Mode stays auto.", example: "A throwaway git repo under $TMPDIR may be judged risky by the classifier; classifier rules come only from the launcher, never from project files."}
     q6-commits: {verified: "W2, W3 and W4 all edit scripts/router-worker.sh", unverified: "none", default: "One owner commit per part, in build order on the one file; if ports stay off, W2 has no launcher change.", example: "Ports off and the list pinned: W4 is one launcher commit, W2 has none, and W3 can be dropped alone."}
+  rulings:
+    by: "owner, 2026-11-26, comments on this page"
+    q1-ports: "Yes: workers get local ports (allowLocalBinding true in the launcher), knowing it binds any interface and reaches every local listener (finding b)."
+    q2-ignored-tests: "Remove the 14 #[ignore] tests completely (still present at 652e91af and on main); W1 changes no code."
+    q3-packages: "Yes: workers may add packages with pnpm or cargo. cargo works today (crates.io, index.crates.io, static.crates.io listed; ~/.cargo caches writable). pnpm needs registry.npmjs.org listed and a fix for packages shipping a denied path (xmlbuilder's .vscode, the one known case)."
+    q4-websites: "Open. Clarified: the question is Bash allowed_domains, not WebSearch (server-side at Anthropic) or WebFetch (in-process, not gated by the list)."
+    q5-scratch: "Yes: scratch work is allowed. Its risk is a classifier refusal that stalls the worker, not damage (the sandbox confines $TMPDIR). Means: the fixed helper on the grant."
+    q6-commits: "All at once: one owner commit for W2, W3 and W4."
+  network:
+    probe: "2026-11-26, this worker: python connect to 127.0.0.1 ports 1 and 5432 -> PermissionError(1, 'Operation not permitted') both; no port bound."
+    allowlist: "Launcher allowedDomains: htmldoc.wfomobile.com, crates.io, index.crates.io, static.crates.io, github.com (scripts/router-worker.sh)."
+    with-local-binding: "bind and inbound on *:*, outbound to localhost:* (finding b); Unix sockets stay closed (finding c)."
+  vscode-why: "The hard-coded denies (finding d) cover files an unsandboxed program later reads or runs: editor tasks and launch configs (.vscode, .idea), git hooks and config, shell start-up files, .mcp.json. A sandboxed write there would run with the owner's rights later."
+  git:
+    fact: "The launcher's allowWrite holds the main checkout's git dir, so commit, branch, refs and notes from a worktree work (R40's commit d77f915; this WU's commits). denyWrite keeps the git dir's config, hooks, keel-hooks, info, commondir, config.worktree and every worktree admin dir's commondir, gitdir, config.worktree (backlog R33, DEC-37)."
+    unverified: "Which git command failed for the owner (owner comment 2026-11-26)."
   router-watchdog:
     asked: "Owner comment 2026-11-26 on the questions table: is there a sandbox or restriction on the router and the watchdog?"
     router: >-
@@ -148,7 +168,7 @@ details:
       (scripts/router-worker.sh, watchdog mode). Tools SendMessage and CronCreate only; the guard (router-guard.jq
       with watchdog_to) admits only CronCreate of the */5 tick and a SendMessage to its router. Its facts hook runs
       the launcher unsandboxed and checks each worktree's .git link before any git there (linked_ok).
-    scope: "Sandboxing either is not in E-WSANDBOX's scope; a new part or epic if the owner wants it."
+    scope: "Owner, 2026-11-26: this WU covers workers only; the router and the watchdog get their own WUs (not yet in the epic plan)."
   owner-steps:
     recipe: >-
       Probe clone /Users/nguyenvanluong/Documents/proj/misc/Keel-probe (project-router skill, 'Live probes'), run in

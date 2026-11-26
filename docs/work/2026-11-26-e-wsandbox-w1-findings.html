@@ -16,53 +16,65 @@
   <main>
 
 <h2 id="happened">What happened</h2>
-<p data-c="happened">The plan left seven points unproven. All are now settled from the tool's code or a test. Two plan facts were wrong: a folder's own settings file cannot widen a worker's websites or ports, and the live check of auto mode did run (12 November, passed).</p>
+<p data-c="happened">All seven unproven points are settled from the tool's code or a test. Two plan facts were wrong: a folder's own settings cannot widen websites or ports, and the auto-mode live check did run (12 November). You ruled five questions on 26 November; websites is open.</p>
 
-<h2 id="answers">Your six questions, each with an example</h2>
+<h2 id="answers">Your six questions</h2>
 <table data-c="answers">
-  <thead><tr><th>Question</th><th>Example</th><th>Suggested answer</th></tr></thead>
+  <thead><tr><th>Question</th><th>Example</th><th>Answer</th></tr></thead>
   <tbody>
-    <tr><td>A local port for a worker?</td><td>A worker starts the app's dev server: refused today. With the port switch on, it listens on every network address and can call every local service.</td><td><strong>No, for every worker.</strong> No "this machine only" limit exists.</td></tr>
-    <tr><td>The 14 skipped tests?</td><td>Each starts a fake Telegram server on a local port, which a worker may not open. A socket file in one named folder could replace the port, if the sender learns to use it.</td><td><strong>Your lane</strong> when an epic touches the sender.</td></tr>
-    <tr><td>Workers install packages?</td><td>Package xmlbuilder holds a <code>.vscode</code> folder. Inside the worker's folder that is always refused, so the install fails (the main case below).</td><td><strong>You install</strong>, unless part 3 proves the packages can live outside.</td></tr>
-    <tr><td>A website for one command?</td><td>A worker asks to reach the npm registry once. Today the reviewer may allow it, and the worker could send there what it read. Pinned, the tool refuses at once.</td><td><strong>Yes, pin the list.</strong> A new site is your commit.</td></tr>
-    <tr><td>Scratch work refused?</td><td>A worker makes a throwaway repo in its scratch folder, and the reviewer calls it risky. The project cannot tell the reviewer otherwise; only the launcher can.</td><td><strong>The fixed helper</strong>: one listed command the reviewer skips.</td></tr>
-    <tr><td>One commit or one per part?</td><td>Parts 2 to 4 all change the launcher. Ports off, list pinned: part 4 is one commit, part 2 has none, and part 3's can be dropped alone.</td><td><strong>One per part</strong>, in order.</td></tr>
+    <tr><td>A local port?</td><td>A dev server: refused today. See the network table.</td><td><strong>Ruled: yes</strong> (owner, 2026-11-26).</td></tr>
+    <tr><td>The 14 skipped tests?</td><td>Each needs a port.</td><td><strong>Ruled: remove them</strong> (owner, 2026-11-26), in a later part.</td></tr>
+    <tr><td>Workers add packages?</td><td>cargo works today. pnpm needs registry.npmjs.org listed, and xmlbuilder fails: it ships a <code>.vscode</code> folder.</td><td><strong>Ruled: yes, pnpm or cargo</strong> (owner, 2026-11-26). Part 3 fixes pnpm.</td></tr>
+    <tr><td>A website for one command?</td><td>Not WebSearch: a shell command (curl, pnpm) asks once for an unlisted site. The reviewer may allow it; the worker could then send there what it read.</td><td><strong>Open.</strong> Suggested: pin the list.</td></tr>
+    <tr><td>Scratch work refused?</td><td>No damage risk: the sandbox holds scratch. The risk is the reviewer refusing a harmless command, so the worker stalls.</td><td><strong>Ruled: allowed</strong> (owner, 2026-11-26), through the fixed helper.</td></tr>
+    <tr><td>One commit or one per part?</td><td>Parts 2 to 4 all change the launcher.</td><td><strong>Ruled: one commit</strong> (owner, 2026-11-26).</td></tr>
   </tbody>
 </table>
 
-<h2 id="router">The router and the watchdog: no sandbox, a guard</h2>
+<div class="callout" data-c="vscode"><strong>Why <code>.vscode</code> is refused:</strong> your editor runs what it says (tasks, launch setups) when you open the project, outside any sandbox. A worker writing there could run code with your rights. So the sandbox always refuses it in the worker's folder (tested), as it does <code>.idea</code> and <code>.git/hooks</code>; scratch is fine.</div>
+
+<h2 id="network">Network: what a worker can do</h2>
+<table data-c="network">
+  <thead><tr><th>A worker tries to</th><th>Today</th><th>Ports on</th></tr></thead>
+  <tbody>
+    <tr><td>Reach a listed site (github.com, crates.io)</td><td>Yes</td><td>Yes</td></tr>
+    <tr><td>Reach a site not listed</td><td>If the reviewer allows</td><td>Same</td></tr>
+    <tr><td>Serve on a port</td><td>No</td><td>Yes, any address; one on 0.0.0.0 is reachable from your network</td></tr>
+    <tr><td>Connect to a local service (a database, another session's proxy)</td><td>No (tested)</td><td>Yes, any port</td></tr>
+    <tr><td>WebSearch</td><td>Yes; it runs at Anthropic</td><td>Same</td></tr>
+    <tr><td>WebFetch</td><td>The reviewer judges</td><td>Same</td></tr>
+  </tbody>
+</table>
+
+<h2 id="git">Git from a worker's folder</h2>
+<ul data-c="git">
+  <li>The launcher lets a worker write the main checkout's <code>.git</code>, so commit, branch and notes work; this part's commit proves it.</li>
+  <li>Refused on purpose: that <code>.git</code>'s config and hooks, and the worker folders' link files.</li>
+  <li>Which command failed for you? Name one to test.</li>
+</ul>
+
+<h2 id="router">The router and the watchdog</h2>
 <ul data-c="router">
-  <li>Neither runs in a sandbox. Their limit is a guard checked on every tool call.</li>
-  <li>The router: 11 tools, a fixed list of plain commands, writes only to briefs and your message file. Its scripts run with your rights.</li>
-  <li>The watchdog: no shell or files, only its timer and messages to its router.</li>
+  <li>Neither runs in a sandbox; a guard on every tool call bounds them. The router runs fixed plain commands and writes only briefs and your message file; the watchdog only sends messages.</li>
+  <li>This part covers workers only (owner, 2026-11-26); they get their own parts.</li>
 </ul>
 
 <h2 id="checks">The plan's checks</h2>
 <ul data-c="checks">
-  <li>Every unproven point settled with code or output: <strong>met</strong>; live runs of the widened cases are your optional steps.</li>
-  <li>Every open question has a sharper default: <strong>met</strong>.</li>
-  <li>The doc check passes: <strong>met</strong>.</li>
+  <li>Unproven points settled, sharper defaults, doc check green: all <strong>met</strong>.</li>
 </ul>
-
-<h2 id="example">The main case, run for real</h2>
-<ol data-c="example">
-  <li>This worker wrote an empty file in a <code>.vscode</code> folder inside its folder: refused.</li>
-  <li>The same file in its scratch folder: allowed.</li>
-  <li>It bound a local socket in its scratch folder: refused.</li>
-</ol>
 
 <h2 id="differences">Differences from the plan</h2>
 <ul data-c="differences">
   <li>No separate part plan: this part changes no code.</li>
-  <li>This worker ran the tool's version command once, against its brief.</li>
+  <li>The tool's version command ran once, against the brief.</li>
 </ul>
 
-<h2 id="left">What is left, and who takes it</h2>
+<h2 id="left">What is left</h2>
 <ul data-c="left">
-  <li>Your six rulings; then parts 2 to 4 as ruled.</li>
+  <li>Your websites ruling; then parts 2 to 4 in one commit.</li>
+  <li>Removing the tests; the router and watchdog parts: the router places them.</li>
   <li>The stale backlog row and the wrong settings sentence: epic close.</li>
-  <li>Web page fetches: part 4 decides.</li>
 </ul>
 
   </main>
