@@ -23,7 +23,7 @@
   <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
   <tbody>
     <tr><td>Work needs a local port</td><td>You run it</td><td>The worker serves and connects on any address; it binds every interface and reaches every local listener — your accepted cost</td></tr>
-    <tr><td>A package is needed</td><td>You install it</td><td>pnpm or cargo, by the worker; pnpm's store sits outside its worktree</td></tr>
+    <tr><td>A package is needed</td><td>You install it</td><td>pnpm or cargo, by the worker; pnpm's packages sit outside its worktree</td></tr>
     <tr><td>A worker makes a scratch repo</td><td>The reviewer may refuse it</td><td>One fixed helper, on the grant</td></tr>
     <tr><td>A worker wants a website</td><td>You keep a list</td><td>No list and no lock: the reviewer decides each site</td></tr>
     <tr><td>The 14 switched-off tests</td><td>Never run</td><td>Deleted, nothing in their place</td></tr>
@@ -34,7 +34,7 @@
 <ul data-c="how">
   <li>The launcher's sandbox gains <code>allowLocalBinding</code>.</li>
   <li>The five hosts stay as the base because what an empty list does is still unproven, so <code>registry.npmjs.org</code> joins them; no lock is added, so the reviewer widens each call. A site it allows can receive what the worker read.</li>
-  <li>The launcher gives the worker a private pnpm home in the temp folder, so no package unpacks into the worktree's blocked <code>.vscode</code> path and your own store is never touched.</li>
+  <li>The launcher moves pnpm's store and its whole package tree into the temp folder and links the worktree's <code>app/node_modules</code> at it, so no package unpacks into the blocked <code>.vscode</code> path and your own store is never touched. Packaging (<code>pnpm make</code>) needs a real install.</li>
   <li>A new helper, <code>scripts/router-scratch.sh</code>, makes the throwaway repo; it refuses any path that is not a fresh temp dir it made itself. Mode stays auto; WebFetch stays with the reviewer and is recorded.</li>
 </ul>
 
@@ -55,7 +55,7 @@
 </table>
 
 <h2 id="know">How you'll know it worked</h2>
-<p data-c="know">The launcher's pin test shows the ruled sandbox keys, no lock, and the helper's grant and nothing wider; the helper's unit test refuses paths outside its own temp dir; no switched-off test is left in the notify suite; <code>keel check</code> is green. The live proofs are listed for the epic's e2e.</p>
+<p data-c="know">The launcher's pin test shows the ruled sandbox keys, no lock, and the helper's grant and nothing wider; the helper's unit test refuses paths outside its own temp dir; the 14 tests are gone; <code>keel check</code> is green. The live proofs are listed for the epic's e2e.</p>
 
   </main>
   <script type="module">
