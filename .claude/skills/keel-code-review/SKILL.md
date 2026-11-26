@@ -55,12 +55,14 @@ fleet again. It refuses on exactly:
   read) is missing, malformed, lacks the level's layer, or names another tip.
 - **`0·review-cap`** — the schedule (§5) has no such round: past
   `max_rounds`, a round after one from `fix_importants_from` on that found no
-  blocker, an earlier cr note on the branch that does not parse (it names the
-  commit), or a `[review]` on the target that the tool refuses (§5).
+  blocker, a round after one from `fix_blockers_from` on, or an earlier cr note
+  on the branch that does not parse (it names the commit). Or the target's
+  schedule cannot be read: a target that names no commit, a config git cannot
+  read, or one the tool refuses (§5).
 - **Nothing else**: no cr (this run writes it), no doc note, no `mr/v1` (the
   human signs last).
 
-On green it prints the round and its scope:
+On green it prints the round and its scope, by the review's level (§5):
 `review round <n> of <max_rounds> - scope: the whole range, <base>..<tip>`
 (rounds up to `whole_range_rounds`) or `… scope: the last fix, <since>..<tip>:
 this branch's own changes, …: <commands>; changed: <files>` (later rounds). Use
@@ -213,58 +215,72 @@ notes on the branch's own first-parent line (an epic never counts its WUs'),
 refuse any round the schedule does not reach, and the writer prints the next
 step after each round.
 
-Three settings in `[review]` of the target's committed `.keel/config.toml`
-shape the schedule; a branch never sets its own:
+The settings are read from the target's committed `.keel/config.toml`; a
+branch never sets its own. `[review]` holds the shared settings, and two
+optional tables, `[review.wu]` and `[review.epic]`, may set any of them for
+one **level**. A review whose target is the main branch (`[branches] main`, by
+name or as `refs/heads/<main>`) is an epic review; any other is a WU review.
+Preflight, the writer and the sign-off history read the level this one way.
+Per setting, the level's table wins, then `[review]`, then the default.
 
 | Setting | What it decides |
 |---|---|
 | `max_rounds` | the cap: no round runs past it |
 | `whole_range_rounds` | rounds up to this one review the whole range; later rounds only the last fix (§1) |
 | `fix_importants_from` | from this round on, importants with no blocker are fixed under a fix-PASS, and only a blocker earns another round |
+| `fix_blockers_from` | unset unless written. From this round on every counted finding, blockers too, is fixed under a fix-PASS: no round follows, and the cap's waiver is refused |
 
 What follows round `n`:
 
 | Round `n` found | Then |
 |---|---|
 | only nits | PASS; nits fixed after it under a fix-PASS |
-| importants, no blocker | before `fix_importants_from`: fix, round `n+1`; from it on: fix under a fix-PASS, done |
-| a blocker | before `max_rounds`: fix, round `n+1`; in round `max_rounds`: stop, the cap's WAIVED; the owner decides at sign-off |
+| importants, no blocker | before `fix_importants_from` and `fix_blockers_from`: fix, round `n+1`; from either on: fix under a fix-PASS, done |
+| a blocker | from `fix_blockers_from` on: fix under a fix-PASS, done; no waiver, and the owner reads the fix at sign-off. Before it (or with it unset), before `max_rounds`: fix, round `n+1`; in round `max_rounds`: stop, the cap's WAIVED; the owner decides at sign-off |
+| a FAIL with nothing counted (`keel check` red, say) | before `fix_importants_from` and `fix_blockers_from`: round `n+1`; else no round and no fix-PASS: only the owner's waiver |
 
-**The defaults** — a key the target does not set takes its value here. This
-is the only place the rules give them:
+**The defaults** — a setting no table sets takes its value here, at both
+levels. This is the only place the rules give them:
 
-| `max_rounds` | `whole_range_rounds` | `fix_importants_from` |
-|---|---|---|
-| 3 | 1 | 2 |
+| `max_rounds` | `whole_range_rounds` | `fix_importants_from` | `fix_blockers_from` |
+|---|---|---|---|
+| 3 | 1 | 2 | unset |
 
-That is: round 1 reviews the whole range, round 2 the last fix, and round 3
-runs only after a round-2 blocker.
-
-A set key is a whole number of 1 or more. `whole_range_rounds` or
-`fix_importants_from` set above `max_rounds` (set or default) is refused, and
-so is a `[review]` key other than these three, `modules` and `rubric`. A
-default above a set `max_rounds` is lowered to it. A refused `[review]` is red
-`0·review-cap` at preflight, refused by the writer, and refused staged by the
-pre-commit hook and `keel mr commit`; it never blocks the owner's sign-off.
+A written setting is a whole number of 1 or more that fits a 32-bit unsigned
+number, and not above its table's `max_rounds` (a level's own, else
+`[review]`'s, else the default). A value a level inherits above its
+`max_rounds` is lowered to it; a level cannot unset an inherited
+`fix_blockers_from`. The tool refuses, naming the table and the key: a value
+that breaks this; a `[review]` key other than the four, `modules` and
+`rubric`; a table under `[review]` other than `wu` and `epic`; a key in a
+level table that is not one of the four; a `[review]`, `review.wu` or
+`review.epic` that is not a table; and a config that does not parse. A bad
+value at either level refuses the schedule for both. A refused schedule is red
+`0·review-cap` at preflight and refused by the writer; staged, it is refused
+by the pre-commit hook and `keel mr commit`. It never blocks the owner's
+sign-off: `keel mr confirm` then tags the history's rounds by the defaults and
+says so.
 
 - **Fix-PASS**: after the fix is committed and its test and doc notes are
   written, `keel notes write cr --verdict PASS --fixes <reviewed commit>`. No
   reviewers run. The tool allows it only for the latest round, only for the
   findings the schedule fixes without a round (importants: from
-  `fix_importants_from`), and never on top of another fix-PASS when code
-  changed since it (a second fix needs a round: before `fix_importants_from`
-  the next round; from it on, where no round follows a round without a
-  blocker, only the owner's waiver — so write the fix-PASS only on the final
-  fix). It records
-  `fixes`, `round`, `fix_diff_hash` and `answers`, and the sign-off lists it
-  with the files changed since the reviewed commit. Only a session allowed to
-  write cr notes writes it.
+  `fix_importants_from`; every counted finding, blockers too: from
+  `fix_blockers_from`), and never on top of another fix-PASS when code
+  changed since it (a second fix needs a round: where one follows, the next
+  round; where none follows, only the owner's waiver — so write the fix-PASS
+  only on the final fix). It records
+  `fixes`, `round`, `fix_diff_hash` and `answers`, whatever it answers: the
+  blockers stay on the reviewed round's note. The sign-off lists it with the
+  blockers it answers and the files changed since the reviewed commit. Only a
+  session allowed to write cr notes writes it.
 - **A later commit that changes no code path** (the result report, the
   owner's skill commit) runs no reviewers and costs no round: it gets a
   fix-PASS answering the same round where the schedule allows one, even on
   top of a fix-PASS. Otherwise it gets the round preflight names. A failed
   round stays failed: a docs-only commit after it fixes nothing.
-- **The cap**: when round `max_rounds` fails with a blocker, the writer says
+- **The cap**: when round `max_rounds` fails with a blocker, below
+  `fix_blockers_from` or with it unset, the writer says
   `review cap reached`. On the same tip, run `keel notes write cr --verdict
   WAIVED`: the tool writes the reason (`review cap: <max_rounds> rounds, <b>
   blockers open`) and keeps the round's findings on the waiver. It is refused anywhere
