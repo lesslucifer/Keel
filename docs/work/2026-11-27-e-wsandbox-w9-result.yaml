@@ -67,5 +67,6 @@ details:
   gates:
     - "`keel verify-doc` green over all docs."
     - "`keel check` raw is red only on the `router::watch_*` class, each of which passes alone; lint green."
-    - "`keel preflight wu <tip> --target epic/E-WSANDBOX` is red only on `0·tree` (that flaky class); it printed review round 1 of 1, scope the whole range."
-    - "`keel verify-dod wu <tip> --target epic/E-WSANDBOX --no-receipt` is red on `1·notes` (no `cr` on this docs tip) and `8·manual-review`; the owner's waiver and sign-off are the next steps."
+    - "`keel preflight wu de99f27f --target epic/E-WSANDBOX` (the reviewed tip): red only on `0·tree` (the flaky `router::watch_*` class; each passes alone); it printed review round 1 of 1, scope the whole range."
+    - "`keel preflight wu <this docs tip> --target epic/E-WSANDBOX`: red on `0·tree` (the same class) and `0·review-cap` (round 1 ran on de99f27f and the cap is 1); the owner's waiver at sign-off is the route."
+    - "`keel verify-dod wu <this docs tip> --target epic/E-WSANDBOX --no-receipt`: red on `1·notes` (no `cr` on this docs tip) and `8·manual-review` only; the owner's waiver and sign-off are the next steps."
