@@ -16,7 +16,7 @@
   <main>
 
 <h2 id="happened">What happened</h2>
-<p data-c="happened">All seven unproven points are settled from the tool's code or a test. Two plan facts were wrong: a folder's own settings cannot widen websites or ports, and the auto-mode live check did run (12 November). You ruled five questions on 26 November; websites is open.</p>
+<p data-c="happened">All seven unproven points are settled from the tool's code or a test. Two plan facts were wrong: a folder's own settings cannot widen websites or ports, and the auto-mode live check did run (12 November). You ruled all six on 26 November.</p>
 
 <h2 id="answers">Your six questions</h2>
 <table data-c="answers">
@@ -25,7 +25,7 @@
     <tr><td>A local port?</td><td>A dev server: refused today. See the network table.</td><td><strong>Ruled: yes</strong> (owner, 2026-11-26).</td></tr>
     <tr><td>The 14 skipped tests?</td><td>Each needs a port.</td><td><strong>Ruled: remove them</strong> (owner, 2026-11-26), in a later part.</td></tr>
     <tr><td>Workers add packages?</td><td>cargo works today. pnpm needs registry.npmjs.org listed, and xmlbuilder fails: it ships a <code>.vscode</code> folder.</td><td><strong>Ruled: yes, pnpm or cargo</strong> (owner, 2026-11-26). Part 3 fixes pnpm.</td></tr>
-    <tr><td>A website for one command?</td><td>Not WebSearch: a shell command (curl, pnpm) asks once for an unlisted site. The reviewer may allow it; the worker could then send there what it read.</td><td><strong>Open.</strong> Suggested: pin the list.</td></tr>
+    <tr><td>A website for one command?</td><td>Not WebSearch: a shell command (curl, pnpm) asks once for an unlisted site. The reviewer may allow it; the worker could then send there what it read.</td><td><strong>Ruled: no list; the reviewer decides each site</strong> (owner, 2026-11-26).</td></tr>
     <tr><td>Scratch work refused?</td><td>No damage risk: the sandbox holds scratch. The risk is the reviewer refusing a harmless command, so the worker stalls.</td><td><strong>Ruled: allowed</strong> (owner, 2026-11-26), through the fixed helper.</td></tr>
     <tr><td>One commit or one per part?</td><td>Parts 2 to 4 all change the launcher.</td><td><strong>Ruled: one commit</strong> (owner, 2026-11-26).</td></tr>
   </tbody>
@@ -35,11 +35,10 @@
 
 <h2 id="network">Network: what a worker can do</h2>
 <table data-c="network">
-  <thead><tr><th>A worker tries to</th><th>Today</th><th>Ports on</th></tr></thead>
+  <thead><tr><th>A worker tries to</th><th>Today</th><th>As ruled (owner, 2026-11-26)</th></tr></thead>
   <tbody>
-    <tr><td>Reach a listed site (github.com, crates.io)</td><td>Yes</td><td>Yes</td></tr>
-    <tr><td>Reach a site not listed</td><td>If the reviewer allows</td><td>Same</td></tr>
-    <tr><td>Serve on a port</td><td>No</td><td>Yes, any address; one on 0.0.0.0 is reachable from your network</td></tr>
+    <tr><td>Reach a site from a shell command</td><td>Listed ones (github.com, crates.io); others if the reviewer allows</td><td>The reviewer decides every site</td></tr>
+    <tr><td>Serve on a port</td><td>No</td><td>Yes, any port and address; one on 0.0.0.0 is reachable from your network</td></tr>
     <tr><td>Connect to a local service (a database, another session's proxy)</td><td>No (tested)</td><td>Yes, any port</td></tr>
     <tr><td>WebSearch</td><td>Yes; it runs at Anthropic</td><td>Same</td></tr>
     <tr><td>WebFetch</td><td>The reviewer judges</td><td>Same</td></tr>
@@ -50,8 +49,7 @@
 <ul data-c="git">
   <li>The launcher lets a worker write the main checkout's <code>.git</code>, so commit, branch and notes work; this part's commit proves it.</li>
   <li>Refused on purpose: that <code>.git</code>'s config and hooks, and the worker folders' link files.</li>
-  <li>Which command failed for you? Name one to test.</li>
-</ul>
+  </ul>
 
 <h2 id="router">The router and the watchdog</h2>
 <ul data-c="router">
@@ -72,7 +70,7 @@
 
 <h2 id="left">What is left</h2>
 <ul data-c="left">
-  <li>Your websites ruling; then parts 2 to 4 in one commit.</li>
+  <li>Parts 2 to 4 as ruled, in one commit.</li>
   <li>Removing the tests; the router and watchdog parts: the router places them.</li>
   <li>The stale backlog row and the wrong settings sentence: epic close.</li>
 </ul>

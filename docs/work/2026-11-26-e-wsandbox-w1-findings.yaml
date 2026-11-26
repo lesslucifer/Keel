@@ -10,8 +10,8 @@ outcome: >-
   in the installed binary, below) or a probe in this worker's sandbox, except four live confirmations that need a
   launcher change or a port; those are owner steps in the probe clone. Two plan facts are corrected: a worktree's
   own settings.local.json cannot add hosts or loopback binding under the launcher, and R40's live check did run
-  (2026-11-12, all as expected). Each of the six open questions has a sharpened default; the owner ruled q1, q2,
-  q3, q5 and q6 on 2026-11-26 (details.rulings), q4 stays open.
+  (2026-11-12, all as expected). Each of the six open questions has a sharpened default; the owner ruled all six
+  on 2026-11-26 (details.rulings).
 deviations:
   - "No WU plan pair: W1 changes no code or rule, and the epic plan's wu-summary is its plan (the brief's instruction; keel-plan names a WU plan before a WU's code). Reversible: a WU plan pair can be added before sign-off."
   - "The live probes of a widened sandbox (Unix socket dir, strictAllowlist, loopback binding) were not run: each needs a launcher --settings change or a port. They are owner steps in the probe clone (details.owner-steps)."
@@ -28,7 +28,8 @@ distillation: >-
   false); backlog R40 closes as run on 2026-11-12; R42 loses the local-settings cause; the plan's
   distillation-plan carries the rest.
 follow-ups:
-  - "The q4 ruling (websites): the owner, on this page; then W2, W3, W4 as ruled, in one owner commit (q6 ruling) (E-WSANDBOX)."
+  - "W2, W3, W4 as ruled, in one owner commit (q6 ruling) (E-WSANDBOX)."
+  - "Owner comment 2026-11-26 on the git section, 'workers can make changes to that worktrees and other worktrees of the same repo': open; it changes DEC-37 and the worker file guard, so it is the owner's and the router's to place (E-WSANDBOX)."
   - "Delete the 14 #[ignore] tests in tests/suite/notify_owner.rs (q2 ruling): a later part the router places (E-WSANDBOX)."
   - "Review the router's and the watchdog's bounds in their own parts (owner comment 2026-11-26: this WU is workers only): the router and the owner add them to the epic plan (E-WSANDBOX)."
   - "pnpm for workers (q3 ruling): registry.npmjs.org on the pinned list and xmlbuilder's .vscode folder handled (store outside the worktree, or another way): E-WSANDBOX.W3."
@@ -142,7 +143,8 @@ details:
     q1-ports: "Yes: workers get local ports (allowLocalBinding true in the launcher), knowing it binds any interface and reaches every local listener (finding b)."
     q2-ignored-tests: "Remove the 14 #[ignore] tests completely (still present at 652e91af and on main); W1 changes no code."
     q3-packages: "Yes: workers may add packages with pnpm or cargo. cargo works today (crates.io, index.crates.io, static.crates.io listed; ~/.cargo caches writable). pnpm needs registry.npmjs.org listed and a fix for packages shipping a denied path (xmlbuilder's .vscode, the one known case)."
-    q4-websites: "Open. Clarified: the question is Bash allowed_domains, not WebSearch (server-side at Anthropic) or WebFetch (in-process, not gated by the list)."
+    q4-websites: "No pinned list: the approver (auto mode's reviewer) decides each site ('No need listed sites, we let's the approver decides'). So no strictAllowlist; the question was Bash allowed_domains, not WebSearch (server-side at Anthropic) or WebFetch (in-process, not gated by the list). Accepted cost: a site the reviewer allows can receive what the worker read (finding e). How the launcher's allowedDomains changes (kept as a base, emptied) is W4's; unverified what an empty list does."
+    q1-ports-detail: "Serve on any port; connect to a local service on any port (owner comments on the network table)."
     q5-scratch: "Yes: scratch work is allowed. Its risk is a classifier refusal that stalls the worker, not damage (the sandbox confines $TMPDIR). Means: the fixed helper on the grant."
     q6-commits: "All at once: one owner commit for W2, W3 and W4."
   network:
