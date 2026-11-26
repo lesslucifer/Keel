@@ -118,15 +118,34 @@ distillation-plan:
   - "T1, rule-bearing: docs/architecture.html's config row names the level tables (W2); the skills are shipped rules, edited in W2, not distilled."
   - "At the epic close: the plan and result pairs archived to docs/.archive/ with keel notes write doc --distill naming the docs above."
 open-questions:
-  - "How are the levels written? As two tables under the review settings, [review.wu] and [review.epic], each taking any of the three keys; the keys in [review] itself stay the shared values. Rejected: six prefixed names (wu_max_rounds ...): more keys, nothing groups them, and a typo reads like a new key."
-  - "Which value wins? Per key: the level's, then the shared one, then the default. Rejected: a level table replacing the whole shared schedule, which would make one key in it reset the other two to the defaults."
-  - "What does a WU's one round mean? [review.wu] max_rounds = 1 alone. Round 1 reads the whole range; the other two keys are lowered to 1, so importants with no blocker are fixed under a fix-PASS; a blocker in round 1 ends in the cap's waiver, which the owner accepts at sign-off or not. Alternative if the owner wants it: max_rounds = 2 with fix_importants_from = 1, so only a blocker earns a second round."
-  - "How does the tool know the level? From the review's target: main is an epic review, anything else a WU review. preflight, the cr writer and the sign-off history already have the target, so they cannot disagree and no flag is added. The cr writer takes no level today; it finds its target from the branch (a wu/ branch: its epic; else main) or --target. Rejected: a --level flag on the writer (every caller must pass it, and it can contradict preflight's)."
-  - "Where does the owner's value go? Keel's own .keel/config.toml, [review.wu] max_rounds = 1, in W2's last commit, the owner's keel mr commit --as vuluu, after reinstalling keel from the epic tip. templates/config.toml shows both tables commented out, with no value, so new projects keep one schedule until they choose."
-  - "A shared value above a level's own cap: refused? No: lowered to it, as a default is. Only a value written in the level's own table above that level's max_rounds is refused. So the one key max_rounds = 1 works whatever the shared settings are."
-  - "What does the cr note record? Nothing new. The level is read from the target every time, as the schedule is; old notes stay valid, and a note whose round or scope differs from the level's count shows the history's existing 'the note records ...' suffix."
-  - "Do this epic's own WU reviews get one round? No: a setting applies once it is committed on the branch the work merges into, and W2 commits it last. W1 and W2 follow the current schedule; the installed keel counts them, no hand count. The first WU with one round is the first one cut after this epic merges."
+  - "What does a WU's one round do with a blocker? Open. The owner's comment of 2026-11-26 on the blocker row says the review stops, but its findings are fixed and no blocker stays open, since no other review follows. Today's rule ends a blocker in the cap's last round in the cap's waiver, accepted or not at sign-off. Proposed default until the owner chooses: the plan as written (the cap's waiver)."
 details:
+  rulings:
+    - >-
+      2026-11-26, owner (htmldoc comments on this plan's first version, 5aa4e61c: "all open questions as
+      recommended"). Each as the plan recommended. The levels are two tables, [review.wu] and [review.epic], each
+      taking any of the three keys; [review]'s own keys stay the shared values (rejected: six prefixed names such as
+      wu_max_rounds - more keys, nothing groups them, a typo reads like a new key). Per key, the level's value wins,
+      then the shared one, then the default (rejected: a level table replacing the whole shared schedule). A WU's one
+      round is [review.wu] max_rounds = 1 alone: round 1 reads the whole range, the other two keys are lowered to 1,
+      importants with no blocker are fixed under a fix-PASS (what a blocker gets is still open, above). The level is
+      read from the review's target: main is an epic review, anything else a WU review; preflight, the cr writer and
+      the sign-off history already have the target (rejected: a --level flag on the writer - every caller must pass
+      it and it can contradict preflight's). The owner's value goes in Keel's own .keel/config.toml, [review.wu]
+      max_rounds = 1, in W2's last commit, the owner's keel mr commit --as vuluu, after reinstalling keel from the
+      epic tip carrying W1; templates/config.toml shows both tables commented out, with no value. This epic's own WU
+      reviews follow the current schedule, counted by the installed keel; the first WU with one round is the first
+      cut after this epic merges.
+    - >-
+      2026-11-26, owner, the two points not on the page, as recommended. One bad-value rule: a shared or default
+      value above a level's own max_rounds is lowered to it, as a default is today; only a value written in the
+      level's own table above that level's max_rounds is refused. cr/v1 is unchanged: the note records no level, old
+      notes stay valid, and a note whose round or scope differs from the level's count shows the history's existing
+      'the note records ...' suffix; no migration.
+  open-comments: >-
+    Two of the owner's htmldoc comments of 2026-11-26 change the design and are left open, the plan unchanged on
+    them, for the owner's choice through the router: the blocker in a WU's one round (open question above), and
+    "combine W2 into W1" on the build-order diagram (the WU split).
   installed-keel: >-
     The installed keel (~/.cargo/bin/keel, built 2026-11-24, E-CRLIMIT's: it knows whole_range_rounds and refuses
     an unknown [review] key) refuses [review.wu] at preflight, in the cr writer and staged at pre-commit and keel mr
