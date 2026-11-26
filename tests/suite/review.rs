@@ -1,5 +1,7 @@
-//! E-CRLIMIT epic e2e (E-CRCAP's before it): the review schedule - the target's `[review]` settings,
-//! the default schedule when it sets none - ends in a fix-PASS or an owner-accepted waiver, and both merge
+//! E-CRLEVEL epic e2e (E-CRLIMIT's and E-CRCAP's before it): the review schedule per level - a WU's
+//! review follows its target's `[review.wu]` over `[review]`, an epic's main's `[review.epic]` over
+//! `[review]`, the default schedule where neither sets a key - ends in a fix-PASS or an owner-accepted
+//! waiver, and from `fix_blockers_from` on a blocker too is fixed under a fix-PASS; all of it merges
 //! through the real hooks of a repo `keel init` set up (UC-REV-2, UC-REV-3, UC-GATE-1).
 compiled!();
 
@@ -95,7 +97,11 @@ const RESULT: &str = "<html><p>done</p></html>";
 /// The schedule the epic commits for its later WUs: each setting one above its default, so none is a
 /// default value whatever the defaults are, and a valid default schedule (no key above max_rounds)
 /// gives a valid one.
-const SET: Sched = Sched { max: DEFAULTS.max + 1, whole: DEFAULTS.whole + 1, from: DEFAULTS.from + 1 };
+const SET: Sched = Sched { max: DEFAULTS.max + 1, whole: DEFAULTS.whole + 1, from: DEFAULTS.from + 1, fb: None };
+
+/// The epic level main sets: each setting two above its default, fix_blockers_from at its cap, so no
+/// field is a default value and none is SET's.
+const EPIC: Sched = Sched { max: DEFAULTS.max + 2, whole: DEFAULTS.whole + 2, from: DEFAULTS.from + 2, fb: Some(DEFAULTS.max + 2) };
 
 /// WU `name` cut off the epic: its code, its test, its result report, and the test and doc notes on
 /// its first commit. Returns that commit and the WU's test judgment.
@@ -208,6 +214,30 @@ fn blockers_wu(p: &Path, name: &str, s: Sched) -> String {
     cap
 }
 
+/// WU `name` under schedule `s`, whose fix_blockers_from is 1: round 1 finds a blocker, the cap's
+/// waiver is refused, a fix-PASS answers it, and the sign-off lists it - the blocker it answers and
+/// the files it changed - and signs with no --accept-waiver; merged.
+fn blocker_fixed_wu(p: &Path, name: &str, s: Sched) {
+    assert_eq!(s.fb, Some(1), "{s:?}");
+    let (first, tests) = start_wu(p, name);
+    let base = git(p, &["merge-base", "epic/e", "HEAD"]);
+    assert!(text(&ok(preflight(p, name))).contains(&s.announce(1, &base, "", &first)), "{s:?}");
+    let blocker = format!(r#"[{{"location": "src/{name}.py:2", "claim": "{name}() is wrong", "severity": "blocker", "evidence": "e"}}]"#);
+    let o = ok(cr(p, &["--verdict", "FAIL", "--findings", &blocker]));
+    assert!(text(&o).contains(&format!("--verdict PASS --fixes {}", &first[..10])) && !text(&o).contains("review cap reached"), "{}", text(&o));
+    refused(&cr(p, &["--verdict", "WAIVED"]), &["waiver is refused", "fix_blockers_from"]);
+    let fixed = fix(p, name, 2, &tests);
+    refused(&preflight(p, name), &["0·review-cap", &s.no_round(1), &format!("--fixes {first}")]);
+    ok(cr(p, &["--verdict", "PASS", "--fixes", &first]));
+    assert_eq!(note(p, "cr", &fixed)["answers"].as_object().map(|a| a.len()), Some(2), "cr/v1 as it is");
+    red_only_on_8(&keel(p, &["verify-dod", "wu", &format!("wu/e/{name}")]));
+    let t = text(&ok(keel(p, &["mr", "confirm", "wu", "--as", "vu"])));
+    let row =
+        format!("[fix-PASS of round 1 on {}; answers 1 blockers (src/{name}.py:2: {name}() is wrong); no reviewers ran; changed: src/{name}.py]", &first[..10]);
+    assert!(t.contains(&row) && !t.contains("--accept-waiver"), "{t}");
+    merge(p, name);
+}
+
 #[test]
 fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver() {
     let (d, k) = (TempDir::new().unwrap(), TempDir::new().unwrap());
@@ -230,7 +260,8 @@ fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver()
         })
         .map(|l| format!("{l}\n"))
         .collect();
-    write(p, ".keel/config.toml", &cfg);
+    // main sets the epic level; the epic branch inherits it, and it never reaches a WU review.
+    write(p, ".keel/config.toml", &format!("{cfg}{}", EPIC.table("review.epic")));
     let key = k.path().join("owner");
     ok(run("ssh-keygen", k.path(), &["-q", "-t", "ed25519", "-N", "", "-f", "owner"], ""));
     ok(keel(p, &["mr", "setup", "--as", "vu", "--key", key.to_str().unwrap()]));
@@ -242,7 +273,8 @@ fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver()
     common::doc_pair(p, "docs/work/e-plan.html", "epic-plan", "<html><p>plan</p></html>");
     commit(p, "epic plan");
 
-    // The default values (no schedule key). WU A - round 1 finds only nits; the fix gets a fix-PASS.
+    // The default values (no shared key, no WU level: main's epic level never reaches a WU review).
+    // WU A - round 1 finds only nits; the fix gets a fix-PASS.
     let (a1, a_tests) = start_wu(p, "a");
     let a_base = git(p, &["merge-base", "epic/e", "HEAD"]);
     assert!(text(&ok(preflight(p, "a"))).contains(&DEFAULTS.announce(1, &a_base, "", &a1)));
@@ -273,15 +305,33 @@ fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver()
     let o = run("git", p, &["commit", "-qm", "a bad schedule"], "");
     assert!(!o.status.success() && text(&o).contains(&format!("whole_range_rounds = {}", SET.max + 1)) && text(&o).contains("fix ->"), "{}", text(&o));
     assert_eq!(git(p, &["rev-parse", "HEAD"]), before, "nothing landed");
+    // A bad level value is refused at its commit too.
+    write(p, ".keel/config.toml", &format!("{cfg}[review.wu]\nmax_rounds = 0\n"));
+    git(p, &["add", "-A"]);
+    let o = run("git", p, &["commit", "-qm", "a bad level"], "");
+    assert!(!o.status.success() && text(&o).contains("[review.wu] max_rounds = 0") && text(&o).contains("fix ->"), "{}", text(&o));
+    assert_eq!(git(p, &["rev-parse", "HEAD"]), before, "nothing landed");
     write(p, ".keel/config.toml", &with(SET.lines().trim_end()));
     commit(p, "the epic's review schedule");
     // WUs D and E, cut after it, follow it.
     importants_wu(p, "d", SET);
     let cap_e = blockers_wu(p, "e", SET);
 
-    // The epic: its own round 1 on main's default values (its WUs' rounds are theirs), the walk shows
-    // WUs C and E waived, then main.
-    let wus = ["a", "b", "c", "d", "e"];
+    // The epic sets a WU level of one round: WU F's importants get a fix-PASS, WU G's blocker the cap's waiver.
+    let shared = std::fs::read_to_string(p.join(".keel/config.toml")).unwrap();
+    write(p, ".keel/config.toml", &format!("{shared}[review.wu]\nmax_rounds = 1\n"));
+    commit(p, "a WU level of one round");
+    let one = SET.capped(1);
+    importants_wu(p, "f", one);
+    let cap_g = blockers_wu(p, "g", one);
+    // It adds fix_blockers_from = 1: WU H's round-1 blocker is fixed under a fix-PASS.
+    write(p, ".keel/config.toml", &format!("{shared}[review.wu]\nmax_rounds = 1\nfix_blockers_from = 1\n"));
+    commit(p, "a WU level whose blockers are fixed");
+    blocker_fixed_wu(p, "h", Sched { fb: Some(1), ..one });
+
+    // The epic: its own round 1 on main's epic level (its WUs' rounds are theirs; the epic branch's
+    // [review.wu] and SET never reach it), the walk shows WUs C, E and G waived, then main.
+    let wus = ["a", "b", "c", "d", "e", "f", "g", "h"];
     let mut archived: Vec<String> = vec!["docs/work/e-plan.html".into(), "docs/work/e-plan.yaml".into()];
     for w in wus {
         archived.push(format!("docs/work/{w}-result.html"));
@@ -296,19 +346,19 @@ fn epic_e2e_the_review_schedule_ends_in_a_fix_pass_or_an_owner_accepted_waiver()
         env!("CARGO_BIN_EXE_keel"),
         p,
         &["notes", "write", "test"],
-        &format!(r#"{{"e2e":{{"files":[{}],"covers":"a to e, through the schedule"}}}}"#, e2e_files.join(",")),
+        &format!(r#"{{"e2e":{{"files":[{}],"covers":"a to h, through the schedule per level"}}}}"#, e2e_files.join(",")),
     ));
     let mut distill: Vec<String> = vec!["docs/work/e-plan.html=docs/use-cases/review.html".into()];
     distill.extend(wus.iter().map(|w| format!("docs/work/{w}-result.html=docs/use-cases/review.html")));
     ok(keel(p, &[&["notes", "write", "doc"][..], &distill.iter().flat_map(|d| ["--distill", d.as_str()]).collect::<Vec<_>>()].concat()));
     let e_base = git(p, &["merge-base", "main", "HEAD"]);
-    assert!(text(&ok(keel(p, &["preflight", "epic", "epic/e"]))).contains(&DEFAULTS.announce(1, &e_base, "", &e)), "main sets no schedule");
+    assert!(text(&ok(keel(p, &["preflight", "epic", "epic/e"]))).contains(&EPIC.announce(1, &e_base, "", &e)), "main's epic level");
     ok(cr(p, &["--verdict", "PASS"]));
     assert_eq!(note(p, "cr", &e)["round"], 1);
     let o = keel(p, &["verify-dod", "epic", "epic/e"]);
     red_only_on_8(&o);
     let t = text(&o);
-    assert!(t.contains("WAIVED 7·walk") && t.contains(&format!("3·review: {cap_c}")) && t.contains(&format!("3·review: {cap_e}")), "{t}");
+    assert!(t.contains("WAIVED 7·walk") && [&cap_c, &cap_e, &cap_g].iter().all(|c| t.contains(&format!("3·review: {c}"))), "{t}");
     ok(keel(p, &["mr", "confirm", "epic", "--as", "vu", "--report", "docs/.archive/e-result.html"]));
     git(p, &["switch", "-q", "main"]);
     ok(run("git", p, &["merge", "--no-ff", "-m", "merge epic e", "epic/e"], ""));

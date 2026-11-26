@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b07f32b9f34851f0dfb2cb2">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-CRLEVEL.W1 result: a review schedule per level</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-CRLEVEL.W1 result · A review schedule per level, the tool side</h1>
+      <p>The tool now runs one schedule for WU reviews and another for epic reviews, and can fix a blocker without another round.</p>
+      <div class="meta">T3 · WU result · 2026-11-26 · Keel · its data file, 2026-11-26-e-crlevel-w1-result.yaml, sits beside this page · the plan is <a href="2026-11-26-e-crlevel-plan.html">here</a></div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="happened">What happened</h2>
+<p data-c="happened">Steps 1 to 4 are done. A review now reads the settings of its level: the WU settings when the work merges into an epic, the epic settings when it merges into main. Each setting falls back to the shared one, then to the default. A new setting, off unless set, lets a round's blockers get a recorded fix with no new round and no waiver. A project that sets nothing new runs exactly as before. This WU's own reviews ran on the epic's settings, the defaults; Keel's new WU setting applies from the first WU after this epic merges.</p>
+
+<h2 id="checks">How you'll know it worked</h2>
+<table data-c="checks">
+  <thead><tr><th>Check</th><th>Met?</th></tr></thead>
+  <tbody>
+    <tr><td>In Keel, a WU review stops after round 1 and its blockers get a recorded fix; an epic review runs today's schedule.</td><td>Met in every test; Keel's own setting is committed.</td></tr>
+    <tr><td>A project that sets nothing new behaves exactly as today.</td><td>Met: every earlier schedule test passes unchanged.</td></tr>
+    <tr><td>A bad value at any level is refused at its commit and when a review starts.</td><td>Met, naming the level and the setting.</td></tr>
+    <tr><td>Work reviewed before this epic still merges.</td><td>Met: the review record keeps its fields.</td></tr>
+    <tr><td>The epic test runs several schedules through the real hooks.</td><td>Met: eight WUs on shared, WU and epic settings.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">The main case, as the tests run it</h2>
+<p>The epic sets the WU level to one round, with blockers fixed from round 1.</p>
+<ol data-c="example">
+  <li>WU H's round 1 finds a blocker. The tool says: fix it and record the fix.</li>
+  <li>The author asks for the cap's waiver. The tool refuses: this blocker gets a fix, not a waiver.</li>
+  <li>The author fixes it. A second round is refused, naming the recorded fix.</li>
+  <li>The fix is recorded. The merge check reads it as a pass.</li>
+  <li>At sign-off you see the fix, the blocker it answers and the file it changed. You sign with no waiver to accept.</li>
+  <li>The epic's own review then follows main's epic settings, not the WU ones.</li>
+</ol>
+<p>The tests run these steps through the real tool and hooks; a hand run was blocked by a permission check.</p>
+
+<h2 id="differences">Differences from the plan</h2>
+<ul data-c="differences">
+  <li>The level and the merge target come from the same main-branch name, so they always agree.</li>
+  <li>A bad value at one level refuses the whole rules file, for both levels.</li>
+  <li>A level cannot switch off the blocker fix setting when the shared settings turn it on. Keel sets it for WUs only, so the epic keeps its waiver.</li>
+  <li>The waived-review use case was updated too, as the plan's records list says.</li>
+  <li>Review round 1 found that huge finding counts could overflow into a waiver. Fixed, with two smaller points.</li>
+</ul>
+
+<h2 id="left">What is left, and who takes it</h2>
+<ul data-c="left">
+  <li>Steps 2 and 4 are your commits de3d5779 and 79ad7bdb, both re-checked and green.</li>
+  <li>Step 5: a review worker records the last fix, then your sign-off and the merge.</li>
+  <li>Three wording points from the rule-text review, and one about a detached checkout, go to a backlog row.</li>
+</ul>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

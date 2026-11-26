@@ -1093,7 +1093,7 @@ fn cr_verdict(verdict: &str, reason: Option<&str>, blockers: u32, importants: u3
             format!("--reason given with --verdict {verdict}: this writer records no reason of a session's own"),
             &format!("drop --reason. The one waiver it writes is the review cap's, whose reason the tool writes; {OWNER_WAIVES}"),
         ),
-        ("PASS", None) if blockers + importants > 0 => {
+        ("PASS", None) if blockers > 0 || importants > 0 => {
             refuse("PASS claimed with verified blockers/importants".into(), "record FAIL, or fix the findings first")
         }
         ("PASS" | "FAIL", None) => Ok(CrWrite::Review),
@@ -1220,7 +1220,7 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
     let code_diff_hash = code_diff_hash(repo, cfg, &base, &tip)?;
     // The schedule exactly as preflight reads it (review::Schedule, one place for both).
     let schedule = || {
-        review::Schedule::read(repo, &r.id.base, &tip, &r.target, &cfg.code_paths)
+        review::Schedule::read(repo, &r.id.base, &tip, &r.target, &cfg.branches.main, &cfg.code_paths)
             .or_else(|(what, fix)| refuse(what.trim_start_matches("keel: ").to_string(), &fix))
     };
     let fixes = flag("--fixes").or_else(|| args.contains(&"--fixes").then_some(""));
@@ -1254,7 +1254,8 @@ fn write_cr(repo: &Path, cfg: &Config, r: Range, args: &[&str]) -> Result<(), St
                 )
             })?;
             let fix = review::fix_pass(own.as_ref(), &s.earlier, &sha, &s.policy, |c| s.unchanged(c)).or_else(|(what, fix)| refuse(what, &fix))?;
-            let said = format!("fix-PASS of round {} on {}: no reviewers run, no new round", fix.round, short(&sha));
+            let blockers = if fix.blockers > 0 { format!(", answering its {} blockers", fix.blockers) } else { String::new() };
+            let said = format!("fix-PASS of round {} on {}{blockers}: no reviewers run, no new round", fix.round, short(&sha));
             let schedule = ScheduleFields {
                 round: Some(fix.round),
                 fix_diff_hash: Some(self::code_diff_hash(repo, cfg, &sha, &tip)?),
@@ -1519,6 +1520,10 @@ mod tests {
         for (v, r) in [("WAIVED", "  ruling \n"), ("WAIVED", "cap"), ("WAIVED", ""), ("PASS", "x"), ("FAIL", "x"), ("FAIL", "")] {
             let e = cr_verdict(v, Some(r), 0, 0).unwrap_err();
             assert!(e.contains("refused") && e.contains("--reason") && e.contains("fix ->"), "{v} {r:?}: {e}");
+        }
+        // E-CRLEVEL.W1 review round 1, B1 (sibling): counts whose sum passes u32 never wrap into a PASS.
+        for (b, i) in [(u32::MAX, 1), (1, u32::MAX), (u32::MAX, u32::MAX)] {
+            assert!(cr_verdict("PASS", None, b, i).is_err(), "({b}, {i})");
         }
         let e = cr_verdict("PASS", None, 1, 0).unwrap_err();
         assert!(e.contains("refused") && e.contains("fix ->"), "{e}");
