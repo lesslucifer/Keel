@@ -283,6 +283,7 @@ in another skill.
 | Mechanism | Claude Code | DSH |
 |---|---|---|
 | Dispatch | `<launcher> spawn <name> <worktree> <brief> <model>` (standard); `Agent` with a name and an explicit model only where the posture is not enforced | `worker_spawn` with the worktree as its workspace and the brief as its prompt; the name is its handle |
+| Effort | the project policy's level for the role - a worker `low`, a planner `high` - mapped by the launcher's `--role worker\|planner` to `--effort` | the same level in `worker_spawn`'s `effort`, always given for a worker `low` and a planner `high`: omitting it takes the route's `high` |
 | Follow-up | `SendMessage` to its name: a steer while busy, the next task while idle | `worker_send` queues one turn, which runs after its current one |
 | Report | its `SendMessage` to you (a subagent: its `SubagentHandback`), one self-contained report | its final transcript message, read with `worker_output` at every wake and before every ask; where the project ships an inbox script (`<inbox>`), also a short post: `sh <inbox> post <name> REPORT "<summary>"` prints `POSTED id=…`, your armed `<inbox> watch` prints it and `<inbox> consume <id>` acks it |
 | Fleet list | `ListAgents` (a subagent: the session's roster); the launcher's CLI behind it | `worker_list` |
@@ -341,7 +342,11 @@ in another skill.
   travels as a `SendMessage`: an answer, a clarification, a stop or the next
   task of the same WU; its text is recorded in the worker's transcript only.
 - **Spawn every worker and review subagent with the model and effort from
-  the project's policy (project-router); the effort may be its default**.
+  the project's policy (project-router names the keys). The effort follows the
+  role: a worker `low`, a planner `high`, where a planner's deliverable is a
+  plan or a design while a review, build, fix or check is a worker's. Every
+  host is told explicitly: `spawn --role`, or `worker_spawn`'s `effort`, never
+  omitted because omitting it takes the host's default.**
   Never let one inherit your session's model or effort (an `Agent` subagent
   takes only the model).
 - Brief (you write it, on every host): worktree/branch/tip, rulings, what to

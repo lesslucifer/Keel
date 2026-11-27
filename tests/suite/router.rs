@@ -833,31 +833,33 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
 
     // E-SEED2.W7 (DEC-39): the policy is [router] in .keel/config.toml as committed at HEAD; anything
     // the launcher's narrow reader does not accept refuses the run and starts nothing
-    let ok_policy = "[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n";
+    let ok_policy = "[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n";
     let mut policy_refusals = vec![(None, "absent".to_string())];
     for (bad, what) in [
         ("code_paths = [\"src/\"]\n", "no [router]"),
-        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\n", "missing key"),
-        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"max\"\n", "default not in list"),
-        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"ultracode\"]\nworker_default_effort = \"medium\"\n", "unknown level"),
-        ("[router]\nworker_model = opus\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n", "unquoted"),
-        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\" \"high\"]\nworker_default_effort = \"medium\"\n", "list without comma"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\nplanner_effort = \"high\"\n", "missing worker_default_effort"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\n", "missing planner_effort"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"max\"\nplanner_effort = \"high\"\n", "default not in list"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"max\"\n", "planner not in list"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"ultracode\"]\nworker_default_effort = \"low\"\nplanner_effort = \"low\"\n", "unknown level"),
+        ("[router]\nworker_model = opus\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n", "unquoted"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\" \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n", "list without comma"),
         (&format!("{ok_policy}worker_model = \"opus\"\n"), "repeated key"),
         (&format!("{ok_policy}worker_extra = \"x\"\n"), "unknown key"),
         (
-            "[router]\nworker_model = \"opus\"\n[other]\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n",
+            "[router]\nworker_model = \"opus\"\n[other]\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n",
             "key outside the section",
         ),
         (
-            "[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\n[other]\nworker_default_effort = \"medium\"\n",
+            "[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\n[other]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n",
             "key after another section",
         ),
         (&ok_policy.replace('\n', "\r\n"), "CRLF"),
         (&ok_policy.replace("worker_model = ", "worker_model\t=\t"), "tabs around ="),
         (&ok_policy.replace("\"opus\"", "'opus'"), "single quotes"),
-        ("[router]\nworker_model = \"opus\"\nworker_efforts = []\nworker_default_effort = \"medium\"\n", "empty array"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = []\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n", "empty array"),
         (&ok_policy.replace("\"high\"]", "\"high\",]"), "trailing comma"),
-        (&ok_policy.replace("[\"medium\", \"high\"]", "[\n  \"medium\",\n  \"high\",\n]"), "multi-line array"),
+        (&ok_policy.replace("[\"low\", \"high\"]", "[\n  \"low\",\n  \"high\",\n]"), "multi-line array"),
         (&format!("{ok_policy}[router.x]\ny = 1\n"), "[router.x]"),
         (&format!("{ok_policy}[[router]]\n"), "[[router]]"),
         (&format!("{ok_policy}[ router ]\n"), "spaced header"),
@@ -866,15 +868,15 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
         (&format!("{ok_policy}  [router]\n"), "indented second header"),
         (&format!("{ok_policy}[router]\n"), "duplicate section"),
         (
-            "[router]\nworker_model = \"opus\"\n[review]\nx = 1\n[router]\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n",
+            "[router]\nworker_model = \"opus\"\n[review]\nx = 1\n[router]\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n",
             "split section",
         ),
         (&ok_policy.replace("[router]\n", "[router]\t\n"), "trailing tab on header"),
         (&ok_policy.replace("[router]\n", "[router] \n"), "trailing space on header"),
         (&ok_policy.replace("\"opus\"", "\"--dangerously-skip-permissions\""), "model starting with -"),
         (&ok_policy.replace("\"opus\"", "\"4opus\""), "model starting with a digit"),
-        (&ok_policy.replace("worker_default_effort = \"medium\"", "worker_default_effort = \"-medium\""), "effort starting with -"),
-        ("[router]\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n", "missing worker_model"),
+        (&ok_policy.replace("worker_default_effort = \"low\"", "worker_default_effort = \"-low\""), "effort starting with -"),
+        ("[router]\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n", "missing worker_model"),
         (&ok_policy.replace("[router]\n", "[router]# c\n"), "no space before the header's comment"),
         (&format!("{ok_policy}\t[router]\n"), "tab-indented second header"),
         (&format!("{ok_policy}[\trouter]\n"), "tab inside a second header"),
@@ -882,21 +884,25 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
         (&ok_policy.replace("worker_model", "  worker_model"), "indented worker_model"),
         (&ok_policy.replace("worker_default_effort", "  worker_default_effort"), "indented worker_default_effort"),
         (&ok_policy.replace("worker_efforts", "  worker_efforts"), "indented worker_efforts"),
+        (&ok_policy.replace("planner_effort", "  planner_effort"), "indented planner_effort"),
         (&ok_policy.replace("\"opus\"", "\"opus\" x"), "junk after worker_model"),
-        (&ok_policy.replace("= \"medium\"\n", "= \"medium\" x\n"), "junk after worker_default_effort"),
+        (&ok_policy.replace("= \"low\"\n", "= \"low\" x\n"), "junk after worker_default_effort"),
+        (&ok_policy.replace("planner_effort = \"high\"\n", "planner_effort = \"high\" x\n"), "junk after planner_effort"),
         (&ok_policy.replace("\"high\"]", "\"high\"] x"), "junk after worker_efforts"),
         (&ok_policy.replace("worker_model = ", "worker_model  =  "), "two spaces around = (model)"),
         (&ok_policy.replace("worker_default_effort = ", "worker_default_effort  =  "), "two spaces around = (default)"),
+        (&ok_policy.replace("planner_effort = ", "planner_effort  =  "), "two spaces around = (planner)"),
         (&ok_policy.replace("worker_efforts = ", "worker_efforts  =  "), "two spaces around = (efforts)"),
         (&ok_policy.replace("worker_efforts = ", "worker_efforts= "), "no space before = (efforts)"),
-        (&format!("{ok_policy}worker_default_effort = \"medium\"\n"), "repeated worker_default_effort"),
-        (&format!("{ok_policy}worker_efforts = [\"medium\", \"high\"]\n"), "repeated worker_efforts"),
+        (&format!("{ok_policy}worker_default_effort = \"low\"\n"), "repeated worker_default_effort"),
+        (&format!("{ok_policy}planner_effort = \"high\"\n"), "repeated planner_effort"),
+        (&format!("{ok_policy}worker_efforts = [\"low\", \"high\"]\n"), "repeated worker_efforts"),
         (&ok_policy.replace("\"opus\"", "\"opus x\""), "model with a space"),
         (&ok_policy.replace("\"opus\"", "\"opUs\""), "model with a capital"),
-        (&ok_policy.replace("= \"medium\"\n", "= \"medium high\"\n"), "default with a space"),
-        (&ok_policy.replace("[\"medium\", \"high\"]", "[\"medium high\"]"), "list entry with a space"),
-        (&ok_policy.replace("\"high\"]", "\"high medium\"]"), "later list entry with a space"),
-        (&ok_policy.replace("\"medium\", \"high\"", "\"medium\",  \"high\""), "two spaces after a comma"),
+        (&ok_policy.replace("= \"low\"\n", "= \"low high\"\n"), "default with a space"),
+        (&ok_policy.replace("[\"low\", \"high\"]", "[\"low high\"]"), "list entry with a space"),
+        (&ok_policy.replace("\"high\"]", "\"high low\"]"), "later list entry with a space"),
+        (&ok_policy.replace("\"low\", \"high\"", "\"low\",  \"high\""), "two spaces after a comma"),
         (&ok_policy.replace("\"high\"]", "\"below\"]"), "level word below"),
         (&ok_policy.replace("\"high\"]", "\"highest\"]"), "level word highest"),
     ] {
@@ -906,51 +912,65 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
         l.commit_config(config.as_deref());
         let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus"]);
         assert!(
-            !ok && out.contains("no worker policy: [router] worker_model / worker_efforts / worker_default_effort in .keel/config.toml at HEAD of"),
+            !ok && out
+                .contains("no worker policy: [router] worker_model / worker_efforts / worker_default_effort / planner_effort in .keel/config.toml at HEAD of"),
             "{what}: {out}"
         );
         assert_eq!(l.starts("q"), 0, "{what}: started a worker");
     }
 
     // an uncommitted edit, even staged, cannot widen the committed policy
-    l.commit_config(Some("[router]   # comment\nworker_model = \"opus\"  # trailing\n\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n[next]\nx = 1\n"));
-    std::fs::write(l.main.join(".keel/config.toml"), "[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"max\"]\nworker_default_effort = \"max\"\n")
-        .unwrap();
+    l.commit_config(Some("[router]   # comment\nworker_model = \"opus\"  # trailing\n\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n[next]\nx = 1\n"));
+    std::fs::write(
+        l.main.join(".keel/config.toml"),
+        "[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"max\"]\nworker_default_effort = \"max\"\nplanner_effort = \"max\"\n",
+    )
+    .unwrap();
     git(&l.main, &["add", ".keel"]);
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
     assert!(!ok && out.contains("model must be opus"), "{out}");
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus", "--effort", "max"]);
-    assert!(!ok && out.contains("effort must be one of: medium high"), "{out}");
+    assert!(!ok && out.contains("effort must be one of: low high"), "{out}");
 
     // the launcher enforces whatever the committed policy says; it hardcodes no model
-    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\"]\nworker_default_effort = \"high\"\n"));
+    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\"]\nworker_default_effort = \"high\"\nplanner_effort = \"high\"\n"));
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus"]);
     assert!(!ok && out.contains("model must be sonnet ([router] worker_model"), "{out}");
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
     assert!(ok && out.contains(" effort=high "), "{out}");
     l.stop("q");
 
-    // the accepted efforts are the committed list, not a built-in one: narrowed, medium is refused;
+    // the accepted efforts are the committed list, not a built-in one: narrowed, low is refused;
     // widened, max is accepted
-    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "medium"]);
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "low"]);
     assert!(!ok && out.contains("effort must be one of: high ("), "{out}");
-    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"max\"]\nworker_default_effort = \"high\"\n"));
+    l.commit_config(Some(
+        "[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"max\"]\nworker_default_effort = \"high\"\nplanner_effort = \"high\"\n",
+    ));
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "max"]);
     assert!(ok && out.contains(" effort=max "), "{out}");
     l.stop("q");
     assert_eq!(option(&worker_argv(&l.state, "q"), "--effort"), "max");
 
-    // the default is worker_default_effort, not the list's first entry, read from HEAD on a branch
-    // other than main
+    // the worker's default is worker_default_effort, and a planner's is planner_effort, neither the
+    // list's first entry, read from HEAD on a branch other than main
     git(&l.main, &["checkout", "-qb", "router"]);
-    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"medium\"]\nworker_default_effort = \"medium\"\n"));
+    l.commit_config(Some(
+        "[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"low\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n",
+    ));
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
-    assert!(ok && out.contains(" effort=medium "), "{out}");
+    assert!(ok && out.contains(" effort=low "), "{out}");
     l.stop("q");
-    assert_eq!(option(&worker_argv(&l.state, "q"), "--effort"), "medium");
+    assert_eq!(option(&worker_argv(&l.state, "q"), "--effort"), "low");
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--role", "planner"]);
+    assert!(ok && out.contains(" effort=high "), "{out}");
+    l.stop("q");
+    assert_eq!(option(&worker_argv(&l.state, "q"), "--effort"), "high");
 
     // every level word is accepted when committed: low and xhigh, as the default and as --effort (review r5 V1)
-    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"low\", \"xhigh\"]\nworker_default_effort = \"low\"\n"));
+    l.commit_config(Some(
+        "[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"low\", \"xhigh\"]\nworker_default_effort = \"low\"\nplanner_effort = \"xhigh\"\n",
+    ));
     for (extra, effort) in [(vec![], "low"), (vec!["--effort", "xhigh"], "xhigh")] {
         let mut args = vec!["spawn", "q", wt, brief, "sonnet"];
         args.extend(&extra);
@@ -963,7 +983,7 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
     // the reader's accepted edges in one policy: a tab before the header's comment, a dotted and
     // hyphenated model, trailing blanks after a value, a three-entry list, and indented or similarly
     // named headers that end the section
-    l.commit_config(Some("[router]\t# c\nworker_model = \"opus-4.5\" \t\nworker_efforts = [\"low\", \"medium\", \"xhigh\"]\nworker_default_effort = \"low\"\n\t[next]\nx = 1\n  [routers]\ny = 2\n"));
+    l.commit_config(Some("[router]\t# c\nworker_model = \"opus-4.5\" \t\nworker_efforts = [\"low\", \"medium\", \"xhigh\"]\nworker_default_effort = \"low\"\nplanner_effort = \"medium\"\n\t[next]\nx = 1\n  [routers]\ny = 2\n"));
     for effort in ["low", "medium", "xhigh"] {
         let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus-4.5", "--effort", effort]);
         assert!(ok && out.contains(&format!(" effort={effort} ")), "{out}");
@@ -976,10 +996,11 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
     }
 }
 
-/// DEC-39: the repo's committed worker policy is opus at medium or high effort, medium by default.
+/// DEC-39 (amended by E-WSANDBOX.W9, owner ruling 2026-11-26): one effort policy, a worker low and a
+/// planner high, held in `[router]` and enforced by the launcher.
 /// E-WMODE.W1 (DEC-37 amended): Keel's workers start in auto mode, and project-router says so.
 #[test]
-fn committed_worker_policy_is_opus_at_medium_or_high_effort_in_auto_mode_with_a_haiku_watchdog() {
+fn committed_worker_policy_is_low_for_a_worker_and_high_for_a_planner_in_auto_mode() {
     let config = std::fs::read_to_string(root().join(".keel/config.toml")).unwrap();
     let section: Vec<&str> =
         config.lines().skip_while(|l| !l.starts_with("[router]")).skip(1).take_while(|l| !l.starts_with('[')).filter(|l| !l.trim().is_empty()).collect();
@@ -987,14 +1008,41 @@ fn committed_worker_policy_is_opus_at_medium_or_high_effort_in_auto_mode_with_a_
         section,
         [
             "worker_model = \"opus\"",
-            "worker_efforts = [\"medium\", \"high\"]",
-            "worker_default_effort = \"medium\"",
+            "worker_efforts = [\"low\", \"high\"]",
+            "worker_default_effort = \"low\"",
+            "planner_effort = \"high\"",
             "worker_permission_mode = \"auto\"",
             "watchdog_model = \"haiku\""
         ]
     );
     let project_router = std::fs::read_to_string(root().join(".claude/skills/project-router/SKILL.md")).unwrap();
     assert!(project_router.contains("`worker_permission_mode = \"auto\"`"), "project-router does not state the committed worker mode");
+}
+
+/// E-WSANDBOX.W9: the skills state the policy the launcher enforces - the project-router names Keel's
+/// keys and the role, the generic keel-router names the two hosts' mapping - and no skill still calls
+/// medium the worker default.
+#[test]
+fn one_effort_policy_is_stated_in_the_skills_as_the_launcher_enforces_it() {
+    let read = |p: &str| std::fs::read_to_string(root().join(p)).unwrap();
+    let project_router = read(".claude/skills/project-router/SKILL.md");
+    for line in ["worker_efforts = [\"low\", \"high\"]", "worker_default_effort = \"low\"", "planner_effort = \"high\""] {
+        assert!(project_router.contains(line), "project-router does not state {line}");
+    }
+    assert!(project_router.contains("--role worker|planner"), "project-router does not name the spawn role");
+
+    let keel_router = read("skills/keel-router/SKILL.md");
+    assert_eq!(keel_router, read(".claude/skills/keel-router/SKILL.md"), "the two keel-router copies differ");
+    for host in ["planner", "worker_spawn", "`low`", "`high`", "always"] {
+        assert!(keel_router.contains(host), "keel-router does not state {host}");
+    }
+
+    for doc in [".claude/skills/project-router/SKILL.md", "skills/keel-router/SKILL.md", ".claude/skills/keel-router/SKILL.md", ".claude/agents/worker.md"] {
+        let text = read(doc).to_lowercase();
+        for stale in ["--effort medium", "medium by default", "effort medium", "[\"medium\", \"high\"]"] {
+            assert!(!text.contains(stale), "{doc} still names medium as the worker effort ({stale})");
+        }
+    }
 }
 
 /// E-ROUTER3.W4 (R3, DEC-48): in a self-clone with keel's hooks a plain commit touching a router security file is refused naming it,
@@ -1220,12 +1268,16 @@ fn launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validat
         (vec!["--permission-mode"], "[--permission-mode plan|acceptEdits|auto]"),
         (vec!["--bogus", "x"], "[--permission-mode plan|acceptEdits|auto]"),
         (vec!["--permission-mode", "plan", "x"], "[--permission-mode plan|acceptEdits|auto]"),
-        (vec!["--effort", "low"], "effort must be one of: medium high ([router] worker_efforts in .keel/config.toml)"),
-        (vec!["--effort", "max"], "effort must be one of: medium high"),
-        (vec!["--effort", "ultracode"], "effort must be one of: medium high"),
-        (vec!["--effort", "medium high"], "effort must be one of: medium high"),
-        (vec!["--effort", ""], "effort must be one of: medium high"),
+        (vec!["--effort", "medium"], "effort must be one of: low high ([router] worker_efforts in .keel/config.toml)"),
+        (vec!["--effort", "max"], "effort must be one of: low high"),
+        (vec!["--effort", "ultracode"], "effort must be one of: low high"),
+        (vec!["--effort", "medium high"], "effort must be one of: low high"),
+        (vec!["--effort", ""], "effort must be one of: low high"),
+        (vec!["--role", "bogus"], "role must be worker|planner"),
+        (vec!["--role", "planner", "--effort", "low"], "give --role or --effort, not both"),
         (vec!["--effort"], "[--effort <level>]"),
+        (vec!["--role"], "[--role worker|planner"),
+        (vec!["--role", "worker", "--role", "planner"], "[--role worker|planner"),
         (vec!["--effort", "high", "--effort", "high"], "[--effort <level>]"),
         (vec!["--permission-mode", "plan", "--permission-mode", "plan"], "[--effort <level>]"),
         (vec!["--permission-mode", "plan", "--effort"], "[--effort <level>]"),
@@ -1256,8 +1308,9 @@ fn launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validat
     assert_eq!(run_dir_mode("d", "spawn"), ["auto"]);
     assert_eq!(run_dir_mode("p", "spawn"), ["plan"]);
 
-    // E-SEED2.W7: effort is medium by default, high when asked, in either order with the mode; it
-    // lands on the RUNNING line, in the run dir and after --model on the argv
+    // E-SEED2.W7, E-WSANDBOX.W9: a worker takes the policy's low default, a planner its high, and an
+    // explicit effort the level it names; each lands on the RUNNING line, in the run dir and after
+    // --model on the argv
     let effort_of = |name: &str| {
         l.stop(name);
         let a = worker_argv(&l.state, name);
@@ -1265,10 +1318,13 @@ fn launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validat
         (option(&a, "--effort"), option(&a, "--permission-mode"))
     };
     for (name, extra, effort, mode) in [
-        ("e1", vec![], "medium", "auto"),
+        ("e1", vec![], "low", "auto"),
         ("e2", vec!["--effort", "high"], "high", "auto"),
         ("e3", vec!["--effort", "high", "--permission-mode", "plan"], "high", "plan"),
-        ("e4", vec!["--permission-mode", "plan", "--effort", "medium"], "medium", "plan"),
+        ("e4", vec!["--permission-mode", "plan", "--effort", "high"], "high", "plan"),
+        ("e5", vec!["--role", "planner"], "high", "auto"),
+        ("e6", vec!["--role", "worker"], "low", "auto"),
+        ("e7", vec!["--role", "planner", "--permission-mode", "plan"], "high", "plan"),
     ] {
         let mut args = vec!["spawn", name, wt, brief, "opus"];
         args.extend(&extra);
@@ -1281,13 +1337,15 @@ fn launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validat
     // router side: the guard admits the option on the launcher shape, and the grant never reaches it
     assert_eq!(bash("scripts/router-worker.sh spawn n /w .router/briefs/n.md opus --permission-mode plan"), None);
     assert_eq!(bash("scripts/router-worker.sh spawn n /w .router/briefs/n.md opus --effort high --permission-mode plan"), None);
+    assert_eq!(bash("scripts/router-worker.sh spawn n /w .router/briefs/n.md opus --role planner"), None);
     for c in WORKER_GRANTS {
         assert!(bash(&format!("{c} x")).is_some(), "router may run {c}");
     }
 }
 
 /// The worker policy with no `worker_permission_mode` line.
-const MODELESS_POLICY: &str = "[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n";
+const MODELESS_POLICY: &str =
+    "[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n";
 
 /// Spawn `name` with `extra`, expecting a start; stop it and return its mode as the worker's argv,
 /// the RUNNING line and the run dir all carry it.
@@ -2141,6 +2199,10 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     ] {
         std::fs::copy(root().join(f), c.join(f)).unwrap();
     }
+    // the launcher reads [router] from the clone's HEAD: carry the working tree's policy over
+    std::fs::copy(root().join(".keel/config.toml"), c.join(".keel/config.toml")).unwrap();
+    git(&c, &["add", ".keel/config.toml"]);
+    git(&c, &["commit", "-qm", "policy", "--allow-empty"]);
     let keel = Path::new(env!("CARGO_BIN_EXE_keel"));
     assert!(common::cmd(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
     let other = base.join("other");
@@ -3013,7 +3075,7 @@ const CAPTURED_WATCHDOG_CRON: &str = r#"{"cwd":"/r","scratchpad_dir":"/t","promp
 const CAPTURED_WATCHDOG_SEND: &str = r#"{"cwd":"/r","scratchpad_dir":"/t","prompt_id":"p","permission_mode":"default","agent_type":"watchdog","hook_event_name":"PreToolUse","tool_name":"SendMessage","tool_input":{"to":"r1","summary":"FACTSMARK-185209","message":"FACTSMARK-185209\nSendMessage, CronCreate","type":"message","recipient":"r1","content":"FACTSMARK-185209\nSendMessage, CronCreate"},"tool_use_id":"u2"}"#;
 
 const WATCHDOG_POLICY: &str =
-    "[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\nwatchdog_model = \"haiku\"\n";
+    "[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\nwatchdog_model = \"haiku\"\n";
 
 /// The guard run as the watchdog session's hook runs it: with `--arg watchdog_to <to>`.
 fn guard_to(to: &str, event: &serde_json::Value) -> Option<String> {

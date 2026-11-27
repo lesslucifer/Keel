@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b0886629f34851f0dfb2d81">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-WSANDBOX.W9 result: one effort policy</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-WSANDBOX.W9 · One effort policy, two hosts</h1>
+      <p>A worker starts low, a planner high, and each host is told the level explicitly.</p>
+      <div class="meta">T3 · WU result · 2026-11-27 · Keel · its data file, 2026-11-27-e-wsandbox-w9-result.yaml, sits beside this page</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="happened">What happened</h2>
+<p data-c="happened">One policy now lives in the config: a worker low, a planner high, and only those two levels. The launcher takes a role, worker or planner, and passes the matching level; it refuses anything else by name, including medium. Both router skills say the same thing — one names the keys, the other how each host is told — and the newer host is always given the level, because leaving it out would mean high. Six rule-bearing files went to you as one commit; the rest are docs and tests. No code changed after either review.</p>
+
+<h2 id="know">How you'll know it worked</h2>
+<ul data-c="know">
+  <li><b>Met.</b> A worker's session carries low and a planner's carries high — the launcher the tests drive records both.</li>
+  <li><b>Met.</b> A medium request is refused before any session starts.</li>
+  <li><b>Met.</b> The policy pin and a skill-text test agree with the config, and no skill still calls medium the default.</li>
+  <li><b>Met, with the known red.</b> Lint is green; the raw full check is red only on the flaky watch tests, which pass alone.</li>
+</ul>
+
+<h2 id="case">The main case, in steps</h2>
+<p data-c="case">Run through the launcher itself, with a stub session (the live spawn in the probe clone is the epic's end-to-end test):</p>
+<ol data-c="case-steps">
+  <li>A spawn with no role: its session carries low.</li>
+  <li>The same spawn with the planner role: it carries high.</li>
+  <li>A spawn asking for medium: refused by name — "effort must be one of: low high" — and nothing starts.</li>
+</ol>
+
+<h2 id="diff">Differences from the plan</h2>
+<ul data-c="diff">
+  <li>The launcher gained a role flag; the plan had an effort default only. A role had to be sayable, because a review is not planning.</li>
+  <li>The decision note's amendment is folded into its text, not a separate row.</li>
+  <li>The epic plan's three open questions now read ruled, and its "a review worker counts as a planner" is corrected.</li>
+</ul>
+
+<h2 id="left">What is left</h2>
+<ul data-c="left">
+  <li>The reference spawn recipe still lacks the role flag, and two wording nits wait: the epic close, or the next router epic.</li>
+  <li>A live spawn in the probe clone: the epic's end-to-end test.</li>
+  <li>The newer host refuses a per-worker level today: a defect in that host's plugin, not in Keel.</li>
+  <li>Your waiver of this unit's review — it failed on the flaky check with no findings — and your sign-off: yours.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

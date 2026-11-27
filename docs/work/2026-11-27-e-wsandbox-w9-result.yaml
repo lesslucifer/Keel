@@ -1,0 +1,72 @@
+artifact: wu-result
+status: ready
+id: E-WSANDBOX.W9
+epic: E-WSANDBOX
+title: "E-WSANDBOX.W9 result: one effort policy, two host mappings"
+date: "2026-11-27"
+page: 2026-11-27-e-wsandbox-w9-result.html
+outcome: >-
+  Delivered. One policy lives in `[router]` - `worker_efforts = ["low", "high"]`, `worker_default_effort = "low"`,
+  `planner_effort = "high"` - the launcher maps a worker or a planner role to `--effort low|high` and refuses every
+  other level by name (`medium` included), both router skills state the same policy with the host mapping, and DSH
+  always receives `worker_spawn`'s `effort` explicitly. The six rule-bearing files landed as the owner commit
+  `de99f27f`; this result pair follows on a docs-only tip. No code fix was needed after either review round.
+deviations:
+  - "The launcher gained `--role worker|planner`, not only an effort default: the policy names a level per role and a review worker must be low, so the role had to be sayable. `--effort <level>` stays as the explicit form and never combines with `--role`."
+  - "DEC-39's amendment is folded into its choice, as the keel-distill rule says, not a separate `Amended` row; the epic plan's three W9 questions now read RULED, with a review worker a low worker."
+  - "The `cr` round FAILed on the flaky `0·tree` check with zero findings, so there is no code fix: the schedule allows no round 2 and no fix-PASS, and the owner's waiver at sign-off is the route."
+  - "No live DSH `worker_spawn` ran: the harness on this host rejects a per-worker `effort` today. The mapping is documented and text-tested, and the defect is named in the plan (`details.dsh-defect`)."
+  - "No live Claude Code spawn ran from this worker (the hard rules forbid running the launcher): the argv and refusals are proven by the launcher fixture's tests, and the probe-clone spawn is the epic e2e."
+evidence:
+  - "Tests added in tests/suite/router.rs: the committed `[router]` pin (committed_worker_policy_is_low_for_a_worker_and_high_for_a_planner_in_auto_mode), the policy reader's `planner_effort` refusals and the `--role`/`--effort` argv (launcher_refuses_unsafe_targets_and_runs_one_worker_per_name, launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validated_mode), and the skill-text agreement (one_effort_policy_is_stated_in_the_skills_as_the_launcher_enforces_it); the epic e2e fixture carries the staged policy into its clone's HEAD."
+  - "`cr` round 1 of 1 on `de99f27f`: verdict FAIL, 0 blockers, 0 importants, 0 nits. The one red is `0·tree` - router::watch_commit_reports_what_landed_against_what_was_staged timed out (464/465 suite tests, lint green); the class passes alone and has no code finding."
+  - "Rule-file round on `de99f27f`: PASS, 1 medium, 1 low, 2 nits. The medium (the epic plan still called W9's questions open and a review worker a planner) is fixed in this docs commit; the low and the two wording nits are follow-ups."
+  - "Commits: b9d775f1 the plan pair, e0767afc the tests, 5ab65d25 the decision/use-case/backlog docs, 8f6d032c the e2e fixture, 6094a6b6 the plan wording, de99f27f the six rule-bearing files (owner `keel mr commit`)."
+  - "Notes: `test/v1` and `doc/v1` on `de99f27f`, rewritten on the result tip; no `cr/v1` is written by this worker."
+distillation: >-
+  Landed in this WU: DEC-39 (amended in place - the role policy and its two host mappings), UC-ROUTE-5's effort
+  sentence, and docs/architecture.html's `[router]` keys row (T1). The new T2 row is backlog R54. The plans and this
+  result are T3 and archive at epic close.
+follow-ups:
+  - "skills/keel-router/references/worker-ops.md's spawn recipe names no `--role` (the rule-file round's low), in both keel-router copies: a rule-bearing fix at E-WSANDBOX epic close or in the next router epic."
+  - "The rule-file round's two wording nits: the same destination, folded into the same rule-bearing commit (E-WSANDBOX epic close or the next router epic)."
+  - "The live proof - a probe-clone worker spawn with `--effort low` and a planner's with `--effort high`: E-WSANDBOX epic e2e."
+  - "The DSH host rejects a per-worker `effort` at `worker_spawn`: the desktop-dsh project's worker plugin, not a Keel WU."
+  - "The owner's waiver of this WU's `cr` round (FAIL, zero findings, the flaky tree check) and the WU sign-off: the owner, on this tip."
+details:
+  policy:
+    worker_model: "opus"
+    worker_efforts: ["low", "high"]
+    worker_default_effort: "low"
+    planner_effort: "high"
+    worker_permission_mode: "auto"
+    watchdog_model: "haiku"
+  role-rule: "A planner authors a plan or a design; reviews, builds, fixes and checks are workers, so a review worker is low."
+  mapping:
+    claude-code: "`spawn <name> <worktree> <brief> <model> [--role worker|planner]`: the role picks `worker_default_effort` or `planner_effort` and the launcher passes it as `--effort`. `--effort <level>` names a level explicitly; the two are refused together; anything outside `worker_efforts` (medium included) is refused before any start."
+    dsh: "`worker_spawn` gets `effort` always: `low` for a worker, `high` for a planner; omitting it would take the route's `high` default."
+  read-policy: >-
+    `read_policy` learns `planner_effort` and requires it: the whole policy is refused when either role effort is
+    missing, repeated, malformed, or absent from `worker_efforts`; the refusal names every key it needs.
+  files:
+    seeded-by-owner-commit:
+      - ".keel/config.toml"
+      - "scripts/router-worker.sh"
+      - "skills/keel-router/SKILL.md"
+      - ".claude/skills/keel-router/SKILL.md"
+      - ".claude/skills/project-router/SKILL.md"
+      - "docs/architecture.html"
+    worker-committed:
+      - "tests/suite/router.rs"
+      - "docs/decisions/router.html"
+      - "docs/use-cases/router.yaml"
+      - "docs/backlog/e-router-v2.yaml"
+      - "docs/backlog/backlog-index.yaml"
+      - "docs/work/2026-11-27-e-wsandbox-w9-plan.html and .yaml"
+      - "docs/work/2026-11-24-e-wsandbox-plan.html and .yaml (the medium fix)"
+  gates:
+    - "`keel verify-doc` green over all docs."
+    - "`keel check` raw is red only on the `router::watch_*` class, each of which passes alone; lint green."
+    - "`keel preflight wu de99f27f --target epic/E-WSANDBOX` (the reviewed tip): red only on `0·tree` (the flaky `router::watch_*` class; each passes alone); it printed review round 1 of 1, scope the whole range."
+    - "`keel preflight wu <this docs tip> --target epic/E-WSANDBOX`: red on `0·tree` (the same class) and `0·review-cap` (round 1 ran on de99f27f and the cap is 1); the owner's waiver at sign-off is the route."
+    - "`keel verify-dod wu <this docs tip> --target epic/E-WSANDBOX --no-receipt`: red on `1·notes` (no `cr` on this docs tip) and `8·manual-review` only; the owner's waiver and sign-off are the next steps."

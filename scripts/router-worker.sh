@@ -2,7 +2,7 @@
 # Router-only launcher for worker sessions (E-ROUTER Q2/Q3 override, 2026-11-08). The router's Bash
 # hook allows ONLY this script's shapes; every argument is validated here, and the prompt is fixed
 # text, so no untrusted string ever reaches `claude`.
-#   router-worker.sh spawn  <name> <worktree> <brief.md> <model> [--permission-mode plan|acceptEdits|auto] [--effort <level>] [--review]
+#   router-worker.sh spawn  <name> <worktree> <brief.md> <model> [--role worker|planner] [--effort <level>] [--permission-mode plan|acceptEdits|auto] [--review]
 #   router-worker.sh stop   <name>
 #   router-worker.sh worktree add|remove <epic/E | wu/E/slug>
 #   router-worker.sh watchdog start|stop <router-name>   (watchdog facts <router-name>: its prompt hook only)
@@ -29,7 +29,10 @@
 # policy, [router] in .keel/config.toml at this checkout's HEAD (DEC-39); no policy, no spawn. The mode
 # is the policy's worker_permission_mode (acceptEdits when absent; plan, acceptEdits or auto, never
 # bypassPermissions, dontAsk or default), which --permission-mode may only narrow (plan < acceptEdits
-# < auto; E-WMODE, DEC-37), and the effort defaults to the policy's default. A worker loads the project's and
+# < auto; E-WMODE, DEC-37). The effort is one policy with a role: worker_default_effort for a worker (the
+# default) and planner_effort for a planner, a worker whose deliverable is a plan or a design
+# (E-WSANDBOX.W9); --effort names a level explicitly, --role picks the role's, and the two are given
+# once each and never together. A worker loads the project's and
 # the worktree's local settings only, no MCP server, and runs its shell in Claude Code's sandbox
 # (writes: its worktree, the git dir but its config and hooks, cargo's cache); it gets the fixed
 # cargo/keel grant below and the fixed deny list, which never reach the router. Only a --review
@@ -177,7 +180,8 @@ listed() {
 # `key = "word"` and `key = ["word", ...]` (a word starts with a letter; optional trailing # comment);
 # any other line in the section, a second `[router]` or any other header naming router refuses.
 # watchdog_model is optional ("-" when absent); so is worker_permission_mode, a word of letters only
-# ("acceptEdits" is not a lowercase word), whose value spawn judges.
+# ("acceptEdits" is not a lowercase word), whose value spawn judges. Both role efforts must sit in
+# worker_efforts: worker_default_effort and planner_effort (E-WSANDBOX.W9).
 read_policy() {
 policy=$(git -C "$ROOT" show HEAD:.keel/config.toml 2>/dev/null | awk '
   /^[ \t]*\[/ {
@@ -191,18 +195,19 @@ policy=$(git -C "$ROOT" show HEAD:.keel/config.toml 2>/dev/null | awk '
   /^$/ { next }
   /^worker_model = "[a-z][a-z0-9.-]*"$/ && m == "" { m = $3; next }
   /^worker_default_effort = "[a-z][a-z0-9.-]*"$/ && d == "" { d = $3; next }
+  /^planner_effort = "[a-z][a-z0-9.-]*"$/ && r == "" { r = $3; next }
   /^worker_efforts = \["[a-z][a-z0-9.-]*"(, "[a-z][a-z0-9.-]*")*\]$/ && e == "" { e = substr($0, 19, length($0) - 19); next }
   /^watchdog_model = "[a-z][a-z0-9.-]*"$/ && w == "" { w = $3; next }
   /^worker_permission_mode = "[A-Za-z]+"$/ && p == "" { p = $3; next }
   { bad = 1 }
   END {
-    gsub(/"/, "", m); gsub(/"/, "", d); gsub(/[",]/, "", e); gsub(/"/, "", w); gsub(/"/, "", p)
+    gsub(/"/, "", m); gsub(/"/, "", d); gsub(/"/, "", r); gsub(/[",]/, "", e); gsub(/"/, "", w); gsub(/"/, "", p)
     k = split(e, l, " ")
-    for (i = 1; i <= k; i++) { if (l[i] !~ /^(low|medium|high|xhigh|max)$/) bad = 1; if (l[i] == d) has = 1 }
-    if (bad || m == "" || !has) exit 1
-    print m; print d; print e; print (w == "" ? "-" : w); print (p == "" ? "-" : p)
-  }') || die "no worker policy: [router] worker_model / worker_efforts / worker_default_effort in .keel/config.toml at HEAD of $ROOT"
-{ read -r policy_model; read -r policy_default; read -r policy_efforts; read -r policy_watchdog; read -r policy_mode; } <<EOF
+    for (i = 1; i <= k; i++) { if (l[i] !~ /^(low|medium|high|xhigh|max)$/) bad = 1; if (l[i] == d) hd = 1; if (l[i] == r) hr = 1 }
+    if (bad || m == "" || !hd || !hr) exit 1
+    print m; print d; print r; print e; print (w == "" ? "-" : w); print (p == "" ? "-" : p)
+  }') || die "no worker policy: [router] worker_model / worker_efforts / worker_default_effort / planner_effort in .keel/config.toml at HEAD of $ROOT"
+{ read -r policy_model; read -r policy_default; read -r policy_planner; read -r policy_efforts; read -r policy_watchdog; read -r policy_mode; } <<EOF
 $policy
 EOF
 }
@@ -449,16 +454,17 @@ if [ "$mode" = worktree ]; then
   echo "REMOVED path=$wt branch=$b"; exit 0
 fi
 [ "$mode" = spawn ] || die "spawn|stop|worktree|watchdog"
-usage="spawn <name> <worktree> <brief.md> <model> [--permission-mode plan|acceptEdits|auto] [--effort <level>] [--review]"
+usage="spawn <name> <worktree> <brief.md> <model> [--role worker|planner] [--effort <level>] [--permission-mode plan|acceptEdits|auto] [--review]"
 [ $# -ge 4 ] || die "$usage"
 name=$1 wt=$2 file=$3 model=$4; shift 4
 valid_name "$name"
 case "$name" in watchdog|watchdog-*) die "the name $name is reserved for the watchdog";; esac
-pm= pm_set= effort= effort_set= review=
+pm= pm_set= effort= effort_set= role= role_set= review=
 while [ $# -gt 0 ]; do
   case "$1" in
     --permission-mode) [ -z "$pm_set" ] && [ $# -ge 2 ] || die "$usage"; pm_set=1 pm=$2; shift;;
     --effort) [ -z "$effort_set" ] && [ $# -ge 2 ] || die "$usage"; effort_set=1 effort=$2; shift;;
+    --role) [ -z "$role_set" ] && [ $# -ge 2 ] || die "$usage"; role_set=1 role=$2; shift;;
     --review) [ -z "$review" ] || die "$usage"; review=yes;;
     *) die "$usage";;
   esac
@@ -466,7 +472,16 @@ while [ $# -gt 0 ]; do
 done
 read_policy
 [ "$model" = "$policy_model" ] || die "model must be $policy_model ([router] worker_model in .keel/config.toml)"
-[ -n "$effort_set" ] || effort=$policy_default
+# the one effort policy (E-WSANDBOX.W9): a role picks its level, --effort names one, never both
+[ -z "$role_set" ] || [ -z "$effort_set" ] || die "give --role or --effort, not both"
+if [ -z "$effort_set" ]; then
+  case "$role" in
+    "") effort=$policy_default;;
+    worker) effort=$policy_default;;
+    planner) effort=$policy_planner;;
+    *) die "role must be worker|planner";;
+  esac
+fi
 case "$effort" in ""|*[!a-z0-9.-]*) die "effort must be one of: $policy_efforts ([router] worker_efforts in .keel/config.toml)";; esac
 case " $policy_efforts " in *" $effort "*) ;; *) die "effort must be one of: $policy_efforts ([router] worker_efforts in .keel/config.toml)";; esac
 # the mode (E-WMODE, DEC-37): the policy's, acceptEdits when absent; an option may only narrow it
