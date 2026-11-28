@@ -9,7 +9,7 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>E-WSANDBOX · The epic e2e, in detail</h1>
-      <p>You type three commands. A probe router in the probe clone runs the rest with this epic's launcher and reports to your router. This page is the detail behind <a href="2026-11-28-e-wsandbox-e2e-owner-steps.html">your three steps</a>.</p>
+      <p>You type three commands. A probe router in the probe clone runs the rest with this epic's launcher and ends with a plain report of what each step printed. This page is the detail behind <a href="2026-11-28-e-wsandbox-e2e-owner-steps.html">your three steps</a>.</p>
       <div class="meta">T3 · owner runbook · 2026-11-28 · Keel · a plain page, no data file · reshaped by the owner's ruling of 2026-11-28 (option B)</div>
     </div>
   </header>
@@ -33,9 +33,9 @@
     <li>starts the probe router: <code>claude --bg -n probe-router --agent router --model haiku "Read …/docs/work/2026-11-28-e-wsandbox-e2e-probe-router.md in full and do exactly what it says."</code></li>
   </ul>
   Expect: <code>ok: probe-router runs (session …)</code>. Failure: the commit refused, or a <code>FAIL:</code> line.</li>
-  <li><b>Finish</b>, after your router relays "E-WSANDBOX e2e probe run finished".
+  <li><b>Finish</b>, when you are ready. It waits for the test router's report first.
 <pre>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-probe &amp;&amp; bash /Users/nguyenvanluong/Documents/proj/misc/Keel-E-WSANDBOX/docs/work/2026-11-28-e-wsandbox-e2e-setup.sh finish</pre>
-  It appends the probe router's full report to the log and runs the two checks the router's guard cannot run. First, <code>status probe-w1</code> against a jq sum of the transcript's last and peak usage: <code>PASS status matches the transcript</code>. Second, the router's red-doc messages: at least one router message, none in the worker wording, <code>agentSetting=router</code> and the red doc unchanged, giving <code>PASS the router was told and did not edit the doc</code>. Then it cleans up and ends <code>ok: no probe session, worktree or branch left</code> and <code>Done.</code> A <code>FAIL</code> check line is a result: send the log either way. The clone stays detached on the policy commit, and the next <code>prepare</code> moves it.</li>
+  It waits until the test router's report is written: the last message that begins <code>E-WSANDBOX e2e probe run finished</code> (up to 45 minutes); it prints that report to the log, then runs the two checks the router's guard cannot run. First, <code>status probe-w1</code> against a jq sum of the transcript's last and peak usage: <code>PASS status matches the transcript</code>. Second, the router's red-doc messages: at least one Stop-hook record, none in the worker wording, <code>agentSetting=router</code> and the red doc unchanged, giving <code>PASS the router was told and did not edit the doc</code>. Then it writes the raw evidence file <code>~/keel-wsandbox-e2e-evidence.txt</code>, cleans up and ends <code>ok: no probe session, worktree or branch left</code> and <code>Done.</code> A <code>FAIL</code> check line is a result: the evidence file is written all the same, so tell your router and point it at the log and the evidence file either way. If the report never comes, it stops before writing or cleaning anything: send the log and run it again. A Claude Code session cannot message your DSH router, so you are the hand-off. The clone stays detached on the policy commit, and the next <code>prepare</code> moves it.</li>
 </ol>
 
 <h2 id="still-yours">What stays yours</h2>
@@ -47,13 +47,13 @@
     <tr><td>A second router session for C5</td><td>The guard admits no <code>claude</code></td><td>Dropped: the red doc sits in the probe router's own checkout, so its own turn ends are the live C5 check</td></tr>
     <tr><td>The raw Close block (<code>watchdog facts</code>)</td><td>The guard admits only <code>watchdog start|stop</code></td><td>The router judges the watchdog's message and Greps the watchdog's transcript for the facts block</td></tr>
     <tr><td>Status against the transcript; the red-doc counts</td><td>No <code>jq</code>, no <code>grep</code> pipelines</td><td>Moved into <code>finish</code></td></tr>
-    <tr><td>Session-scoped state after resume (W5's follow-up), optional</td><td><code>claude attach</code> is interactive and outside the guard</td><td>Four short steps on <a href="2026-11-28-e-wsandbox-e2e-owner-steps.html#optional">your page</a>, after the router finishes and before <code>finish</code>: resume probe-w1, attach and <code>/add-dir /tmp</code>, stop and resume, attach and <code>/permissions</code>. Expect <code>/tmp</code> gone. If it stays, it becomes a backlog row for the next router epic.</td></tr>
+    <tr><td>Session-scoped state after resume (W5's follow-up), optional</td><td><code>claude attach</code> is interactive and outside the guard</td><td>Four short steps on <a href="2026-11-28-e-wsandbox-e2e-owner-steps.html#optional">your page</a>, after the test router's report and before <code>finish</code>: run <code>bash … wait</code> first (it returns once the report is written), then resume probe-w1, attach and <code>/add-dir /tmp</code>, stop and resume, attach and <code>/permissions</code>. Expect <code>/tmp</code> gone. If it stays, it becomes a backlog row for the next router epic.</td></tr>
     <tr><td>Removing worktrees and branches</td><td><code>worktree remove</code> refuses an unclean or unmerged worktree; no <code>branch -D</code></td><td>In <code>finish</code> (and in every re-run's cleanup)</td></tr>
   </tbody>
 </table>
 
 <h2 id="router">What the probe router runs</h2>
-<p data-c="router-intro">Its prompt, <code>docs/work/2026-11-28-e-wsandbox-e2e-probe-router.md</code>, holds every command, its expected output and its failure condition. It writes its full results to <code>.router/notify/owner.md</code> in the clone, and sends <code>keel-57</code> one message with a PASS/FAIL table. In short:</p>
+<p data-c="router-intro">Its prompt, <code>docs/work/2026-11-28-e-wsandbox-e2e-probe-router.md</code>, holds every command, its expected output and its failure condition. It writes nothing and gives no verdicts: its last message is its report, every step&#39;s raw output in order. Your finish step reads that message from the router&#39;s transcript, prints it to the log and writes the raw evidence to <code>~/keel-wsandbox-e2e-evidence.txt</code>, and a worker judges each step from it (E-WSANDBOX.W10). In short:</p>
 <table data-c="router">
   <thead><tr><th>Part</th><th>What it checks</th></tr></thead>
   <tbody>
@@ -76,10 +76,11 @@
     <tr><td><code>… spawn probe-w1 …-E-PROBE-work .router/briefs/probe-w1.md haiku</code> · <code>… spawn probe-plan1 … --role planner</code> · <code>… spawn probe-med … --effort medium</code></td><td>allow</td></tr>
     <tr><td><code>… stop probe-w1</code> · <code>… stop probe-plan1</code> · <code>… stop probe-med</code> · <code>… resume probe-w1</code> · <code>… status probe-w1</code> · <code>… prune</code></td><td>allow</td></tr>
     <tr><td><code>git worktree list</code> · <code>git branch --list wu/E-PROBE/work wu/E-PROBE/plan wu/E-PROBE/done wu/E-PROBE/gone</code></td><td>allow</td></tr>
-    <tr><td>Read of PROBE-RESULTS.txt · Glob of a run's effort file and of a transcript · Grep of a transcript · Write of <code>.router/notify/owner.md</code> · SendMessage to keel-57 · Skill keel-router</td><td>allow</td></tr>
+    <tr><td>Read of PROBE-RESULTS.txt · Glob of a run's effort file and of a transcript · Grep of a transcript · Skill keel-router</td><td>allow</td></tr>
     <tr><td><code>watchdog facts probe-router</code> · <code>jq …</code> · <code>rm -rf …</code> · <code>git commit-tree …</code> · <code>git branch -f …</code> · <code>claude attach …</code> · <code>claude --bg …</code> · <code>keel verify-doc</code> · <code>cat …</code> · Write of the red doc · Edit · Agent</td><td>deny: each moved out, as above</td></tr>
   </tbody>
 </table>
+<p data-c="report-note">The report is its last plain message, not a tool call: nothing is sent to any session, because a Claude Code session cannot reach your DSH router.</p>
 
 <h2 id="ran">What the worker ran in its own session</h2>
 <table data-c="ran">

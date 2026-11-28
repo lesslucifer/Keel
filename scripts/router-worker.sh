@@ -50,7 +50,7 @@
 # once each and never together. A worker loads the project's and
 # the worktree's local settings only, no MCP server, and runs its shell in Claude Code's sandbox
 # (writes: its worktree, the git dir but its config and hooks, cargo's cache); it gets the fixed
-# cargo/keel grant below and the fixed deny list, which never reach the router. Only a --review
+# cargo/keel/pnpm grant below and the fixed deny list, which never reach the router. Only a --review
 # worker may write the cr note, and it gets no edit tool. `--agent worker` is always passed: this
 # repo's settings make every other session a router.
 # brief must be a regular (non-symlink) .md file under <repo>/.router/briefs/; worktree must be a
@@ -789,8 +789,12 @@ done
 # (xmlbuilder 15.1.1's .vscode/launch.json included) in its modules dir, which the cwd-anchored deny
 # makes lethal inside the worktree (W1 finding d). pnpm 11 reads pnpm_config_modules_dir from the
 # environment; the worktree's git-ignored app/node_modules links at the modules dir, so pnpm scripts,
-# Node and Vite resolve through it. PNPM_HOME keeps the content store beside it and the owner's
-# ~/Library/pnpm is never touched. A fixed name is safe only inside the user's own $TMPDIR; without one
+# Node and Vite resolve through it. pnpm_config_store_dir keeps the content store in the pnpm home and the
+# owner's ~/Library/pnpm is never touched. The three variables travel in the --settings env object:
+# claude --bg hands the session to the Claude Code daemon, which does not pass the launcher's own
+# environment on (E-WSANDBOX.W10, the e2e of 2026-11-28: an exported variable never reached the worker's
+# shell). The launcher creates the modules dir, so the link never dangles; what it finds at that fixed
+# name must be a real directory this user owns, like the home. A fixed name is safe only inside the user's own $TMPDIR; without one
 # the home is a mktemp dir, and either way it must be a real directory this user owns. Trade-off:
 # Forge's packager needs a real tree, so `pnpm make` stays an owner install; a worktree that already
 # holds a real app/node_modules is left alone, never replaced.
@@ -813,8 +817,13 @@ if [ -e "$wt/app" ] || [ -L "$wt/app" ]; then
     pnpm_home=$(cd -P "$pnpm_home" && pwd -P) || die "cannot resolve the worker's pnpm home"
   fi
   pnpm_modules=$pnpm_home/modules-$(printf '%s\n' "$wt" | cksum | cut -d' ' -f1)
+  if [ -e "$pnpm_modules" ] || [ -L "$pnpm_modules" ]; then
+    [ -d "$pnpm_modules" ] && [ ! -L "$pnpm_modules" ] && [ -O "$pnpm_modules" ] || die "the worker's pnpm modules dir $pnpm_modules is not a directory this user owns"
+  else
+    mkdir "$pnpm_modules" || die "cannot create the worker's pnpm modules dir $pnpm_modules"
+  fi
 fi
-sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --argjson o "$others" --arg hook "$hook" --arg ph "$pnpm_home" '{sandbox: {enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
+sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --argjson o "$others" --arg hook "$hook" --arg ph "$pnpm_home" --arg pm "$pnpm_modules" '{sandbox: {enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
   filesystem: {allowWrite: ([$g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
       "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"]
       + (if $ph == "" then [] else [$ph] end)),
@@ -824,11 +833,13 @@ sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --argjson o "$ot
       + [$w + "/.git", $w + "/.claude/settings.json", $w + "/.claude/settings.local.json", "~/.claude.json"]),
     denyRead: ["~/.ssh", "~/.claude/channels"]},
   network: {allowLocalBinding: true, allowedDomains: ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com", "registry.npmjs.org"]}},
-  hooks: {PreToolUse: [{matcher: "*", hooks: [{type: "command", command: $hook, timeout: 10}]}]}}')
+  hooks: {PreToolUse: [{matcher: "*", hooks: [{type: "command", command: $hook, timeout: 10}]}]}}
+  + (if $ph == "" then {} else {env: {PNPM_HOME: $ph, pnpm_config_modules_dir: $pm, pnpm_config_store_dir: ($ph + "/store")}} end)')
 set -- --bg -n "$name" --model "$model" --effort "$effort" --agent worker --setting-sources project,local --strict-mcp-config \
   --settings "$sandbox" --allowedTools
 for c in "cargo build" "cargo test" "cargo check" "cargo clippy" "cargo fmt" "keel preflight" \
-  "keel verify-doc" "keel verify-dod" "keel notes write" "keel lint" "keel check" "scripts/router-scratch.sh"; do
+  "keel verify-doc" "keel verify-dod" "keel notes write" "keel lint" "keel check" "scripts/router-scratch.sh" \
+  "pnpm install" "pnpm add" "pnpm run" "pnpm test"; do
   set -- "$@" "Bash($c)" "Bash($c *)"; done
 [ -z "$review" ] || set -- "$@" "Bash(keel notes write cr)" "Bash(keel notes write cr *)"
 # The deny list states intent and refuses at once with a reason; the sandbox is the bound (a wrapper
@@ -841,6 +852,9 @@ for c in "keel mr" "cargo run" "keel init" "keel hooks" "cargo install" "cargo p
   "git --git-dir" "git --work-tree" "claude" "scripts/router-worker.sh" "scripts/router-app.sh"; do
   set -- "$@" "Bash($c)" "Bash($c *)"; done
 set -- "$@" "Bash(git --git-dir=*)" "Bash(git --work-tree=*)"
+# a bare shell reads its script from a pipe (curl ... | sh): refused by name, best effort (E-WSANDBOX.W10,
+# owner q1); sh -c and sh <script> are not matched, and the sandbox stays the bound
+set -- "$@" "Bash(sh)" "Bash(bash)" "Bash(zsh)"
 # The Read tool is also denied the sandbox's denyRead paths by rule (the file guard's realpath check is
 # the bound; a rule is matched best-effort, and Grep/Glob are the guard's alone). The edit tools get no
 # path rule: an Edit deny rule may feed the sandbox's denyWrite, and one on the main checkout would
@@ -856,7 +870,6 @@ else
 set -- "$@" --permission-mode "$pm" "You are a fresh worker session. Read $f in full and do exactly what it says. When your work is finished, send one self-contained report by SendMessage to the router your brief names, then end your turn; you stay alive for follow-up tasks. First action: git rev-parse --show-toplevel must print $wt (if it prints anything else, report that and stop); then git branch --show-current, git log --oneline -6, git status --short. Your shell runs in a sandbox: give every network command a timeout (a host outside the sandbox makes it wait), and report a refusal or \"Operation not permitted\", never route around it."
 fi
 if [ -n "$pnpm_home" ]; then
-  export PNPM_HOME=$pnpm_home pnpm_config_modules_dir=$pnpm_modules
   if [ -e "$wt/app/node_modules" ] && [ ! -L "$wt/app/node_modules" ]; then
     : # a real install is never replaced
   else

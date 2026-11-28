@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b0a958c9f34851f0dfb2e57">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-WSANDBOX.W10 plan: fix what the epic e2e found</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-WSANDBOX.W10 plan: fix what the epic e2e found</h1>
+      <p>Make the worker's package install work, answer three open points, and run the e2e again.</p>
+      <div class="meta">Draft v1 · 2026-11-28 · Keel</div>
+    </div>
+  </header>
+  <main>
+    <h2 id="problem">The problem</h2>
+    <p>The e2e run showed that a worker cannot install the app's packages. The install failed. Package files landed inside the worktree, which the run was meant to prevent. The probe router still marked both steps PASS.</p>
+    <p>Two causes, read from the code and the records:</p>
+    <ol>
+      <li>The launcher links the app's package folder at a folder it never creates.</li>
+      <li>The launcher hands pnpm its settings through its own environment. A background session does not get that environment. A background service starts the session and forwards one chosen variable only.</li>
+    </ol>
+    <p>The e2e also left three points for you, and its own check miscounted.</p>
+
+    <h2 id="get">What you get</h2>
+    <ul>
+      <li>A worker's install works, and its worktree stays clean.</li>
+      <li>A test that fails today, because it copies how a background session really starts.</li>
+      <li>The next e2e run judged by a worker from raw output. A small model no longer gives the verdicts.</li>
+      <li>The same three commands for you.</li>
+    </ul>
+
+    <h2 id="steps">How you approve: your steps, in order</h2>
+    <ol>
+      <li>Answer the three questions below, or leave the defaults.</li>
+      <li>The worker commits the failing tests. Then you run the one <code>keel mr commit</code> it stages.</li>
+      <li>A review worker checks it. You sign and merge into the epic.</li>
+      <li>The e2e: the setup script's <code>prepare</code>, then the line it prints, then <code>finish</code>. Send the log to the router.</li>
+      <li>A worker judges the evidence. You read its table.</li>
+    </ol>
+
+    <h2 id="makes">What it makes</h2>
+    <table data-c="makes">
+      <tr><th>Part</th><th>Change</th></tr>
+      <tr><td>Launcher</td><td>Passes the three pnpm settings inside the session's own settings. Creates the package folder and checks it is yours.</td></tr>
+      <tr><td>Tests</td><td>The fake session reads only those settings, as the real one does. Red today, green after your commit.</td></tr>
+      <tr><td>E2e script</td><td>The router reports raw output only. The red-doc check counts only hook messages, not the prompt's own words.</td></tr>
+      <tr><td>Probes</td><td>Probe 2 prints what the worker's shell sees. Probe 3 splits its command to find what asked for permission.</td></tr>
+    </table>
+
+    <h2 id="decide">What you decide</h2>
+    <table data-c="decide">
+      <tr><th>Question</th><th>Answer first</th><th>Why</th></tr>
+      <tr><td>q1 · The reviewer let <code>curl … | sh</code> through. Refuse it?</td><td><b>Yes: deny a bare shell</b> (<code>sh</code>, <code>bash</code>, <code>zsh</code>).</td><td>Cheap, with a clear reason. Best effort: a wrapper passes. The other choices: accept it, or pin a site list, which reverses your earlier ruling.</td></tr>
+      <tr><td>q2 · A <code>pnpm add</code> line waited 11 minutes on a prompt. Put pnpm on the grant?</td><td><b>Yes: install, add, run, test.</b> The re-run also finds the shape that prompted.</td><td>The sandbox still bounds writes and sites. Without it the stall can recur.</td></tr>
+      <tr><td>q3 · A background router cannot write its briefs. Change it?</td><td><b>No: the router stays an interactive session.</b> The probe router writes nothing.</td><td>The real router is interactive, so it is not hit. Turning the guard off would turn it off for every background session.</td></tr>
+    </table>
+
+    <h2 id="know">How you'll know it worked</h2>
+    <ol>
+      <li>Probe 2's install succeeds. Its shell shows the three settings.</li>
+      <li>Probe 9's <code>git status</code> is empty.</li>
+      <li>Probes 3 and 5 match your answers.</li>
+      <li>The finish step prints PASS for the red-doc check.</li>
+      <li>The worker's table quotes the raw line behind each verdict.</li>
+    </ol>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

@@ -185,6 +185,20 @@ wu-summaries:
       a planner's carries --effort high; on DSH the skill's dispatch row names worker_spawn's effort as always given
       (a live DSH spawn is the host preset's, a non-goal).
     wu-deps: [E-WSANDBOX.W3]
+  - wu: E-WSANDBOX.W10
+    wu-summary: >-
+      Fixes from the epic e2e of 2026-11-28 (plan docs/work/2026-11-28-e-wsandbox-w10-plan.yaml): the worker's pnpm
+      env goes through the launcher's --settings env object (claude --bg drops the caller's env) and the launcher
+      creates and checks the modules dir; bare sh, bash and zsh denied (owner q1); pnpm install, add, run and test on
+      the grant (owner q2); the router stays an interactive session (owner q3); the e2e harness reports raw output, a
+      worker judges it, and the red-doc check counts only Stop-hook records. Rule-bearing: scripts/router-worker.sh and
+      the project-router skill; one owner keel mr commit.
+    wu-maps-to: "The e2e-plan's frozen install, pnpm add, refused site and red-doc probes; E-WSANDBOX.W3 (owner q3) and W4 (q4); UC-ROUTE-5."
+    wu-expected: >-
+      Integration: the launcher test whose stub takes env only from --settings shows the three pnpm settings and a
+      real modules dir; the pin test shows the q1 deny and the q2 grant. E2e: the re-run's probe 2 install succeeds
+      with a clean worktree, and the finish step's red-doc check passes.
+    wu-deps: [E-WSANDBOX.W3, E-WSANDBOX.W4, E-WSANDBOX.W5]
 e2e-plan: >-
   After the last change WU, a fresh worker spawned by the launcher in this epic's worktree runs the ruled probe list
   and reports raw output; each line must match the ruling: bind 127.0.0.1:0 and 0.0.0.0:0 (both succeed, every
