@@ -106,6 +106,9 @@ nolist() { die "cannot list sessions (claude agents --json)"; }
 # a row's fields, US-separated (a whitespace IFS would merge empty fields); a blocked session (rate
 # limited, or waiting on its user) is listed with a state and no status, so the state stands in for it
 US=$(printf '\037')
+# a row's state as the launcher and the watchdog judge it, in st: Claude Code lists some sessions with a
+# state and no status, and a working one is busy, a done one idle (stop, facts and the update log)
+norm_state() { case "$1" in working) st=busy;; done) st=idle;; *) st=$1;; esac; }
 fields() { printf '%s\n' "$r" | jq -r --arg i "${1-}" "select(\$i == \"\" or .id == \$i) | [.id, .sessionId, .cwd, (.status // .state), .kind] | map(. // \"\") | join(\"$US\")"; }
 brief_file() {
   f=$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)/$(basename "$1")
@@ -132,13 +135,18 @@ snapshot() {
 # The brief copies of the stopped session $sid are removed (only a real .router-brief.XXXXXX dir
 # directly under its recorded worktree), and drift=<branch now> is set when that worktree left the
 # branch recorded at spawn.
+# The brief copy recorded in run dir $1 is removed (only a real .router-brief.XXXXXX dir directly under
+# its recorded worktree, w), and cleaned counts it: stop's cleanup and prune share it.
+drop_brief() {
+  w=$(cat "$1/worktree") p=$(cat "$1/brief-copy" 2>/dev/null) || p=
+  case "$p" in "$w"/.router-brief.*) expr "x${p#"$w"/.router-brief.}" : 'x[A-Za-z0-9]\{6\}$' > /dev/null || p=;; *) p=;; esac
+  if [ -n "$p" ] && [ -d "$p" ] && [ ! -L "$p" ]; then rm -rf -- "$p" && cleaned=$((${cleaned:-0} + 1)) || :; fi
+}
 cleanup() {
   drift=
   for d in "$ROOT"/.router/runs/*/; do
     [ -f "${d}session" ] && [ "$(cat "${d}session")" = "$sid" ] || continue
-    w=$(cat "${d}worktree") p=$(cat "${d}brief-copy" 2>/dev/null) || p=
-    case "$p" in "$w"/.router-brief.*) expr "x${p#"$w"/.router-brief.}" : 'x[A-Za-z0-9]\{6\}$' > /dev/null || p=;; *) p=;; esac
-    if [ -n "$p" ] && [ -d "$p" ] && [ ! -L "$p" ]; then rm -rf -- "$p" && cleaned=$((${cleaned:-0} + 1)) || :; fi
+    drop_brief "${d%/}"
     rb=$(cat "${d}branch" 2>/dev/null) || rb=
     if ! linked_ok "$w"; then drift=" drift=unlinked"; continue; fi
     now=$(git -c core.fsmonitor=false -C "$w" branch --show-current 2>/dev/null) || now=
@@ -285,6 +293,7 @@ facts() {
     | map(. // "" | tostring | gsub("[[:cntrl:]]"; " ")) | join("\u001f")' 2>/dev/null) || w_bad=1
   w_rows=$({ [ -z "$w_list" ] || printf '%s\n' "$w_list"; } |
   while IFS=$US read -r w_name w_sid w_cwd w_state w_wait; do
+    norm_state "$w_state"; w_state=$st
     if watchdog_name "$w_name"; then continue; fi
     [ "$w_cwd" != "$ROOT" ] && [ "$w_cwd" != "$main" ] && printf '%s\n' "$wts" | grep -Fxq -- "$w_cwd" || continue
     quiet= newest=
@@ -318,7 +327,7 @@ facts() {
       def fit: until((tojson | utf8bytelength) <= 512 or ([.branch, .waiting, .state] | all(. == null or . == ""));
         ([("branch", "waiting", "state") as $k | select((.[$k] // "") != "") | {k: $k, b: (.[$k] | utf8bytelength)}] | max_by(.b).k) as $k
         | .[$k] |= .[:-1]);
-      ($st | if . == "working" then "busy" elif . == "done" then "idle" else . end) as $s
+      $st as $s
       | ($tip | split(" ") | .[0] // "") as $h
       | (if $s == "idle" then "DONE"
          elif $s == "busy" then (if $q != "" and ($q | tonumber) >= 15 then "STUCK (quiet \($q)m)" else "busy" end)
@@ -356,6 +365,8 @@ facts() {
 }
 # E-WSANDBOX.W7 C11: what the router should close, after the worker blocks - a worker still on a branch
 # merged (--no-ff) into its base, a merged worktree with no worker, a worktree whose directory is gone.
+# Merged means a merge on the base's own first-parent line has the branch tip as a later parent: the
+# branch's own merge into its base (DEC-45), never a sibling's back-merge that holds the tip.
 # Each git read runs in the router's checkout, never in a worker's worktree. At most 8 lines.
 close_lines() {
   printf '%s\n' "$wraw" | awk -v r="$ROOT" -v m="$main" '
@@ -365,7 +376,7 @@ close_lines() {
     if [ "$c_g" = 1 ]; then printf '%s: directory gone - prune\n' "$c_p"; continue; fi
     base_of "$c_b" || continue
     c_tip=$(git -c core.fsmonitor=false -C "$ROOT" rev-parse -q --verify "refs/heads/$c_b^{commit}" 2>/dev/null) || continue
-    git -c core.fsmonitor=false -C "$ROOT" rev-list --merges --parents --ancestry-path "$c_tip..refs/heads/$base" 2>/dev/null |
+    git -c core.fsmonitor=false -C "$ROOT" rev-list --first-parent --merges --parents "$c_tip..refs/heads/$base" 2>/dev/null |
       awk -v t="$c_tip" '{for (i = 3; i <= NF; i++) if ($i == t) f = 1} END{exit !f}' || continue
     c_w=$({ [ -z "$w_list" ] || printf '%s\n' "$w_list"; } | while IFS=$US read -r n _ c _; do
       [ "$c" = "$c_p" ] && ! watchdog_name "$n" && { printf '%s\n' "$n"; break; }; done)
@@ -391,13 +402,14 @@ app_lines() {
   old=$(jq -c '.values | if type == "object" then with_entries(select(.key | test("^worker/[a-z0-9][a-z0-9-]{0,40}$")))
     else error("no values") end' "$ad/state.json" 2>/dev/null) || return 0
   rs=$(printf '%s\n' "$list" | jq -r --arg n "$rn" 'first(.[] | select(.name == $n) | (.status // .state)) // "" | tostring' 2>/dev/null) || rs=
+  norm_state "$rs"; rs=$st
   plan=$(printf '%s\n' "$w_rows" | jq -r -s --argjson old "$old" --arg rn "$rn" --arg rs "$rs" '
     def clean($n): tostring | gsub("[[:cntrl:]]"; " ") | .[0:$n];
     length as $count
     | (reduce (.[] | select(.name != null)) as $r ({}; if has($r.name) then . else .[$r.name] = $r.value end)) as $live
     | ($live | to_entries[] | select($old["worker/" + .key] != .value) | ["set", "worker/" + .key, (.value | tojson)]),
       ($old | keys_unsorted[] | select(ltrimstr("worker/") as $k | $live | has($k) | not) | ["del", ., ""]),
-      ["set", "router", ({name: $rn, state: ($rs | if . == "working" then "busy" elif . == "done" then "idle" elif . == "" then "unknown" else . end
+      ["set", "router", ({name: $rn, state: ($rs | if . == "" then "unknown" else . end
         | clean(20)), workers: $count} | tojson)]
     | join("\u001f")' 2>/dev/null) || return 0
   printf '%s\n' "$plan" | while IFS=$US read -r op key val; do
@@ -467,6 +479,7 @@ if [ "$mode" = stop ]; then
   IFS=$US read -r id sid cwd status kind <<EOF
 $(fields)
 EOF
+  norm_state "$status"; status=$st
   [ "$kind" = background ] || die "$name is not a background session"
   git -C "$ROOT" worktree list --porcelain | grep -Fxq "worktree $cwd" || die "$name runs outside this repository's worktrees ($cwd)"
   # a worker reports by SendMessage before its turn has ended, so a stop right after its report may
@@ -478,7 +491,7 @@ EOF
     r=$(rows) || nolist
     row=$(fields "$id")
     [ -n "$row" ] || die "worker $name left the session list while busy; nothing to stop"
-    status=$(printf '%s\n' "$row" | cut -d "$US" -f 4)
+    norm_state "$(printf '%s\n' "$row" | cut -d "$US" -f 4)"; status=$st
   done
   [ "$status" != busy ] || die "worker $name is still busy: stopping it would cut its turn; the owner decides (claude stop $id)"
   st_word=; [ "$status" = idle ] || st_word=" state=${status:-unknown}"
@@ -639,23 +652,35 @@ if [ "$mode" = resume ]; then
 else
 if [ "$mode" = prune ]; then
   [ $# -eq 0 ] || die "prune takes no argument"
+  main_checkout
+  common_dir || die "cannot resolve this repository's git dir"
+  [ "$ROOT" = "$main" ] || linked_ok "$ROOT" || die "the router's checkout $ROOT has a .git that does not link to this repository as git made it: the owner decides"
+  # the run dirs first, then the list: a session that starts and seals its run dir after the list was
+  # read is not in this pass, so its brief is never taken for a gone one's
+  runs=$(for d in "$ROOT"/.router/runs/*/; do [ -f "${d}session" ] && [ ! -L "${d%/}" ] && printf '%s\n' "${d%/}"; done; :)
   list=$("$C" agents --json) || nolist
-  common_dir || gd=/nonexistent
+  live=$(printf '%s\n' "$list" | jq -r 'if type == "array" then .[] | .sessionId // empty | tostring else error("not a list") end' 2> /dev/null) || nolist
   nw=$(git -c core.fsmonitor=false -C "$ROOT" worktree list --porcelain | grep -c '^prunable' || :)
   git -c core.fsmonitor=false -C "$ROOT" worktree prune || die "git worktree prune failed"
+  # one pass: each run dir is read once, its session checked against the list held in memory
+  nl='
+'
   cleaned=0
-  for sid in $(cat "$ROOT"/.router/runs/*/session 2> /dev/null | sort -u); do
-    expr "x$sid" : 'x[0-9a-f-]\{1,64\}$' > /dev/null || continue
-    printf '%s\n' "$list" | jq -e --arg s "$sid" 'any(.[]; .sessionId == $s)' > /dev/null 2>&1 && continue
-    cleanup
-  done
-  nl=0
+  while IFS= read -r d; do
+    [ -n "$d" ] && IFS= read -r s < "$d/session" || continue
+    case "$s" in "" | *[!0-9a-f-]*) continue ;; esac
+    case "$nl$live$nl" in *"$nl$s$nl"*) continue ;; esac
+    drop_brief "$d"
+  done <<EOF
+$runs
+EOF
+  nk=0
   for k in "$ROOT"/.router/runs/.lock-*; do
     [ -d "$k" ] && [ ! -L "$k" ] || continue
     [ -n "$(find "$k" -maxdepth 0 -mmin +10)" ] || continue
-    rmdir "$k" 2> /dev/null && nl=$((nl + 1))
+    rmdir "$k" 2> /dev/null && nk=$((nk + 1))
   done
-  echo "PRUNED worktrees=$nw briefs=$cleaned locks=$nl"; exit 0
+  echo "PRUNED worktrees=$nw briefs=$cleaned locks=$nk"; exit 0
 fi
 [ "$mode" = spawn ] || die "spawn|stop|resume|status|prune|worktree|watchdog"
 usage="spawn <name> <worktree> <brief.md> <model> [--role worker|planner] [--effort <level>] [--permission-mode plan|acceptEdits|auto] [--review]"

@@ -30,7 +30,8 @@ otherwise (briefs, 2026-11-08, below).
   (never `git grep -O`, which runs a pager command), `git worktree list`,
   `git branch -v|-vv|-a|-av|-va|-a -v|--all|--all -v`, `git branch --list <names>`,
   `gh pr view|list|status …`,
-  `ps aux` / `ps -ef`, and the launcher's `spawn` / `stop` / `prune`, `worktree add|remove`
+  `ps aux` / `ps -ef`, and the launcher's `spawn` / `stop` / `prune`, `resume <name>`,
+  `status [<name>]`, `worktree add|remove`
   and `watchdog start|stop` shapes, and, where the project ships them, its
   owner-push sender (`scripts/notify-owner.py --check|--send|--dry-run`), its
   owner-action watch (`scripts/router-watch.sh <kind> <args>`), its report

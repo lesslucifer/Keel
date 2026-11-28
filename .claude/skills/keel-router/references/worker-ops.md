@@ -143,7 +143,8 @@ Claude Code trusts (pitfall 3); the target's branch carries the worker persona
   neither busy nor idle (waiting on a prompt, blocked, failed), is stopped at
   once and its line names the state: `STOPPED name=… id=… session=… state=<state>`
   (E-WSANDBOX.W7, owner 2026-11-28). `stop` reads a row's `status`, else its
-  `state`.
+  `state`: a row listed only as `state: working` is busy, as the watchdog reads
+  it, and is refused that way after the same wait; a busy worker stays the owner's.
 - **Prune** (E-WSANDBOX.W7): `<launcher> prune` clears what gone workers and
   removed worktrees leave: git's record of a worktree whose directory is gone,
   the brief copies of sessions no longer listed, and launch locks older than 10
