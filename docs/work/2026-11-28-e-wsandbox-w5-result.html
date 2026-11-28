@@ -16,7 +16,7 @@
   <main>
 
 <h2 id="happened">What happened</h2>
-<p data-c="happened">The launcher can now bring back a stopped worker by name, with every safety setting rebuilt from the committed rules. A new read-only command shows each worker's memory size, idle time and warm or cold cache. The two reuse limits are settings, and the router skills carry one reuse rule. Your probe showed a removed session keeps its history and id, so stopping works as before. Your commit carried the twelve rule files.</p>
+<p data-c="happened">The launcher can now bring back a stopped worker by name, with every safety setting rebuilt from the committed rules. A new read-only command shows each worker's memory size, idle time and warm or cold cache. The two reuse limits are settings, and the router skills carry one reuse rule. Your probe showed a removed session keeps its history and id, so stopping works as before. Your commit carried the twelve rule files. The first review found one serious bug: after a rate limit the status read showed an empty memory, so a full worker looked safe to reuse. That bug and the review's other points are fixed in your second commit.</p>
 
 <h2 id="checks">How you'll know: met or not</h2>
 <table data-c="checks">
@@ -44,12 +44,14 @@
   <li>The sandbox blocked my writes to six files under the hidden Claude folder, so you applied them from a patch. Your first apply worked; a second run of the same command errored only because the change was already there.</li>
   <li>With the patch in, one of my tests was wrong, not the guard. I fixed the test.</li>
   <li>The router agent file changed too: it lists the launcher's commands.</li>
-  <li>A very long worktree path would show no history in the status read.</li>
+  <li>The review made the launcher share one helper each for finding runs, histories, names and the rules check.</li>
 </ul>
 
 <h2 id="left">What is left, and who takes it</h2>
 <ul data-c="left">
-  <li>The independent review of this unit: a fresh review worker, then your sign-off.</li>
+  <li>A fresh reviewer confirms the fix; then your sign-off.</li>
+  <li>The epic's last check also tests whether a resumed worker keeps its "allow for this session" answers.</li>
+  <li>A crashed worker that stays listed cannot be resumed yet: backlog row R56.</li>
   <li>The live stop, resume and status run: the epic's last check, after W7.</li>
   <li>Stop should retry the remove step when a lock refuses it (seen in your probe): backlog row R55, the next router epic.</li>
 </ul>
