@@ -1124,7 +1124,7 @@ mod tests {
         };
         let (rt, wt) = (tr("router"), tr("worker"));
         let run = |input: &str| {
-            let mut c = Command::new("sh")
+            let mut c = no_git_env(Command::new("sh"), false)
                 .args(["-c", DOC_STOP])
                 .env("PATH", &path)
                 .stdin(std::process::Stdio::piped())
