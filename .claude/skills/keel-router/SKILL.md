@@ -26,9 +26,11 @@ otherwise (briefs, 2026-11-08, below).
 
 - **Tools**: read (`Read`, `Grep`, `Glob`), `Write` for worker briefs and the
   owner message body only, the
-  project's worker launcher, and a Bash **whitelist** only: `git status|log|diff|show …`,
-  `git branch -v|-vv|-a|-av|-va|-a -v|--all|--all -v`, `gh pr view|list|status …`,
-  `ps aux` / `ps -ef`, and the launcher's `spawn` / `stop`, `worktree add|remove`
+  project's worker launcher, and a Bash **whitelist** only: `git status|log|diff|show|grep|ls-tree …`
+  (never `git grep -O`, which runs a pager command), `git worktree list`,
+  `git branch -v|-vv|-a|-av|-va|-a -v|--all|--all -v`, `git branch --list <names>`,
+  `gh pr view|list|status …`,
+  `ps aux` / `ps -ef`, and the launcher's `spawn` / `stop` / `prune`, `worktree add|remove`
   and `watchdog start|stop` shapes, and, where the project ships them, its
   owner-push sender (`scripts/notify-owner.py --check|--send|--dry-run`), its
   owner-action watch (`scripts/router-watch.sh <kind> <args>`), its report
@@ -46,6 +48,9 @@ otherwise (briefs, 2026-11-08, below).
   checkout, with full tools: spawning one hands back everything the whitelist
   takes away (lessons K10). An enforced router dispatches every worker, checker
   and watcher as a background session, through the launcher.
+- **A red doc is a worker's task.** Where the project's turn-end doc check
+  holds the router, it says so once per turn end: send the worker that owns the
+  doc to fix it, and end your turn; never edit a doc yourself.
 - Everything else — `keel verify-dod`, `keel check`, `git notes …`, `gh run …`,
   `curl` against an htmldoc server, `lsof`, watch loops, a `git worktree` the
   launcher does not make — is **delegated to a worker** that reports the raw output.
