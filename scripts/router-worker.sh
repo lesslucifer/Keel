@@ -4,6 +4,8 @@
 # text, so no untrusted string ever reaches `claude`.
 #   router-worker.sh spawn  <name> <worktree> <brief.md> <model> [--role worker|planner] [--effort <level>] [--permission-mode plan|acceptEdits|auto] [--review]
 #   router-worker.sh stop   <name>
+#   router-worker.sh resume <name>
+#   router-worker.sh status [<name>]
 #   router-worker.sh worktree add|remove <epic/E | wu/E/slug>
 #   router-worker.sh watchdog start|stop <router-name>   (watchdog facts <router-name>: its prompt hook only)
 # No inherited GIT_* reaches the launcher's git or a session it starts (E-ROUTER3.W8 P1: a --bg
@@ -23,8 +25,16 @@
 # router by SendMessage and stays alive idle; a follow-up task is the router's own SendMessage, so
 # the launcher has no mode for it. stop closes an idle worker (`claude stop`, then `claude rm`, which
 # keeps its transcript and its worktree); a worker still busy after about 30s is refused, because
-# `claude stop` cuts its turn. A stopped worker is never revived (DEC-46: a plain `--bg --resume`
-# drops every launch flag): the router spawns a fresh one with a new brief.
+# `claude stop` cuts its turn. resume brings a stopped worker back by name (E-WSANDBOX.W5, owner
+# request 2026-11-26): its newest run dir names the session, the worktree, the branch, the effort, the
+# mode and the review grant, and the session starts as `claude --bg --resume <id>` through the same
+# checks and the same flag builder as a spawn, with every flag rebuilt from the committed policy now
+# (a plain `--bg --resume` drops every launch flag, DEC-46; `claude respawn` reuses flags the session
+# itself can change, so it is never used). It refuses what it cannot rebuild: a live session of the
+# name, no transcript, a changed brief snapshot, a worktree off the run's branch, unlinked or without
+# the persona, an effort, mode or model the policy no longer admits. status reads, per worker, its
+# context and cache state from its transcript's usage records and timestamps only, against the two
+# reuse ceilings ([router] reuse_max_context_cold / reuse_max_context_warm); it starts nothing.
 # The spawn options come in any order, once each. The model and effort must satisfy the worker
 # policy, [router] in .keel/config.toml at this checkout's HEAD (DEC-39); no policy, no spawn. The mode
 # is the policy's worker_permission_mode (acceptEdits when absent; plan, acceptEdits or auto, never
@@ -77,11 +87,12 @@ brief_file() {
 # existing path or symlink) that ignores itself in git; the run dir records it for stop. Copy-in, not
 # --add-dir "$R": the worker gets no tool access to the router's .router/runs/.
 snapshot() {
-  R="$ROOT/.router/runs/$name-$(date +%Y%m%d%H%M%S)-$$-spawn"
+  R="$ROOT/.router/runs/$name-$(date +%Y%m%d%H%M%S)-$$-$mode"
   mkdir "$R" || die "run dir exists"
   cp "$f" "$R/brief.md"
   printf '%s\n' "$name" > "$R/name"; printf '%s\n' "$wt" > "$R/worktree"; printf '%s\n' "$branch" > "$R/branch"
   printf '%s\n' "$pm" > "$R/permission-mode"; printf '%s\n' "$effort" > "$R/effort"; printf '%s\n' "${review:-no}" > "$R/review"
+  printf '%s\n' "$model" > "$R/model"
   sha=$(shasum -a 256 "$R/brief.md" | cut -d' ' -f1)
   echo "$sha" > "$R/sha256"
   in=$(mktemp -d "$wt/.router-brief.XXXXXX") || die "cannot create brief dir in $wt"
@@ -181,7 +192,9 @@ listed() {
 # any other line in the section, a second `[router]` or any other header naming router refuses.
 # watchdog_model is optional ("-" when absent); so is worker_permission_mode, a word of letters only
 # ("acceptEdits" is not a lowercase word), whose value spawn judges. Both role efforts must sit in
-# worker_efforts: worker_default_effort and planner_effort (E-WSANDBOX.W9).
+# worker_efforts: worker_default_effort and planner_effort (E-WSANDBOX.W9). The two reuse ceilings
+# (E-WSANDBOX.W5) are `key = <digits>`, given together or not at all, the warm one not below the cold
+# one; only status needs them ("-" when absent).
 read_policy() {
 policy=$(git -C "$ROOT" show HEAD:.keel/config.toml 2>/dev/null | awk '
   /^[ \t]*\[/ {
@@ -199,15 +212,18 @@ policy=$(git -C "$ROOT" show HEAD:.keel/config.toml 2>/dev/null | awk '
   /^worker_efforts = \["[a-z][a-z0-9.-]*"(, "[a-z][a-z0-9.-]*")*\]$/ && e == "" { e = substr($0, 19, length($0) - 19); next }
   /^watchdog_model = "[a-z][a-z0-9.-]*"$/ && w == "" { w = $3; next }
   /^worker_permission_mode = "[A-Za-z]+"$/ && p == "" { p = $3; next }
+  /^reuse_max_context_cold = [1-9][0-9]*$/ && c == "" { c = $3; next }
+  /^reuse_max_context_warm = [1-9][0-9]*$/ && h == "" { h = $3; next }
   { bad = 1 }
   END {
     gsub(/"/, "", m); gsub(/"/, "", d); gsub(/"/, "", r); gsub(/[",]/, "", e); gsub(/"/, "", w); gsub(/"/, "", p)
     k = split(e, l, " ")
     for (i = 1; i <= k; i++) { if (l[i] !~ /^(low|medium|high|xhigh|max)$/) bad = 1; if (l[i] == d) hd = 1; if (l[i] == r) hr = 1 }
+    if ((c == "") != (h == "") || (c != "" && h + 0 < c + 0)) bad = 1
     if (bad || m == "" || !hd || !hr) exit 1
-    print m; print d; print r; print e; print (w == "" ? "-" : w); print (p == "" ? "-" : p)
+    print m; print d; print r; print e; print (w == "" ? "-" : w); print (p == "" ? "-" : p); print (c == "" ? "-" : c); print (h == "" ? "-" : h)
   }') || die "no worker policy: [router] worker_model / worker_efforts / worker_default_effort / planner_effort in .keel/config.toml at HEAD of $ROOT"
-{ read -r policy_model; read -r policy_default; read -r policy_planner; read -r policy_efforts; read -r policy_watchdog; read -r policy_mode; } <<EOF
+{ read -r policy_model; read -r policy_default; read -r policy_planner; read -r policy_efforts; read -r policy_watchdog; read -r policy_mode; read -r policy_cold; read -r policy_warm; } <<EOF
 $policy
 EOF
 }
@@ -453,7 +469,101 @@ if [ "$mode" = worktree ]; then
   git -C "$ROOT" worktree remove "$wt" >&2 || die "git worktree remove failed"
   echo "REMOVED path=$wt branch=$b"; exit 0
 fi
-[ "$mode" = spawn ] || die "spawn|stop|worktree|watchdog"
+# E-WSANDBOX.W5: the newest run dir of exactly the worker $1 that recorded a session -
+# <name>-<14 digits>-<pid>-spawn|resume whose name file holds $1 (w5 never takes w5-fix's) - newest by
+# its second, then its pid; empty when none
+last_run() {
+  for d in "$ROOT"/.router/runs/"$1"-*; do
+    [ -d "$d" ] && [ ! -L "$d" ] && [ -f "$d/session" ] || continue
+    rest=${d##*/}; rest=${rest#"$1"-}
+    expr "x$rest" : 'x[0-9]\{14\}-[0-9]\{1,\}-[a-z]\{1,\}$' > /dev/null || continue
+    case "$rest" in *-spawn|*-resume) ;; *) continue;; esac
+    [ "$(cat "$d/name" 2>/dev/null)" = "$1" ] || continue
+    printf '%s %s %s\n' "${rest%%-*}" "$(printf '%s' "$rest" | cut -d- -f2)" "$d"
+  done | sort -k1,1n -k2,2n | tail -1 | cut -d' ' -f3-
+}
+# a mode is no wider than another: plan < acceptEdits < auto (E-WMODE, DEC-37)
+rank() { case "$1" in plan) echo 0;; acceptEdits) echo 1;; auto) echo 2;; *) echo -;; esac; }
+# E-WSANDBOX.W5 (owner rulings 2026-11-26, rule 4): status reads, for one worker or every worker with a
+# recorded run (newest first, 20 at most), its transcript's assistant usage records and timestamps and
+# nothing else - never a sidechain's, never the text - and prints one STATUS line: the context of the
+# last record (input + cache write + cache read), the peak, the idle minutes since the last record, the
+# lifetime of the newest cache write (1h, else 5m), warm while idle is under it, the two ceilings and
+# whether the context fits the one for its state. Read-only: its one claude call is the session list.
+# ROUTER_NOW (seconds) stands in for the clock, as ROUTER_CLAUDE for the CLI.
+if [ "$mode" = status ]; then
+  [ $# -le 1 ] || die "status [<name>]"
+  read_policy
+  [ "$policy_cold" != - ] || die "no reuse ceilings: [router] reuse_max_context_cold and reuse_max_context_warm in .keel/config.toml at HEAD of $ROOT"
+  now=${ROUTER_NOW:-$(date +%s)}
+  expr "x$now" : 'x[0-9]\{1,12\}$' > /dev/null || die "ROUTER_NOW must be seconds since the epoch"
+  if [ $# -eq 1 ]; then
+    valid_name "$1"
+    [ -n "$(last_run "$1")" ] || die "no recorded run of $1"
+    names=$1
+  else
+    names=$(for d in "$ROOT"/.router/runs/*-spawn "$ROOT"/.router/runs/*-resume; do
+        [ -d "$d" ] && [ ! -L "$d" ] && [ -f "$d/session" ] || continue
+        n=$(cat "$d/name" 2>/dev/null) || continue
+        expr "$n" : '^[a-z0-9][a-z0-9-]\{0,40\}$' > /dev/null || continue
+        rest=${d##*/}; rest=${rest#"$n"-}
+        expr "x$rest" : 'x[0-9]\{14\}-[0-9]\{1,\}-[a-z]\{1,\}$' > /dev/null || continue
+        printf '%s %s\n' "${rest%%-*}" "$n"
+      done | sort -k1,1nr -k2,2 | awk '!seen[$2]++ { print $2 }' | head -20)
+  fi
+  list=$("$C" agents --json) || nolist
+  for name in $names; do
+    d=$(last_run "$name")
+    row=$(printf '%s\n' "$list" | jq -r --arg n "$name" '[.[] | select(.name == $n and .kind == "background")] | first // empty
+      | [.sessionId, (.status // .state), .cwd] | map(. // "" | tostring | gsub("[[:cntrl:] ]"; "_")) | join(" ")') || nolist
+    if [ -n "$row" ]; then
+      sid=${row%% *} st=${row#* } w=${st#* } st=${st%% *}
+    else
+      sid=$(cat "$d/session") st=stopped w=$(cat "$d/worktree")
+    fi
+    st=${st:-unknown}
+    t=
+    if expr "x$sid" : 'x[0-9a-f-]\{1,64\}$' > /dev/null; then
+      t=$HOME/.claude/projects/$(printf '%s' "$w" | sed 's/[^A-Za-z0-9]/-/g')/$sid.jsonl
+    fi
+    if [ -z "$t" ] || [ ! -f "$t" ]; then echo "STATUS name=$name state=$st session=$sid transcript=none"; continue; fi
+    facts=$(jq -R -r -s --argjson now "$now" --argjson cold "$policy_cold" --argjson warm "$policy_warm" '
+      [split("\n")[] | fromjson? | select(type == "object" and .type == "assistant" and (.isSidechain // false) == false and (.message.usage | type) == "object")] as $r
+      | if ($r | length) == 0 then "usage=none" else
+        [$r[] | .message.usage | (.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0)] as $c
+        | ([$r[] | .message.usage.cache_creation // {} | if (.ephemeral_1h_input_tokens // 0) > 0 then 3600 elif (.ephemeral_5m_input_tokens // 0) > 0 then 300 else empty end] | last // 300) as $life
+        | ([($now - ($r[-1].timestamp | sub("\\.[0-9]+"; "") | fromdateiso8601)), 0] | max) as $gap
+        | (if $gap < $life then "warm" else "cold" end) as $cache
+        | "context=\($c[-1]) peak=\($c | max) idle=\($gap / 60 | floor)m cache=\($cache) ttl=\(if $life == 3600 then "1h" else "5m" end) cold-max=\($cold) warm-max=\($warm) fits=\(if $c[-1] < (if $cache == "warm" then $warm else $cold end) then "yes" else "no" end)"
+        end' < "$t" 2>/dev/null) || facts=usage=unreadable
+    echo "STATUS name=$name state=$st session=$sid $facts"
+  done
+  exit 0
+fi
+# E-WSANDBOX.W5: resume takes the stopped run's own values, judged against the committed policy now,
+# then runs the spawn's checks and its one flag builder below, with --resume <id> and a resume prompt.
+if [ "$mode" = resume ]; then
+  [ $# -eq 1 ] || die "resume <name>"
+  name=$1
+  valid_name "$name"
+  case "$name" in watchdog|watchdog-*) die "the name $name is reserved for the watchdog";; esac
+  last=$(last_run "$name")
+  [ -n "$last" ] || die "no stopped run of $name to resume (no run dir of it records a session)"
+  rec() { cat "$last/$1" 2>/dev/null || die "run $last lacks its $1 file"; }
+  rsid=$(rec session) wt=$(rec worktree) rb=$(rec branch) effort=$(rec effort) pm=$(rec permission-mode) review=$(rec review)
+  expr "x$rsid" : 'x[0-9a-f-]\{1,64\}$' > /dev/null || die "run $last records no valid session id"
+  [ "$review" = yes ] || review=
+  model=$(cat "$last/model" 2>/dev/null) || model=
+  read_policy
+  [ -n "$model" ] || model=$policy_model
+  [ "$model" = "$policy_model" ] || die "model $model of the stopped run is not the policy's $policy_model ([router] worker_model): spawn a fresh worker"
+  case " $policy_efforts " in *" $effort "*) ;; *) die "effort $effort of the stopped run is not one of: $policy_efforts ([router] worker_efforts in .keel/config.toml): spawn a fresh worker";; esac
+  [ "$policy_mode" != - ] || policy_mode=acceptEdits
+  [ "$(rank "$policy_mode")" != - ] || die "worker_permission_mode must be one of: plan acceptEdits auto ([router] in .keel/config.toml)"
+  [ "$(rank "$pm")" != - ] || die "run $last records no valid permission mode"
+  [ "$(rank "$pm")" -le "$(rank "$policy_mode")" ] || die "permission mode $pm of the stopped run is wider than the policy's $policy_mode ([router] worker_permission_mode in .keel/config.toml): spawn a fresh worker"
+else
+[ "$mode" = spawn ] || die "spawn|stop|resume|status|worktree|watchdog"
 usage="spawn <name> <worktree> <brief.md> <model> [--role worker|planner] [--effort <level>] [--permission-mode plan|acceptEdits|auto] [--review]"
 [ $# -ge 4 ] || die "$usage"
 name=$1 wt=$2 file=$3 model=$4; shift 4
@@ -485,13 +595,14 @@ fi
 case "$effort" in ""|*[!a-z0-9.-]*) die "effort must be one of: $policy_efforts ([router] worker_efforts in .keel/config.toml)";; esac
 case " $policy_efforts " in *" $effort "*) ;; *) die "effort must be one of: $policy_efforts ([router] worker_efforts in .keel/config.toml)";; esac
 # the mode (E-WMODE, DEC-37): the policy's, acceptEdits when absent; an option may only narrow it
-rank() { case "$1" in plan) echo 0;; acceptEdits) echo 1;; auto) echo 2;; *) echo -;; esac; }
 [ "$policy_mode" != - ] || policy_mode=acceptEdits
 [ "$(rank "$policy_mode")" != - ] || die "worker_permission_mode must be one of: plan acceptEdits auto ([router] in .keel/config.toml)"
 if [ -n "$pm_set" ]; then
   [ "$(rank "$pm")" != - ] || die "permission mode must be plan|acceptEdits|auto"
   [ "$(rank "$pm")" -le "$(rank "$policy_mode")" ] || die "permission mode $pm is wider than the policy's $policy_mode ([router] worker_permission_mode in .keel/config.toml)"
 else pm=$policy_mode; fi
+fi
+# spawn and resume from here: the same checks, the same flag builder
 wt=$(cd "$wt" 2>/dev/null && pwd -P) || die "no such worktree"
 git -C "$ROOT" worktree list --porcelain | grep -Fxq "worktree $wt" || die "not a registered worktree of this repo"
 top=$(cd "$(git rev-parse --show-toplevel)" && pwd -P) || die "not in a git repo"
@@ -511,13 +622,21 @@ guard=$ROOT/scripts/router-file-guard.sh
 [ -f "$guard" ] || die "no worker file guard at $guard"
 [ -f "$wt/.claude/agents/worker.md" ] || die "no worker persona in $wt (.claude/agents/worker.md): merge the base branch that carries it into this worktree's branch, then spawn again"
 branch=$(git -c core.fsmonitor=false -C "$wt" branch --show-current) && [ -n "$branch" ] || die "worktree $wt has a detached HEAD: a worker runs on a branch"
-brief_file "$file"
+if [ "$mode" = resume ]; then
+  [ "$branch" = "$rb" ] || die "worktree $wt is on $branch, not the run's $rb: the owner decides; spawn a fresh worker"
+  f=$last/brief.md
+else brief_file "$file"; fi
 mkdir -p "$ROOT/.router/runs"
 lock=$ROOT/.router/runs/.lock-$name
 mkdir "$lock" 2>/dev/null || die "a launch of $name is in progress ($lock); remove that directory if no launcher runs"
 trap 'rmdir "$lock" 2>/dev/null || :' EXIT
 r=$(rows) || nolist
 [ -z "$r" ] || die "worker $name is still running; message it, or stop it first"
+if [ "$mode" = resume ]; then
+  [ "$(shasum -a 256 "$f" | cut -d' ' -f1)" = "$(cat "$last/sha256" 2>/dev/null)" ] || die "the brief snapshot $f no longer matches its sha256: spawn a fresh worker"
+  t=$HOME/.claude/projects/$(printf '%s' "$wt" | sed 's/[^A-Za-z0-9]/-/g')/$rsid.jsonl
+  [ -f "$t" ] || die "no transcript of session $rsid ($t): spawn a fresh worker"
+fi
 sid=
 snapshot
 # Claude Code's Bash sandbox (DEC-46): shell writes reach the worktree (the working directory) but its
@@ -617,8 +736,13 @@ set -- "$@" "Bash(git --git-dir=*)" "Bash(git --work-tree=*)"
 set -- "$@" "Read(~/.ssh/**)" "Read(~/.claude/channels/**)"
 if [ -n "$review" ]; then set -- "$@" "Bash(git add)" "Bash(git add *)" "Bash(git commit)" "Bash(git commit *)" Edit Write NotebookEdit
 else set -- "$@" "Bash(keel notes write cr)" "Bash(keel notes write cr *)"; fi
-# the prompt follows a single-valued option: after a list option it would be read as a tool name
+# the prompt follows a single-valued option: after a list option it would be read as a tool name; a
+# resume names its session just before the mode
+if [ "$mode" = resume ]; then
+  set -- "$@" --resume "$rsid" --permission-mode "$pm" "You are resumed by the launcher after a stop. Read $f again: it is the brief you were started with. First action: git rev-parse --show-toplevel must print $wt (if it prints anything else, report that and stop); then git branch --show-current, git log --oneline -6, git status --short. Then send the router your brief names one SendMessage saying you are back, with those four outputs, and end your turn: its next task follows as a message. Your shell runs in a sandbox: give every network command a timeout (a host outside the sandbox makes it wait), and report a refusal or \"Operation not permitted\", never route around it."
+else
 set -- "$@" --permission-mode "$pm" "You are a fresh worker session. Read $f in full and do exactly what it says. When your work is finished, send one self-contained report by SendMessage to the router your brief names, then end your turn; you stay alive for follow-up tasks. First action: git rev-parse --show-toplevel must print $wt (if it prints anything else, report that and stop); then git branch --show-current, git log --oneline -6, git status --short. Your shell runs in a sandbox: give every network command a timeout (a host outside the sandbox makes it wait), and report a refusal or \"Operation not permitted\", never route around it."
+fi
 if [ -n "$pnpm_home" ]; then
   export PNPM_HOME=$pnpm_home pnpm_config_modules_dir=$pnpm_modules
   if [ -e "$wt/app/node_modules" ] && [ ! -L "$wt/app/node_modules" ]; then
@@ -644,4 +768,5 @@ IFS=$US read -r id sid _ <<EOF
 $(fields)
 EOF
 seal
-echo "RUNNING name=$name id=$id session=$sid permission-mode=$pm effort=$effort branch=$branch snapshot=$snap brief=$f sha256=$sha worktree=$wt"
+[ "$mode" = spawn ] && word=RUNNING || word=RESUMED
+echo "$word name=$name id=$id session=$sid permission-mode=$pm effort=$effort branch=$branch snapshot=$snap brief=$f sha256=$sha worktree=$wt"
