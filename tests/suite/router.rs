@@ -5731,9 +5731,10 @@ fn the_reuse_rules_are_stated_once_by_their_keys() {
     for said in ["scripts/router-worker.sh resume <name>", "scripts/router-worker.sh status"] {
         assert!(project_router.contains(said), "project-router does not name {said:?}");
     }
-    let agent = read(".claude/agents/router.md");
-    let flat = agent.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(flat.contains("`resume <name>`") && flat.contains("`status [<name>]`"), "router.md's Bash posture omits resume or status");
+    // E-WSANDBOX.W7 G2 (owner, 2026-11-28): router.md lists no shapes and points to the guard and UC-ROUTE-6,
+    // so resume and status are pinned in UC-ROUTE-6
+    let uc = read("docs/use-cases/router.yaml").split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(uc.contains("`resume <name>`") && uc.contains("`status [<name>]`"), "UC-ROUTE-6 omits resume or status");
 }
 
 /// E-WSANDBOX.W5 review round 1 (blocker): Claude Code writes a synthetic assistant record for an API
