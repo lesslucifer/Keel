@@ -75,14 +75,14 @@ flowchart LR
 <table data-c="decide">
   <thead><tr><th>#</th><th>Open question</th><th>Answer first, and why</th></tr></thead>
   <tbody>
-    <tr><td>1</td><td>May a worker change another worktree of the same repo?</td><td><b>Not yet</b>: the file guard and a decision change.</td></tr>
+    <tr><td>1</td><td>May a worker change another worktree of the same repo?</td><td><b>Ruled: stays no</b>; backlog R57.</td></tr>
     <tr><td>2</td><td>Do the router and the watchdog stay outside a sandbox?</td><td><b>Yes: the guard is the bound</b>; a sandbox would stop the launcher.</td></tr>
     <tr><td>3</td><td>How does a stopped worker come back?</td><td><b>One launcher command, limits rebuilt</b>; your probe decides stop.</td></tr>
     <tr><td>4</td><td>Are the reuse ceilings settings?</td><td><b>Two config keys</b>: 200k cold, 400k warm.</td></tr>
     <tr><td>5</td><td>When is a cache warm?</td><td><b>Its last cache lifetime</b>; W5 confirms.</td></tr>
     <tr><td>6</td><td>Who sends a fix to a fresh worker?</td><td><b>The router, by your rule.</b> Yours: may the author keep a fix past a ceiling?</td></tr>
     <tr><td>7</td><td>Effort policy?</td><td><b>Ruled</b>: worker low, planner high, no medium. Only a plan's author is a planner; reviews, builds and fixes are low.</td></tr>
-    <tr><td>8</td><td>Medium here vs W9's low/high: which holds on main?</td><td><b>Keep low/high</b>; medium ends with this epic.</td></tr>
+    <tr><td>8</td><td>Medium here vs W9's low/high: which holds on main?</td><td><b>Ruled: keep low/high</b>; medium ends with this epic.</td></tr>
   </tbody>
 </table>
 

@@ -6,7 +6,7 @@ about: >-
   Router work deferred at E-ROUTER's close: open launcher issues, gate coverage of the router's security files,
   the epic e2e, and the accepted worker risk. Each row names the source it was deferred from. E-ROUTER's plan is
   archived out of git; `git show 9787799:docs/work/2026-11-07-router-plan.html` recovers it. Why things are as they
-  are: decisions/router.html (DEC-42 - DEC-48 shaped the router as it is now). Rows R1 - R51.
+  are: decisions/router.html (DEC-42 - DEC-48 shaped the router as it is now). Rows R1 - R57.
 open:
   - id: R5
     title: "Epic e2e for the router"
@@ -621,6 +621,18 @@ open:
       Probe what `claude agents --json` lists for a crashed background session; if it stays, let `stop` (or resume)
       close a listed session whose process is gone, or name the owner step in the refusal.
     source: "E-WSANDBOX.W5 independent review round 1 (2026-11-28), a low."
+    taken-by: "unowned: the next router epic"
+  - id: R57
+    title: "May a worker change another worktree of the same repo?"
+    status: "open: an owner question, default no; rule-bearing if granted"
+    problem: >-
+      A worker edits only its own worktree (DEC-37, scripts/router-file-guard.sh); a change in another worktree of
+      the same repo - a sibling WU's, or the epic's - stays an owner step. The owner left the question open with that
+      default (2026-11-28).
+    proposal: >-
+      If granted, it needs its own bound first: which worktrees and which files, an Amended DEC-37 row, the file
+      guard's change and its tests.
+    source: "E-WSANDBOX epic plan, open question (owner comment 2026-11-26; kept open with its default 2026-11-28)."
     taken-by: "unowned: the next router epic"
 closed:
   - id: R1
