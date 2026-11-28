@@ -31,7 +31,10 @@ areas:
           reuse_max_context_cold` (cold cache) or `reuse_max_context_warm` (warm); a fix goes to its author under the
           ceiling and fresh past it unless the owner says otherwise; a review stays fresh. A watchdog worker messages the router every 5
           minutes with one sentence per live worker, done and stuck first (DEC-45), so the router itself runs no loop
-          or timer. At the moment of action it runs the skill's short checklists (`references/checklists.md`): START
+          or timer; it also passes on what to close (a worker on a merged branch, a merged worktree with no worker, a
+          missing worktree directory) and, from day 6, that its own schedule ends (E-WSANDBOX.W7). The router stops a
+          dead worker itself (`stop`; a busy one stays the owner's), clears leftovers with `prune`, and never fixes a
+          red doc: it sends the worker that owns it. At the moment of action it runs the skill's short checklists (`references/checklists.md`): START
           before the first tool call of a session, WAKE on every wake, DISPATCH before every spawn or send, each row
           naming its trigger and what skipping it cost. Read tools serve dispatch, verification and relaying, never
           deriving the substance, and never a document a worker was just sent to read. A turn never closes with a
@@ -195,8 +198,10 @@ areas:
           One `PreToolUse` guard on every tool (Keel: `scripts/router-guard.jq`) allows only the tools in the
           router's agent file (no `Agent`, `Edit`, `Monitor`), the inline keel skills, `ListAgents`, `SendMessage` to
           any named session (DEC-42), `Write` to `<cwd>/.router/briefs/<name>.md`, and Bash commands of plain words
-          matching the whitelist (read-only git, gh with named query flags only, ps, the launcher's shapes: spawn,
-          stop, `resume <name>`, `status [<name>]`, `worktree add|remove <epic/E or wu/E/slug>` and `watchdog
+          matching the whitelist (read-only git - `status|log|diff|show`, `branch -v|-vv|-a|-av|-va|-a -v|--all|--all
+          -v`, and since E-WSANDBOX.W7 `grep` (never `-O` or `--open-files-in-pager`, which run a command), `ls-tree`,
+          `worktree list` and `branch --list <names>` - gh with named query flags only, ps, the launcher's shapes: spawn,
+          stop, `prune`, `resume <name>`, `status [<name>]`, `worktree add|remove <epic/E or wu/E/slug>` and `watchdog
           start|stop <router-name>`, the five
           `router-watch.sh` kinds, the owner sender's three plain shapes (`scripts/notify-owner.py
           --send|--dry-run|--check`), the inbox's `init|status|watch <seconds>|consume <id>`, never `post`
@@ -210,7 +215,11 @@ areas:
           `router_guard_allows_the_owner_sender_only_as_a_plain_shape`,
           `router_guard_admits_the_inbox_watcher_and_consume_but_never_post`,
           `the_guard_and_the_inbox_script_take_the_same_ids_and_seconds` and
-          `the_guard_and_the_app_script_take_the_same_words`. On DSH: Nothing enforces this posture: DSH
+          `the_guard_and_the_app_script_take_the_same_words`; E-WSANDBOX.W7 adds
+          `router_guard_admits_the_read_only_git_searches`, `settings_allow_only_shapes_the_guard_admits` (every
+          allow line is a shape the guard admits; `router-watch.sh` by its five kinds),
+          `router_agent_file_points_to_the_guard_instead_of_listing_shapes` and, in `tests/suite/verify_doc.rs`,
+          `stop_hook_tells_the_router_once_and_holds_every_other_session`. On DSH: Nothing enforces this posture: DSH
           has no shell-hook surface, so until a guard plugin exists (a backlog row) the skill is the only guard. The
           router holds itself to the same whitelist, says that enforcement is missing, and never treats the gap as
           licence to do the work itself (DEC-55). The permission preset decides, not the owner (UC-DSH-4, DEC-56): a

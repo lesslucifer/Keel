@@ -792,3 +792,52 @@ fn doc_roles_answers_each_files_roles_id_and_page_outside_a_repository() {
     assert_eq!(none.status.code(), Some(1));
     assert!(text(&none).contains("usage: keel doc-roles <data file>..."), "{}", text(&none));
 }
+
+/// E-WSANDBOX.W7 C5 (owner, 2026-11-28: "The router shouldn't fix doc, if it finds problems, it tells the
+/// worker to fix"): the turn-end hook refuses a router's turn end on a red doc once, with the sentence
+/// that sends a worker, and lets it end while the turn already continues for that hook
+/// (stop_hook_active); every other session is refused every time, as before. The router is known by
+/// agent_type, else by its transcript's agentSetting.
+#[test]
+fn stop_hook_tells_the_router_once_and_holds_every_other_session() {
+    let d = repo();
+    let p = d.path();
+    assert!(keel(p, &["hooks", "install"]).status.success());
+    let hooks = run("git", p, &["config", "core.hooksPath"], "").stdout;
+    let stop = Path::new(std::str::from_utf8(&hooks).unwrap().trim()).join("verify-doc-stop");
+    let stop = stop.to_str().unwrap();
+    std::fs::write(p.join("docs/a.html"), doc("ready", "expected", r#"<a href="gone.html">bad</a>"#)).unwrap();
+    let t = tempfile::TempDir::new().unwrap();
+    let tr = |who: &str| {
+        let f = t.path().join(format!("{who}.jsonl"));
+        std::fs::write(&f, format!("{{\"type\":\"user\",\"agentSetting\":\"{who}\",\"message\":{{}}}}\n")).unwrap();
+        f
+    };
+    let (rt, wt) = (tr("router"), tr("worker"));
+    let ev = |agent: Option<&str>, active: bool, transcript: &Path| {
+        let mut e = serde_json::json!({"session_id": "s", "transcript_path": transcript, "cwd": p, "hook_event_name": "Stop", "stop_hook_active": active});
+        if let Some(a) = agent {
+            e["agent_type"] = a.into();
+        }
+        e.to_string()
+    };
+    let told = "send the worker that owns it to fix it";
+    for who in [Some("router"), None] {
+        let o = run(stop, p, &[], &ev(who, false, &rt));
+        assert_eq!(o.status.code(), Some(2), "{who:?}: {}", text(&o));
+        assert!(text(&o).contains(told) && text(&o).contains("gone.html"), "{who:?}: {}", text(&o));
+        let o = run(stop, p, &[], &ev(who, true, &rt));
+        assert_eq!(o.status.code(), Some(0), "{who:?}: the router was held a second time: {}", text(&o));
+    }
+    for (who, transcript) in [(Some("worker"), &wt), (None, &wt), (Some("worker"), &rt)] {
+        for active in [false, true] {
+            let o = run(stop, p, &[], &ev(who, active, transcript));
+            assert_eq!(o.status.code(), Some(2), "{who:?} active={active}: another session ended its turn on a red doc");
+            assert!(text(&o).contains("gone.html") && !text(&o).contains(told), "{who:?}: {}", text(&o));
+        }
+    }
+    assert_eq!(run(stop, p, &[], "").status.code(), Some(2), "no input: refused as before");
+    std::fs::write(p.join("docs/a.html"), doc("ready", "expected", "")).unwrap();
+    assert!(run(stop, p, &[], &ev(Some("router"), false, &rt)).status.success());
+    assert!(run(stop, p, &[], &ev(Some("worker"), false, &wt)).status.success());
+}

@@ -173,7 +173,7 @@ open:
     source: >-
       W9 follow-up; W8 point 11. Deferred by E-ROUTER3.W8 (owner, 2026-11-11; the W8 plan's open points and probes,
       DEC-46).
-    taken-by: "unowned: the next router epic (not yet proposed)"
+    taken-by: "E-WSANDBOX.W7 C5 (the turn-end hook tells the router once; it sends a worker); closed when W7 merges"
   - id: R21
     title: "`gh` for a sandboxed worker"
     status: open
@@ -267,7 +267,7 @@ open:
     source: >-
       E-ROUTER3.W9 result. Found at the E-ROUTER3 close: follow-ups the E-ROUTER3 WU results named that no WU
       absorbed.
-    taken-by: "unowned: the next router epic (not yet proposed)"
+    taken-by: "E-WSANDBOX.W7 C6 (the facts warn from day 6); closed when W7 merges"
   - id: R31
     title: "The worker file guard misses Unicode case-fold variants"
     status: "open: severity high; owner-waived in E-WMODE.W1 (review round 3, 2026-11-12)"

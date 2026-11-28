@@ -478,6 +478,7 @@ details:
     reaches main?' carries the options (a keep low/high, b widen with medium, default low, c medium default again) and
     the recommended default (a). The router passes --effort medium explicitly for each remaining spawn, so a later main
     default does not change it silently.
+  close-steps-w7: "After the epic merges into main, the owner installs the new keel and re-installs the hooks in the router's checkout, so the turn-end hook script that tells the router of a red doc once (E-WSANDBOX.W7 C5, DEC-30) lands there: in /Users/nguyenvanluong/Documents/proj/misc/Keel run `cargo install --path . --locked` (or the release install of docs/install.html), then `keel hooks install`. Then close backlog R20 and R29."
   sign-off: "Parts 2 - 4: one WU branch, one result report, one review, only the rule-bearing files staged -> the owner's one keel mr commit -> a fresh worker re-gates -> the owner confirms with one keel mr confirm wu and merges --no-ff. W5 (resume and reuse) and W7 (the router's and the watchdog's bounds) each follow that same sequence once for both of their parts. W9: its own result report and sign-off (merged). One WU at a time (project-router 'Sign-off sequences')."
   htmldoc:
     id: 6b0586bf9f34851f0dfb2c72
