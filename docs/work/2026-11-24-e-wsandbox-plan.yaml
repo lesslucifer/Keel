@@ -10,11 +10,12 @@ intent: >-
   add packages with pnpm or cargo, no pinned site list and no strictAllowlist (the auto reviewer decides each site;
   W4 owns how the launcher's allowedDomains changes and what an empty list does), scratch work is allowed through one
   fixed helper, the 14 #[ignore] notify_owner tests are deleted, and parts 2 - 4 land in one owner commit. This epic
-  builds that shape, plus worker resume (W5) and the reuse rules (W6), and - the owner's scope note of the same day -
-  the router's (W7) and the watchdog's (W8) own bounds, since W1 found neither runs in a sandbox. The owner's effort
-  ruling of 2026-11-26 joins as W9: later workers low, planner workers high, one policy both hosts read, because DSH
-  and the Claude Code launcher name effort differently. Why now: the app makes ports and packages routine, and every
-  app WU so far needed an owner run.
+  builds that shape, plus worker resume and the reuse rules (W5), and - the owner's scope note of the same day -
+  the router's and the watchdog's own bounds (W7), since W1 found neither runs in a sandbox; on 2026-11-28 the owner
+  merged the old W5 and W6 into W5, and the old W7 and W8 into W7. The owner's effort ruling of 2026-11-26 joins as
+  W9: later workers low, planner workers high, one policy both hosts read, because DSH and the Claude Code launcher
+  name effort differently. Why now: the app makes ports and packages routine, and every app WU so far needed an owner
+  run.
 owner-changes:
   - {when: "A worker's work needs a local port (the app's end-to-end test, a test server)", today: "Refused; you run it and send the log", after: "The worker serves and connects on any port; it binds every interface and reaches every local listener"}
   - {when: "A WU changes the app's packages", today: "You install them by hand", after: "The worker adds them with pnpm or cargo; a package that ships a blocked folder is installed through a store outside its worktree"}
@@ -28,9 +29,9 @@ owner-changes:
   - {when: "You ask what the router or the watchdog may do", today: "Unwritten; both run outside any sandbox", after: "One table each, pinned by a test, with the one fork named for you"}
 use-cases:
   - "UC-ROUTE-5, amended (W2 - W4, as ruled): the worker's environment - local ports on any address, the auto reviewer deciding each site (the host base kept or emptied), the fixed scratch helper, package installs, and what its shell writes."
-  - "UC-ROUTE-5 and UC-ROUTE-6, amended (W5): a stopped worker is resumed by name with every launch flag rebuilt; its 'a stopped worker revived' failure is replaced by 'a worker resumed with any flag or guard missing, or into a drifted worktree'; the guard admits the resume shape."
-  - "UC-ROUTE-1 and UC-ROUTE-6, amended (W6): the router picks reuse or a fresh worker by the owner's locked rule and reads each worker's context and cache state; the guard admits the status shape."
-  - "UC-ROUTE-1 and UC-ROUTE-6, amended (W7, W8): the router's and the watchdog's bounds, each written in one table and pinned by the guard test; neither gains a sandbox."
+  - "UC-ROUTE-5 and UC-ROUTE-6, amended (W5, resume part): a stopped worker is resumed by name with every launch flag rebuilt; its 'a stopped worker revived' failure is replaced by 'a worker resumed with any flag or guard missing, or into a drifted worktree'; the guard admits the resume shape."
+  - "UC-ROUTE-1 and UC-ROUTE-6, amended (W5, reuse part): the router picks reuse or a fresh worker by the owner's locked rule and reads each worker's context and cache state; the guard admits the status shape."
+  - "UC-ROUTE-1 and UC-ROUTE-6, amended (W7): the router's and the watchdog's bounds, each written in one table and pinned by the guard test; neither gains a sandbox."
   - "UC-ROUTE-5, amended (W9): the spawn's effort comes from the one policy by role - low for a worker, high for a planner - and each host gets it explicitly (Claude Code --effort, DSH worker_spawn effort). UC-ROUTE-1 names no effort; it is unchanged."
   - "No other use case. W1 changes none (a findings report)."
 expected:
@@ -38,17 +39,17 @@ expected:
   - "Each ruling is recorded in DEC-37, DEC-46 or a new decision as an Amended row naming what it exposes and its bound: ports bind every interface; the reviewer decides each site and may let it receive what the worker read; a worker adds packages; scratch goes through one helper."
   - "A fresh worker spawned after the last change runs the ruled probes (bind 127.0.0.1:0 and 0.0.0.0:0, connect to a local listener, a frozen pnpm install of xmlbuilder 15.1.1, a pnpm add, a site the reviewer allows and one it refuses, a scratch keel init through the helper, a Write outside the worktree, a Read of ~/.ssh) and each result matches the ruling."
   - "No #[ignore] attribute remains in tests/suite/notify_owner.rs, and no replacement test was invented for the 14 deleted ones."
-  - "Parts 2, 3 and 4 are one WU branch, one review, one signature and one owner commit, in one --no-ff merge; the other parts land one at a time."
+  - "Parts 2, 3 and 4 are one WU branch, one review, one signature and one owner commit, in one --no-ff merge; so is W5 (resume and reuse) and so is W7 (the router's and the watchdog's bounds); the parts land one at a time."
   - "No change gives a worker the owner's keys, the router's powers or an unbounded network; the epic review checks every widening against its stated bound."
-  - "W5: a worker stopped by the launcher and resumed with it keeps its earlier conversation and session id, carries every launch flag a spawn carries, and is still refused a Write outside its worktree. W6: no skill or instruction text still contradicts the locked reuse rules, and the status read prints each live worker's context, peak, idle minutes and warm or cold from usage records alone."
-  - "W7, W8: each has one table of its bounds (tools, Bash shapes, writes, mode, the scripts it may run unsandboxed), a guard test pins each admitted shape, and neither gains a sandbox."
+  - "W5 (resume and reuse, one branch): a worker stopped by the launcher and resumed with it keeps its earlier conversation and session id, carries every launch flag a spawn carries, and is still refused a Write outside its worktree; no skill or instruction text still contradicts the locked reuse rules, and the status read prints each live worker's context, peak, idle minutes and warm or cold from usage records alone."
+  - "W7 (router and watchdog, one branch): the router and the watchdog each have one table of their bounds (tools, Bash shapes, writes, mode, the scripts it may run unsandboxed), a guard test pins each admitted shape, and neither gains a sandbox."
   - "W9: one effort policy is the only wording - worker low, planner high - the launcher refuses an effort outside it, the router passes it on both hosts (Claude Code --effort; DSH worker_spawn effort always given, never omitted), and no skill still says medium as the default."
 non-goals:
   - "The shared git dir's allow list (backlog R51) and the other residuals of DEC-37 (R31 - R39, R41) unless a ruling here touches them."
   - "A rule for workers changing other worktrees of the same repo: open, not built here (open-questions; it would change DEC-37 and the worker file guard)."
   - "gh in a worker (backlog R21)."
   - "The DSH host's preset (Always Auto Review) and its worker plugin's cold resume (backlog D3): W9 only records the policy the router follows on DSH, not the preset; the launcher built here is Claude Code's."
-  - "Reviewer independence: a review worker stays fresh every round and the author never reviews its own diff; W6 changes neither."
+  - "Reviewer independence: a review worker stays fresh every round and the author never reviews its own diff; W5 changes neither."
   - "Packaging, signing or notarising the app."
   - "Any grant of the owner's keys, tokens, push or sign-off to a worker."
 wu-summaries:
@@ -112,73 +113,56 @@ wu-summaries:
     wu-deps: [E-WSANDBOX.W2]
   - wu: E-WSANDBOX.W5
     wu-summary: >-
-      Worker resume (owner request 2026-11-26). A launcher mode resume <name> brings back the worker's last stopped
-      session (its id in the newest run dir of that name) with claude --bg -n <name> --resume <session-id> and the
-      spawn's whole flag set rebuilt from the committed policy at the router checkout's HEAD by the code spawn uses
-      (one flag builder, so a W2 - W4 change reaches both), plus a fixed resume prompt that repeats the first check.
-      It refuses a live session of that name, a missing transcript, a worktree off the spawn's branch or with an
-      unlinked .git or no persona, a brief snapshot whose sha256 changed, and a model, effort or mode the policy no
-      longer admits; it copies the brief back into the worktree (stop removed it). It never uses claude respawn or the
-      saved job state: a running session rewrites its own saved flags when its mode, model or effort changes
-      (details.w5-resume). stop as the open question decides. W5 owns every 'no resume' text; W6 owns the reuse rules.
-      Rule-bearing: details.rule-bearing-by-wu.W5; one owner keel mr commit.
-    wu-maps-to: "The owner's request of 2026-11-26 (worker resume); UC-ROUTE-5 and UC-ROUTE-6 (amended); backlog R23."
+      Worker resume and the reuse rules, one WU (owner ruling 2026-11-28 merged the old W5 and W6; one branch,
+      wu/E-WSANDBOX/w5-resume-reuse). Part a, resume (owner request 2026-11-26; details.w5-resume): a launcher mode
+      resume <name> brings back the worker's last stopped session (its id in the newest run dir of that name) with
+      claude --bg -n <name> --resume <session-id> and the spawn's whole flag set rebuilt from the committed policy at
+      the router checkout's HEAD by the code spawn uses (one flag builder), plus a fixed resume prompt that repeats the
+      first check. It refuses a live session of that name, a missing transcript, a worktree off the spawn's branch or
+      with an unlinked .git or no persona, a brief snapshot whose sha256 changed, and a model, effort or mode the
+      policy no longer admits; it copies the brief back (stop removed it). It never uses claude respawn or the saved
+      job state. stop as the open question decides. Part b, reuse (owner rulings 2026-11-26, locked; details.w5-reuse),
+      built after part a on the same branch: the router decides; reuse wins when the task is related to or a follow-up
+      of the worker's last one and its context is under 200k with a cold cache or 400k with a warm one; a fix is not
+      forced fresh; every conflict between skill and instruction texts on reuse, resume, retirement and fixes is
+      resolved; a read-only launcher mode, status (or a line in the watchdog's facts), reads each worker's context and
+      cache state from usage records and timestamps only. Reviewers stay fresh every round. One review, one owner keel
+      mr commit for both parts' rule-bearing files (details.rule-bearing-by-wu.W5), one sign-off, one --no-ff merge;
+      the cost: a part cannot be dropped alone at sign-off (details.merged-wus).
+    wu-maps-to: "The owner's request of 2026-11-26 (worker resume) and rulings of 2026-11-26 (worker reuse policy); the merge ruling of 2026-11-28; UC-ROUTE-1, UC-ROUTE-5 and UC-ROUTE-6 (amended); backlog R23 and R53."
     wu-expected: >-
       Integration: the launcher's pin test (stub claude) shows the resume command line holds every flag a spawn of the
       same worker holds - the same --settings sandbox and file guard, grant, deny list, persona, setting sources, mode,
-      model, effort - plus --resume <the recorded id>, and each refusal fires; the guard test admits resume <name> and
-      no other resume shape; the text test no longer forbids resume. E2e: in the probe clone a haiku worker is spawned,
-      told a word, stopped and resumed by the launcher; it answers the word under the same session id and is still
-      refused a Write outside its worktree.
-    wu-deps: [E-WSANDBOX.W3]
-  - wu: E-WSANDBOX.W6
-    wu-summary: >-
-      Worker reuse policy (owner rulings 2026-11-26, locked; details.w6-reuse). 1: the router decides; reuse wins when
-      the task is related to or a follow-up of the worker's last one and its context is under 200k with a cold cache or
-      400k with a warm one. 2: a fix is not forced into a fresh context; the author may take it or say it should go
-      fresh. 3: the WU finds and resolves every conflict between skill and instruction texts on reuse, resume,
-      retirement and fixes. 4: a quick, reliable read of each worker's cache and context state: a read-only launcher
-      mode, status (or a line in the watchdog's facts), from the transcript's usage records and timestamps only, never
-      message text. Reviewers stay fresh every round; the author never reviews its own diff. Rule-bearing:
-      details.rule-bearing-by-wu.W6; one owner keel mr commit.
-    wu-maps-to: "The owner's rulings of 2026-11-26 (worker reuse policy); UC-ROUTE-1 and UC-ROUTE-6 (amended); backlog R53."
-    wu-expected: >-
-      Integration: status on a recorded fixture transcript (usage and timestamps only) at a fixed clock prints the
-      expected context, peak, idle minutes and warm or cold, and the two ceilings; the guard admits the status shape and
-      nothing wider; a text test finds no rule left that contradicts the locked rules. E2e: in the probe clone, status
-      of a live haiku worker and of a resumed one matches its transcript.
-    wu-deps: [E-WSANDBOX.W5]
+      model, effort - plus --resume <the recorded id>, and each refusal fires; status on a recorded fixture transcript
+      (usage and timestamps only) at a fixed clock prints the expected context, peak, idle minutes, warm or cold and the
+      two ceilings; the guard test admits resume <name> and the status shape and no other shape; a text test finds no
+      rule left that forbids resume or contradicts the locked reuse rules. E2e: in the probe clone a haiku worker is
+      spawned, told a word, stopped and resumed by the launcher; it answers the word under the same session id, is
+      still refused a Write outside its worktree, and status of it live and resumed matches its transcript.
+    wu-deps: [E-WSANDBOX.W9]
   - wu: E-WSANDBOX.W7
     wu-summary: >-
-      The router's bounds (owner scope note 2026-11-26; facts in details.w7-router-bounds). W1 found no Bash sandbox:
-      the bound is the fail-closed PreToolUse guard (scripts/router-guard.jq), the 11 tools of .claude/agents/router.md
-      (no Agent, no Edit), Bash only plain-word whitelisted shapes, Write only .router/briefs/<name>.md and
-      .router/notify/owner.md, five inline skills, mode auto, and the scripts it may run (the launcher, router-watch.sh,
-      notify-owner.py) unsandboxed with the owner's rights. W7 writes that bound down in one table, keeps the guard the
-      single source (the agent file and settings tied to it, as tests/suite/router.rs already does), and surfaces the one
-      fork: keep it unsandboxed (default) or sandbox it, which would stop it running the launcher. It adds no power; a
-      widening is the owner's. Rule-bearing: scripts/router-guard.jq, .claude/agents/router.md, .claude/settings.json,
-      the keel-router skill and its mirrors; tests/suite/router.rs (code).
-    wu-maps-to: "The owner's scope note of 2026-11-26 (the router's own part); UC-ROUTE-1 and UC-ROUTE-6 (amended)."
+      The router's and the watchdog's bounds, one WU (owner scope note 2026-11-26; owner ruling 2026-11-28 merged the
+      old W7 and W8; one branch, wu/E-WSANDBOX/w7-bounds; facts in details.w7-router-bounds and
+      details.w7-watchdog-bounds). W1 found no Bash sandbox for either. The router's bound is the fail-closed PreToolUse
+      guard (scripts/router-guard.jq): the 11 tools of .claude/agents/router.md (no Agent, no Edit), Bash only
+      plain-word whitelisted shapes, Write only .router/briefs/<name>.md and .router/notify/owner.md, five inline
+      skills, mode auto, and the scripts it may run unsandboxed with the owner's rights. The watchdog starts with
+      --setting-sources local and a --settings holding only hooks; the guard with watchdog_to admits only CronCreate
+      of the */5 tick and a SendMessage to its router; its facts hook checks each worktree's .git link before any git
+      there. W7 writes each bound in one table, keeps the guard the single source, pins each admitted shape in the
+      guard test, and surfaces the one fork for both: keep them unsandboxed (default) or sandbox them, which would stop
+      the router running the launcher. It adds no power. One review, one owner keel mr commit for the rule-bearing
+      files (details.rule-bearing-by-wu.W7), one sign-off, one --no-ff merge; the cost: the router's table cannot be
+      signed without the watchdog's (details.merged-wus).
+    wu-maps-to: "The owner's scope note of 2026-11-26 (the router's and the watchdog's own parts); the merge ruling of 2026-11-28; UC-ROUTE-1 and UC-ROUTE-6 (amended)."
     wu-expected: >-
       Integration: a guard test allows each ruled router shape and refuses an Edit, an Agent and a Bash word outside
-      the whitelist; the agent file, settings and guard name the same set; the page's table matches the test. E2e: none
-      live (the bound is the guard, proven by the fixture test).
-    wu-deps: [E-WSANDBOX.W6]
-  - wu: E-WSANDBOX.W8
-    wu-summary: >-
-      The watchdog's bounds (owner scope note 2026-11-26; facts in details.w8-watchdog-bounds). W1 found no Bash
-      sandbox: the launcher starts it with --setting-sources local and a --settings holding only hooks; it has only
-      SendMessage and CronCreate; the guard with watchdog_to admits only CronCreate of the */5 tick and a SendMessage to
-      its router; its facts hook runs the launcher unsandboxed and checks each worktree's .git link before any git
-      there. W8 writes that bound down in one table, pins each shape in the guard test, and surfaces the same fork as
-      W7. Rule-bearing: scripts/router-worker.sh (watchdog mode), scripts/router-guard.jq; tests/suite/router.rs (code).
-    wu-maps-to: "The owner's scope note of 2026-11-26 (the watchdog's own part); UC-ROUTE-1 and UC-ROUTE-6 (amended)."
-    wu-expected: >-
-      Integration: a guard test admits CronCreate of the */5 tick and a SendMessage to the named router and refuses any
-      other tool; the launcher's watchdog start carries only the hook settings; the facts hook checks the .git link
-      first. E2e: none live (proven by the fixture test).
-    wu-deps: [E-WSANDBOX.W7]
+      the whitelist; it admits the watchdog's CronCreate of the */5 tick and a SendMessage to the named router and
+      refuses any other tool; the agent file, settings and guard name the same set; the launcher's watchdog start
+      carries only the hook settings; the facts hook checks the .git link first; the page's two tables match the test.
+      E2e: none live (both bounds are the guard, proven by the fixture test).
+    wu-deps: [E-WSANDBOX.W5]
   - wu: E-WSANDBOX.W9
     wu-summary: >-
       One effort policy for both hosts (owner ruling 2026-11-26: later workers use low effort, planner workers high;
@@ -208,10 +192,10 @@ e2e-plan: >-
   under the worktree's .vscode), a pnpm add of a small package (succeeds), a curl with a 10 s timeout to a site the
   reviewer allows (reached) and one it refuses (refused by the reviewer, not by a list), a scratch keel init through
   the helper (allowed), a Write outside the worktree (refused by the file guard), a Read of ~/.ssh (refused). Then,
-  in the probe clone (project-router recipe; an owner step): the launcher stops that worker and resumes it; it answers
+  in the probe clone (project-router recipe; an owner step), for W5: the launcher stops that worker and resumes it; it answers
   a word it was told before the stop, keeps its session id, is refused a Write outside its worktree, and the router's
-  status read shows its context, peak, idle minutes and cold cache, matching the transcript. For W7 and W8 no live
-  probe exists: their bound is the guard, and the epic's e2e for them is the guard test that admits each ruled shape
+  status read shows its context, peak, idle minutes and cold cache, matching the transcript. For W7 no live
+  probe exists: both bounds are the guard, and the epic's e2e for them is the guard test that admits each ruled shape
   and refuses the rest. For W9: in the probe clone a worker spawn carries --effort low and a planner's carries
   --effort high in its command line; on DSH the skill's dispatch row names worker_spawn's effort and says it is always
   given, proven by the text test (a live DSH spawn is the host preset's, a non-goal).
@@ -222,9 +206,9 @@ distillation-plan:
   - "docs/install.html and docs/local-app.html (the three test loops): the worker runs the port and install steps; the owner-run lanes are gone."
   - "docs/backlog/e-router-v2.yaml: R40 closes as run (W1 finding g); R41's per-call widening is the ruled cost; R42's local-settings cause is ruled out; R49's ignored tests close; R23 and R53 close; docs/backlog/local-app.yaml if an app row changes."
   - "DEC-37 and DEC-46 lose W1's corrected sentence (a worktree's own settings.local.json cannot widen hosts or loopback under the launcher)."
-  - "W5: DEC-30, DEC-44 and DEC-46 take Amended rows (resume by name with every flag rebuilt; stop as the open question decides); UC-ROUTE-5 and UC-ROUTE-6; the keel-router skill's worker tables and worker-ops 'No resume' item and the project-router Workers section; backlog R23 closed."
-  - "W6: DEC-43 and DEC-44 take Amended rows (the locked reuse rules, the status read), or one new decision citing both; UC-ROUTE-1; the keel-router skill's 'One live session per WU' and review table, worker-ops and checklists; backlog R53 closed."
-  - "W7, W8: DEC-37 and DEC-46 take Amended rows for the router's and the watchdog's bounds, or one new decision citing both; UC-ROUTE-1 and UC-ROUTE-6; the keel-router skill's router posture section; a backlog row if the sandbox fork is deferred."
+  - "W5, resume part: DEC-30, DEC-44 and DEC-46 take Amended rows (resume by name with every flag rebuilt; stop as the open question decides); UC-ROUTE-5 and UC-ROUTE-6; the keel-router skill's worker tables and worker-ops 'No resume' item and the project-router Workers section; backlog R23 closed."
+  - "W5, reuse part: DEC-43 and DEC-44 take Amended rows (the locked reuse rules, the status read), or one new decision citing both; UC-ROUTE-1; the keel-router skill's 'One live session per WU' and review table, worker-ops and checklists; backlog R53 closed."
+  - "W7: DEC-37, DEC-45 and DEC-46 take Amended rows for the router's and the watchdog's bounds, or one new decision citing both; UC-ROUTE-1 and UC-ROUTE-6; the keel-router skill's router posture section; a backlog row if the sandbox fork is deferred."
   - "W9: DEC-39 takes an Amended row (the low/high policy and its per-host mapping); UC-ROUTE-5's effort sentence; the project-router Workers section (the spawn recipe and the review row), both keel-router copies (the spawn advice and the host dispatch table) and their references; docs/architecture.html's [router] keys row."
 open-questions:
   - "Should a worker be able to open a local port? RULED (owner, 2026-11-26): yes - allowLocalBinding true in the launcher, serve and connect on any port. Recorded with its cost: it binds every interface and reaches every local listener."
@@ -235,16 +219,18 @@ open-questions:
   - "Do changes land in one owner commit or one per part? RULED: W2, W3 and W4 in one owner commit. Structure (recommended): one WU branch with three parts - one review, one signature, one commit, one merge. Three WU branches with a joint commit is not buildable: each tip would need its own rule-bearing commit, and a joint commit after the merges would bind no WU's signed tip."
   - "What effort do later workers use? RULED (owner, 2026-11-26): low for later workers, high for planner workers. The DSH route exposes off | low | high (default) | max; the Claude Code launcher's committed [router] says worker_efforts [\"medium\",\"high\"], worker_default_effort \"medium\"; the owner: 'it's different wording between DSH & claude. Maybe we can have a WU to resolve that.' W9 resolves it; the key shape and the planner role are the two design questions below."
   - "May a worker change another worktree of the same repo? OPEN, not ruled (owner comment 2026-11-26). Recommended default: no - a worker edits only its own worktree, and another worktree stays an owner step. It would change DEC-37 (the write boundary) and scripts/router-file-guard.sh (which worktrees, which files) and their tests; it needs its own bound before it is granted."
-  - "Do the router and the watchdog stay outside a sandbox? OPEN. Recommended default: yes - their guard is the bound, and a sandbox would stop the router running the launcher. W7 and W8 record each bound and surface the fork; a sandbox is a widening of the guard, not of a worker's sandbox."
-  - "How does a stopped worker come back, and what does stop keep? OPEN. Default: a launcher command, resume <name>, that rebuilds every flag from the committed rules and refuses a changed worktree or brief; never Claude Code's own claude respawn, which reuses flags the session itself can change. stop stays 'claude stop, then claude rm' if your probe (details.w5-resume.owner-probe) shows a resume after rm keeps the history; if not, stop keeps the session and a new retire removes it. The router still stops a worker once its WU is merged; W6's ceilings decide whether a resume or a fresh worker is cheaper."
-  - "Are the two context ceilings settings? OPEN. Default: yes, [router] keys in .keel/config.toml (reuse_max_context_cold = 200000, reuse_max_context_warm = 400000) read by the launcher's status, which prints them; the numbers are written in that one place only, and the skills name the keys, not the numbers."
-  - "When is a worker's cache warm? OPEN, for W6 to confirm before it builds. Default: warm while less time has passed since its last turn than the lifetime its last cache write used (1 hour for a 1-hour write, which every launcher worker shows; else 5 minutes), cold otherwise. Claude Code's code holds both lifetimes and labels each write by them; whether a cache read extends the lifetime is W6's to confirm."
-  - "Who decides that a fix goes to a fresh worker? OPEN. Default: the router applies rule 1 (same WU or a follow-up, under the ceiling: the live author); the author may decline in its report ('take it fresh') and the router then starts a fresh one; past a ceiling the fix goes fresh. Owner fork: whether 'up to the worker' also lets the author keep a fix past a ceiling."
+  - "Do the router and the watchdog stay outside a sandbox? OPEN. Recommended default: yes - their guard is the bound, and a sandbox would stop the router running the launcher. W7 (the merged router and watchdog WU) records both bounds and surfaces the fork once; a sandbox is a widening of the guard, not of a worker's sandbox."
+  - "How does a stopped worker come back, and what does stop keep? OPEN, W5 (resume part). Default: a launcher command, resume <name>, that rebuilds every flag from the committed rules and refuses a changed worktree or brief; never Claude Code's own claude respawn, which reuses flags the session itself can change. stop stays 'claude stop, then claude rm' if your probe (details.w5-resume.owner-probe) shows a resume after rm keeps the history; if not, stop keeps the session and a new retire removes it. The router still stops a worker once its WU is merged; W5's reuse ceilings decide whether a resume or a fresh worker is cheaper."
+  - "Are the two context ceilings settings? OPEN, W5 (reuse part). Default: yes, [router] keys in .keel/config.toml (reuse_max_context_cold = 200000, reuse_max_context_warm = 400000) read by the launcher's status, which prints them; the numbers are written in that one place only, and the skills name the keys, not the numbers."
+  - "When is a worker's cache warm? OPEN, for W5 to confirm before its reuse part builds. Default: warm while less time has passed since its last turn than the lifetime its last cache write used (1 hour for a 1-hour write, which every launcher worker shows; else 5 minutes), cold otherwise. Claude Code's code holds both lifetimes and labels each write by them; whether a cache read extends the lifetime is W5's to confirm."
+  - "Who decides that a fix goes to a fresh worker? OPEN, W5 (reuse part). Default: the router applies rule 1 (same WU or a follow-up, under the ceiling: the live author); the author may decline in its report ('take it fresh') and the router then starts a fresh one; past a ceiling the fix goes fresh. Owner fork: whether 'up to the worker' also lets the author keep a fix past a ceiling."
   - "How do the committed [router] keys name the effort policy? RULED (owner, 2026-11-26; built by W9): the flat grammar, one key per role - worker_default_effort = \"low\", a new planner_effort = \"high\" and worker_efforts = [\"low\",\"high\"]. The launcher's parser accepts only key = \"word\" or a list, so one policy string would need a new grammar and still a second role. Both role efforts must sit in worker_efforts, checked like the default; a policy missing planner_effort is refused whole, so no host can omit the planner level."
   - "Which workers take the planner role? RULED (owner, 2026-11-26): a planner authors a plan or a design; reviews, builds, fixes and checks are workers. A review worker is therefore low, and the old 'design, review and debugging' set is dropped, because a review is not planning."
   - "What happens to a worker that asks for medium after W9? RULED (owner, 2026-11-26): the launcher refuses it by name, because medium leaves worker_efforts; the ruling is enforced, not advised, and an owner commit can widen the list again."
+  - "Should W5 and W6, and W7 and W8, each be one WU? RULED (owner, 2026-11-28): yes. W5 is resume and reuse (wu/E-WSANDBOX/w5-resume-reuse), W7 is the router's and the watchdog's bounds (wu/E-WSANDBOX/w7-bounds); the ids W6 and W8 are retired, not reused. Each merged WU is one branch, one review, one owner keel mr commit, one sign-off and one --no-ff merge (details.merged-wus)."
+  - "What effort policy holds when this epic reaches main? OPEN (owner ruling 2026-11-28 vs W9). The owner ruled that this epic's remaining workers run on opus at effort medium; the merged W9 policy on this branch (.keel/config.toml [router]: worker_efforts [\"low\",\"high\"], worker_default_effort \"low\") refuses medium by name. The launcher reads main's HEAD, where medium is still allowed, so the ruling works for W5, W7 and the epic e2e until the epic merges; the policy is not changed here. Options: (a) keep W9's low/high as merged, and read the medium ruling as this epic's remaining workers only - it ends when the epic lands; (b) widen worker_efforts to [\"low\",\"medium\",\"high\"] with the default still low, an owner keel mr commit on .keel/config.toml and an Amended DEC-39 row before the epic merges, so medium stays askable; (c) make medium the worker default again, which reverses W9's ruling. Recommended default: (a), because W9's ruling was explicit that medium is refused and the medium ruling names this epic's work; the router passes --effort medium explicitly for each remaining spawn while main allows it (details.effort-for-remaining-workers)."
 details:
-  status-of-this-plan: "Written by worker e-wsandbox-plan (opus, high) on epic/E-WSANDBOX off main 39d9a5c; amended 2026-11-26 by e-wsandbox-plan2 at 956ba9d (W5, W6). Rewritten 2026-11-26 by worker e-wsandbox-plan3 at cab0968f, folding in the owner's W1 rulings (docs/work/2026-11-26-e-wsandbox-w1-findings.yaml, details.rulings) and the owner's three scope notes below. Facts come from that pair's details, this worktree's files and git history. Amended again 2026-11-26 by e-wsandbox-plan3 at 4843f8df with W9 (the owner's effort ruling; facts from .keel/config.toml, scripts/router-worker.sh, the skills and the DSH route's model listing)."
+  status-of-this-plan: "Written by worker e-wsandbox-plan (opus, high) on epic/E-WSANDBOX off main 39d9a5c; amended 2026-11-26 by e-wsandbox-plan2 at 956ba9d (W5, W6). Rewritten 2026-11-26 by worker e-wsandbox-plan3 at cab0968f, folding in the owner's W1 rulings (docs/work/2026-11-26-e-wsandbox-w1-findings.yaml, details.rulings) and the owner's three scope notes below. Facts come from that pair's details, this worktree's files and git history. Amended again 2026-11-26 by e-wsandbox-plan3 at 4843f8df with W9 (the owner's effort ruling; facts from .keel/config.toml, scripts/router-worker.sh, the skills and the DSH route's model listing). Amended 2026-11-28 at 5e51656f (W1, W2 - W4 and W9 merged; W5 - W8 not started) with the owner's three rulings of that day: the old W5 and W6 merged into W5 (w5-resume-reuse), the old W7 and W8 merged into W7 (w7-bounds), the ids W6 and W8 retired; and this epic's remaining workers on opus at effort medium, whose conflict with W9's policy is an open question. Two WUs remain, W5 then W7."
   rulings-source: "docs/work/2026-11-26-e-wsandbox-w1-findings.yaml, details.rulings (owner, 2026-11-26): q1 ports, q1-ports-detail, q2 ignored tests, q3 packages, q4 websites, q5 scratch, q6 commits. The owner's exact words there are the ruling; this plan records their build shape, not a wider reading."
   one-commit: |-
     The structural answer q6 forces (owner: 'All at once: one owner commit for W2, W3 and W4').
@@ -315,7 +301,7 @@ details:
     point-4-router-watchdog:
       router: "No Bash sandbox (W1 details.router-watchdog): no sandbox key in ~/.claude/settings.json, the project's .claude/settings.json or a local file, no managed settings. Its bound is the fail-closed router guard (scripts/router-guard.jq): the 11 tools of .claude/agents/router.md (no Agent, no Edit), Bash only plain-word whitelisted shapes (git and gh pr reads, ps, the router scripts), Write only .router/briefs/<name>.md and .router/notify/owner.md, five inline skills; mode auto from user settings. The scripts it may run (the launcher, router-watch.sh with git fetch, notify-owner.py) run unsandboxed with the owner's rights."
       watchdog: "No Bash sandbox: the launcher starts it with --setting-sources local and a --settings holding only hooks (scripts/router-worker.sh, watchdog mode). Tools SendMessage and CronCreate only; the guard with watchdog_to admits only CronCreate of the */5 tick and a SendMessage to its router. Its facts hook runs the launcher unsandboxed and checks each worktree's .git link before any git there (linked_ok)."
-      scope: "Owner, 2026-11-26: W1 covered workers only; the router and the watchdog get their own WUs, W7 and W8."
+      scope: "Owner, 2026-11-26: W1 covered workers only; the router and the watchdog get their own WUs, W7 and W8. Owner, 2026-11-28: those two are one WU, W7."
   options:
     point-1:
       - "Ruled: allowLocalBinding true for all workers. Exposes every interface and every local listener, the proxy included; accepted by the owner, recorded with its bound."
@@ -388,21 +374,19 @@ details:
     W2: "scripts/router-worker.sh (the sandbox key); tests/suite/router.rs (the pin); tests/suite/notify_owner.rs (the deletion, code)"
     W3: "scripts/router-worker.sh (the store allowWrite); docs/install.html; app/ config (code)"
     W4: "scripts/router-worker.sh; a new scripts/ helper (and rule_bearing in .keel/config.toml); .claude/agents/worker.md; skills/keel-router and .claude/skills/keel-router; .claude/skills/project-router"
-    W5: "scripts/router-worker.sh (resume mode; stop as the open question decides; its header comment); scripts/router-guard.jq (admit resume <name>); .claude/settings.json (allow Bash(scripts/router-worker.sh resume *)); skills/keel-router/SKILL.md and references/worker-ops.md, with their .claude/skills mirrors; .claude/skills/project-router (Workers: 'there is no resume'); docs/decisions/router.html (DEC-30's 'no resume', DEC-44, DEC-46 Amended rows). Plain: docs/use-cases/router.yaml UC-ROUTE-5 and UC-ROUTE-6; docs/backlog/e-router-v2.yaml R23. Code: tests/suite/router.rs."
-    W6: "skills/keel-router/SKILL.md ('One live session per WU', the review table's fix row, the worker tables), references/worker-ops.md and references/checklists.md, with their .claude/skills mirrors; .claude/skills/project-router; .claude/agents/router.md if the read needs a tool line; scripts/router-worker.sh (status, or the watchdog's facts); scripts/router-guard.jq and .claude/settings.json (the status shape); .keel/config.toml (the two ceilings, if ruled settings); docs/decisions/router.html (DEC-43, DEC-44). Plain: docs/use-cases/router.yaml UC-ROUTE-1 and UC-ROUTE-6; docs/backlog/e-router-v2.yaml R53. Code: tests/suite/router.rs."
-    W7: "scripts/router-guard.jq; .claude/agents/router.md; .claude/settings.json; skills/keel-router and .claude/skills/keel-router (the router posture section); docs/decisions/router.html (DEC-37, DEC-46 Amended rows); docs/use-cases/router.yaml UC-ROUTE-1 and UC-ROUTE-6. Code: tests/suite/router.rs."
-    W8: "scripts/router-worker.sh (watchdog mode); scripts/router-guard.jq; docs/decisions/router.html (DEC-45, DEC-46 Amended rows); docs/use-cases/router.yaml UC-ROUTE-1 and UC-ROUTE-6. Code: tests/suite/router.rs."
+    W5: "Resume part: scripts/router-worker.sh (resume mode; stop as the open question decides; its header comment); scripts/router-guard.jq (admit resume <name>); .claude/settings.json (allow Bash(scripts/router-worker.sh resume *)); skills/keel-router/SKILL.md and references/worker-ops.md, with their .claude/skills mirrors; .claude/skills/project-router (Workers: 'there is no resume'); docs/decisions/router.html (DEC-30's 'no resume', DEC-44, DEC-46 Amended rows). Reuse part: skills/keel-router/SKILL.md ('One live session per WU', the review table's fix row, the worker tables), references/worker-ops.md and references/checklists.md, with their .claude/skills mirrors; .claude/skills/project-router; .claude/agents/router.md if the read needs a tool line; scripts/router-worker.sh (status, or the watchdog's facts); scripts/router-guard.jq and .claude/settings.json (the status shape); .keel/config.toml (the two ceilings, if ruled settings); docs/decisions/router.html (DEC-43, DEC-44). Plain: docs/use-cases/router.yaml UC-ROUTE-1, UC-ROUTE-5 and UC-ROUTE-6; docs/backlog/e-router-v2.yaml R23 and R53. Code: tests/suite/router.rs. Both parts' rule-bearing files go in one owner keel mr commit."
+    W7: "Router: scripts/router-guard.jq; .claude/agents/router.md; .claude/settings.json; skills/keel-router and .claude/skills/keel-router (the router posture section). Watchdog: scripts/router-worker.sh (watchdog mode); scripts/router-guard.jq (watchdog_to). docs/decisions/router.html (DEC-37, DEC-45, DEC-46 Amended rows); docs/use-cases/router.yaml UC-ROUTE-1 and UC-ROUTE-6. Code: tests/suite/router.rs. Both bounds' rule-bearing files go in one owner keel mr commit."
     W9: ".keel/config.toml ([router] keys); scripts/router-worker.sh (read_policy learns planner_effort and validates it); skills/keel-router and .claude/skills/keel-router (SKILL.md and the references that repeat the policy); .claude/skills/project-router; docs/architecture.html; docs/decisions/router.html (DEC-39 Amended row); docs/use-cases/router.yaml UC-ROUTE-5. Code: tests/suite/router.rs."
   commit-order: >-
     Parts 2, 3 and 4 are one branch and one owner commit, in that code order: W2 ports, W4 sites and scratch (the host
     base decision), W3 packages (the registry follows W4's answer). W9 follows that group and precedes W5: it edits
-    .keel/config.toml and the launcher's read_policy, which W5's resume flag builder reads, so writing the policy
-    once avoids teaching W5 the old key set. Then W5, W6, W7 and W8 follow one at a time: each WU branch is cut from
-    the epic tip after the previous part merged, so no two parts edit the launcher, the guard or the settings in
-    parallel. W7 and W8 also touch the guard and settings; they land last, after W5 and W6's guard shapes, so each
-    guard edit is reviewed against the last one. W5 and W6 depend on W1's facts only, not on points 1 - 3; if the
-    owner takes resume first, W5 and W6 go first, then W2 - W4, W9, W7 and W8.
+    .keel/config.toml and the launcher's read_policy, which W5's resume flag builder reads. W1, W2 - W4 and W9 are
+    merged. Two WUs remain, one at a time, each cut from the epic tip after the previous one merged, so no two edit
+    the launcher, the guard or the settings in parallel: W5 (resume, then reuse, on one branch), then W7 (the router's,
+    then the watchdog's bounds, on one branch). W7 lands last: it touches the guard and settings after W5's resume and
+    status shapes, so each guard edit is reviewed against the last one.
   w5-resume:
+    merged: "Owner, 2026-11-28: resume and the reuse rules (details.w5-reuse) are one WU, W5, on wu/E-WSANDBOX/w5-resume-reuse; resume is built first. The owner probe below still gates the resume part's stop decision before W5 builds."
     request: "Owner 2026-11-26: 'that rule is absolutely wrong, I DO want the worker to be able to resume, let's add that to the wsandbox to fix'. Reason: reuse saves tokens; a fresh session re-reads everything."
     rule-today: "scripts/router-worker.sh:24-27 (stop runs claude stop then claude rm; 'A stopped worker is never revived (DEC-46: a plain --bg --resume drops every launch flag)'); DEC-30, DEC-44, DEC-46; UC-ROUTE-5; keel-router SKILL.md:267, 282, 314-315 and references/worker-ops.md:146-149 (both copies); project-router Workers ('there is no resume'); tests/suite/router.rs:1985-1999, 2013-2030, 4758-4800."
     verified-from-code: |-
@@ -415,7 +399,7 @@ details:
       - Job state: ~/.claude/jobs/<short id>/state.json; every launcher worker's state lists respawnFlags with -n --effort --agent --setting-sources --strict-mcp-config --settings --allowedTools --disallowedTools --permission-mode --model.
       - Transcript: ~/.claude/projects/<cwd slug>/<session id>.jsonl. All 554 recorded session ids have a transcript; only 36 have a job dir, so claude rm deletes the job state and keeps the transcript.
       - Retention: transcripts are cleaned after cleanupPeriodDays (default 30).
-    earlier-probe: "W8 probe P5 (2026-11-11, plan v3 627a29a; backlog R23): claude --bg -n <name> --resume <sid> of a stopped session with spawn's full flag set kept the sandbox, the persona, the name, no MCP and the earlier conversation. Whether that session had also been rm'd is not recorded."
+    earlier-probe: "E-ROUTER3.W8 probe P5 (2026-11-11, plan v3 627a29a; backlog R23): claude --bg -n <name> --resume <sid> of a stopped session with spawn's full flag set kept the sandbox, the persona, the name, no MCP and the earlier conversation. Whether that session had also been rm'd is not recorded."
     needs-live-probe:
       - "A resume after claude stop and claude rm keeps the history and the session id (decides the open question on resume and stop)."
       - "Whether a stopped, not removed, session is listed by claude agents --json and in which state."
@@ -438,7 +422,7 @@ details:
       claude stop <id2> 2>&1 | tee -a $L; claude rm <id2> 2>&1 | tee -a $L
       Expect: after stop, the row's state (listed or not); the transcript listed after rm; the same sessionId after the resume; 'heron' in the logs.
     token-case: "R53's workbook (docs/.archive/worker-token-usage-2026-11-26.xlsx, git-ignored): every worker's first turn holds 35 - 38k tokens of context before any work (e.g. e-crlimit-w1-fix1 37,740; e-crlevel-plan 35,790); a fresh fixer, e-crlimit-w1-fix1, read 2,965,661 cache tokens in 42 turns."
-  w6-reuse:
+  w5-reuse:
     rulings: |-
       Owner 2026-11-26, locked (ratified, not open):
       1. Reuse wins when the task is relevant to or a follow-up of the old task and the context is under 200k for a cold cache and 400k for a warm cache (configurable? - the open question on settings).
@@ -450,23 +434,50 @@ details:
     cache-lifetime: "Verified from code (2.1.288): two lifetimes, 300000 ms and 3600000 ms; a usage record is labelled '1h' when cache_creation.ephemeral_1h_input_tokens > 0, else '5m' when ephemeral_5m_input_tokens > 0. This worker's own usage records show 1-hour writes. The cold/warm definition is the open question on a warm cache."
     status-facts: "Per live or stopped worker, from its transcript's assistant usage records and timestamps only: context now = input + cache write + cache read of the last turn; peak; idle minutes since the last record; the lifetime its last write used; warm or cold; the two ceilings. Where: a read-only launcher mode (status, admitted by the guard) or a line per worker in the watchdog's facts. The router guard and settings are the owner's: any whitelist change is an owner keel mr commit."
     conflicts-to-resolve: |-
-      Starting list; W6 greps both skill copies, AGENTS.md, .claude/agents and the brief skeleton for the rest:
+      Starting list; W5's reuse part greps both skill copies, AGENTS.md, .claude/agents and the brief skeleton for the rest:
       1. keel-router SKILL.md:310-315 'One live session per WU' (a fix round goes to the live author) vs SKILL.md:431, the review table's 'fix round (fresh worker, new tip, re-gate)'.
-      2. 'a stopped worker is never revived' (SKILL.md:267, 282, 314-315; worker-ops.md:146-149; project-router; DEC-44, DEC-46; UC-ROUTE-5): owned by W5, which rewrites them; W6 checks they agree with the reuse rules.
+      2. 'a stopped worker is never revived' (SKILL.md:267, 282, 314-315; worker-ops.md:146-149; project-router; DEC-44, DEC-46; UC-ROUTE-5): W5's resume part rewrites them; its reuse part checks they agree with the reuse rules.
       3. worker-ops.md:46-47 (an in-session subagent resumed for a fix round only when keeping its context is the point) and worker-ops.md:129 ('A new WU gets a fresh worker'): checked against rule 1.
-    unchanged: "Reviewer independence: a review worker is fresh every round and the author never reviews its own diff (keel-router review section, DEC-46 point 4). W6 does not change it."
-    why-after-w5: "Resume changes what a cold, stopped worker costs: it comes back with its context (one cache write) instead of a fresh 35 - 38k start plus re-reads, so W6's rule counts a stopped worker as reusable only once W5 exists."
-    fix-rule-to-decide: "W6 must write down: who judges (the router, before it sends the fix); on what facts (the fix belongs to the author's WU or is a follow-up of its last task; the author's context now and warm or cold from the status read, against the two ceilings); what the author may do (take it, or say in its report that it should go fresh, and the router then spawns fresh); and the open fork for the owner: whether the author may also keep a fix the ceilings send fresh."
+    unchanged: "Reviewer independence: a review worker is fresh every round and the author never reviews its own diff (keel-router review section, DEC-46 point 4). W5 does not change it."
+    why-after-resume: "Resume changes what a cold, stopped worker costs: it comes back with its context (one cache write) instead of a fresh 35 - 38k start plus re-reads, so the reuse rule counts a stopped worker as reusable only once resume exists; hence the reuse part is built after the resume part on W5's one branch."
+    fix-rule-to-decide: "W5's reuse part must write down: who judges (the router, before it sends the fix); on what facts (the fix belongs to the author's WU or is a follow-up of its last task; the author's context now and warm or cold from the status read, against the two ceilings); what the author may do (take it, or say in its report that it should go fresh, and the router then spawns fresh); and the open fork for the owner: whether the author may also keep a fix the ceilings send fresh."
   w7-router-bounds:
+    merged: "Owner, 2026-11-28: the router's bounds and the watchdog's (details.w7-watchdog-bounds) are one WU, W7, on wu/E-WSANDBOX/w7-bounds; the router's half is built first."
     facts-from: "W1 findings pair, details.router-watchdog.router (2026-11-26)."
     today: "No Bash sandbox; the bound is scripts/router-guard.jq, a fail-closed PreToolUse hook on every tool for agent_type router: the 11 tools of .claude/agents/router.md (Read, Grep, Glob, Write, Bash, Skill, ToolSearch, TodoWrite, AskUserQuestion, SendMessage, ListAgents - no Agent, no Edit), Bash only plain-word whitelisted shapes (read-only git, gh pr with named query flags, ps, the launcher's shapes, router-watch.sh's five kinds, notify-owner.py, the inbox's shapes, the update log's shapes), Write only .router/briefs/<name>.md and .router/notify/owner.md, five inline skills; mode auto from user settings. The scripts it may run (the launcher, router-watch.sh with git fetch, notify-owner.py) run unsandboxed with the owner's rights."
     build: "One table of each bound and what a widening exposes; keep the guard the single source (the agent file and settings tied to it, as tests/suite/router.rs already does); pin each admitted shape and refuse the rest; surface the one fork - keep unsandboxed (default) or sandbox it, which would stop it running the launcher. No power is added."
     no-live-probe: "The bound is the guard; the fixture test is the proof."
-  w8-watchdog-bounds:
+  w7-watchdog-bounds:
     facts-from: "W1 findings pair, details.router-watchdog.watchdog (2026-11-26)."
     today: "No Bash sandbox: the launcher starts it with --setting-sources local and a --settings holding only hooks (scripts/router-worker.sh, watchdog mode). Tools SendMessage and CronCreate only; the guard with watchdog_to admits only CronCreate of the */5 tick and a SendMessage to its router. Its facts hook runs the launcher unsandboxed and checks each worktree's .git link before any git there (linked_ok)."
-    build: "One table of each bound and what a widening exposes; pin each shape in the guard test; surface the same sandbox fork as W7. No power is added."
+    build: "One table of each bound and what a widening exposes; pin each shape in the guard test; the same sandbox fork as the router's, surfaced once for both in W7. No power is added."
     no-live-probe: "The bound is the guard; the fixture test is the proof."
-  sign-off: "Parts 2 - 4: one WU branch, one result report, one review, only the rule-bearing files staged -> the owner's one keel mr commit -> a fresh worker re-gates -> the owner confirms with one keel mr confirm wu and merges --no-ff. Every other part: its own result report and sign-off, one at a time (project-router 'Sign-off sequences')."
+  merged-wus: |-
+    Owner rulings 2026-11-28: merge the old W5 (worker resume) and W6 (reuse policy and status read) into one WU, and
+    the old W7 (router's bounds) and W8 (watchdog's bounds) into one WU.
+    Ids and slugs: W5 keeps its id as the merged resume-and-reuse WU (wu/E-WSANDBOX/w5-resume-reuse); W7 keeps its id
+    as the merged bounds WU (wu/E-WSANDBOX/w7-bounds); W6 and W8 are retired as ids and never reused, so the gaps in
+    W1 - W9 are deliberate.
+    Each merged WU, like W2 - W4: one branch with two parts built in order, one WU plan/result pair naming both parts,
+    one tip. The worker commits what is not rule-bearing and stages the rule-bearing edits; the owner makes one keel mr
+    commit for both parts' rule-bearing files; one review covers the range, one result report, one keel mr confirm wu,
+    one --no-ff merge into the epic.
+    Cost: one review and one signature cover both parts, so a part cannot be dropped alone at sign-off. For W5, a held
+    reuse part holds resume too (and the reverse); for W7, the router's table cannot be signed without the watchdog's.
+    Accepted by the merge ruling. Gain: two reviews, two owner commits and two sign-offs instead of four, and the
+    guard and settings change twice instead of four times.
+  effort-for-remaining-workers: |-
+    Owner ruling 2026-11-28: workers for this epic's remaining work (W5, W7, their reviews and fixes, the epic e2e
+    worker) run on opus at effort medium.
+    Conflict: the merged W9 policy on this branch (.keel/config.toml:61-63 worker_efforts ["low","high"],
+    worker_default_effort "low", planner_effort "high") refuses medium by name (W9's ruled open question). The
+    launcher reads the policy from the router checkout's HEAD, which is main, where worker_efforts is still
+    ["medium","high"] and the default medium; so the medium ruling works today without a policy change. It stops
+    working the moment this epic merges to main.
+    Not changed here: the policy stays as W9 merged it; the open question 'What effort policy holds when this epic
+    reaches main?' carries the options (a keep low/high, b widen with medium, default low, c medium default again) and
+    the recommended default (a). The router passes --effort medium explicitly for each remaining spawn, so a later main
+    default does not change it silently.
+  sign-off: "Parts 2 - 4: one WU branch, one result report, one review, only the rule-bearing files staged -> the owner's one keel mr commit -> a fresh worker re-gates -> the owner confirms with one keel mr confirm wu and merges --no-ff. W5 (resume and reuse) and W7 (the router's and the watchdog's bounds) each follow that same sequence once for both of their parts. W9: its own result report and sign-off (merged). One WU at a time (project-router 'Sign-off sequences')."
   htmldoc:
     id: 6b0586bf9f34851f0dfb2c72
