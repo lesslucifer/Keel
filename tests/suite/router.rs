@@ -2496,7 +2496,22 @@ fn watcher() -> Watcher {
     let d = common::fixture(WATCHER, build_watcher);
     let base = d.path().canonicalize().unwrap();
     let main = base.join("main");
+    warm_scripts(&base, &main);
     Watcher { _d: d, base, main }
+}
+
+/// A fresh script pays the host's scan of the new file on its first exec: 420 ms for one, seconds for
+/// 40 under the suite's parallel tests (measured at the E-WSANDBOX close; A12 is the same cost). A
+/// watch asked to reach poll 1 within BOUND must not spend that bound on the scan, so every script a
+/// watch execs is run once here, before the bound starts, and the test measures the watch. Nothing
+/// is written: the watch refuses no arguments before any git, `date` and `git --version` print, and
+/// the sleep shim writes only into a temp dir of its own, which is removed with it.
+fn warm_scripts(base: &Path, main: &Path) {
+    let _ = common::cmd(main.join("scripts/router-watch.sh")).output();
+    let _ = common::cmd(base.join("shim/date")).output();
+    let _ = common::cmd(base.join("shim/git")).arg("--version").output();
+    let steps = TempDir::new().unwrap();
+    let _ = common::cmd(base.join("shim/sleep")).env("STEP_DIR", steps.path()).env("STUB_OWNER", "999999").output();
 }
 
 fn build_watcher(base: &Path) {
