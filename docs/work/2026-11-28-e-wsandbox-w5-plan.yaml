@@ -165,8 +165,9 @@ details:
       under-default: "status prints warm/cold by the clock only, live or stopped; the e2e checks status against the transcript, not a fixed 'cold'."
     - q: "May the author keep a fix past a ceiling?"
       default: >-
-        Owner comment 2026-11-28 ('if the author is the user, yes; the user monitors sessions and gives ad-hoc
-        instructions'). The author is the worker that wrote the code, not the owner. Recommended (a): the worker
+        RULED (owner, 2026-11-28): (a) - the worker cannot keep a fix past a ceiling on its own; only the owner's
+        instruction sends it to the author. Owner comment 2026-11-28 ('if the author is the user, yes; the user
+        monitors sessions and gives ad-hoc instructions'). The author is the worker that wrote the code, not the owner. Recommended (a): the worker
         cannot keep a fix past a ceiling on its own; the owner can always send it to the author (or fresh) by an
         ad-hoc instruction, which the router follows. Option (b): the worker may also keep it past a ceiling by
         saying so in its report.
@@ -180,6 +181,7 @@ details:
     - q: "What if the policy no longer admits a stopped worker's effort (medium after this epic lands)?"
       default: "Refuse; the router spawns fresh. resume takes no --effort or --role."
       under-default: "One refusal and its test; the guard shape stays resume <name> alone."
+  confirmed: "Owner, 2026-11-28: the plan confirmed at 40da8cb with every default; the author question ruled (a). The resume probe has not run: design A is built, stop unchanged."
   epic-question-not-resolved: "The epic's 'What effort policy holds when this epic reaches main?' stays open; this WU does not change worker_efforts. It meets resume through the last open question above."
   rule-bearing-map:
     staged-for-one-owner-commit:
