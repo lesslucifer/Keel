@@ -1064,6 +1064,7 @@ fn project_router_states_the_w10_launcher_and_the_interactive_router() {
     for said in [
         "pnpm_config_store_dir",
         "pnpm_config_virtual_store_dir",
+        "pnpm_config_node_linker",
         "`--settings` `env` object",
         "`pnpm install|add|run|test`",
         "`sh`, `bash`, `zsh`",
@@ -4616,7 +4617,8 @@ fn launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree() {
     let settings: serde_json::Value = serde_json::from_str(&option(&a, "--settings")).unwrap();
     let allow = &settings["sandbox"]["filesystem"]["allowWrite"];
     assert!(allow.as_array().unwrap().iter().any(|v| v.as_str() == Some(hs)), "the pnpm home is not an allowWrite root: {allow}");
-    let want = serde_json::json!({"PNPM_HOME": hs, "pnpm_config_store_dir": format!("{hs}/store"), "pnpm_config_virtual_store_dir": format!("{hs}/vstore")});
+    let want = serde_json::json!({"PNPM_HOME": hs, "pnpm_config_store_dir": format!("{hs}/store"),
+        "pnpm_config_virtual_store_dir": format!("{hs}/vstore"), "pnpm_config_node_linker": "isolated"});
     assert_eq!(settings["env"], want, "the session's env object");
     // a resume rebuilds the same env object
     l.stop("b");
@@ -4655,6 +4657,77 @@ fn launcher_refuses_a_pnpm_home_that_is_not_a_real_directory() {
         assert_eq!(l.starts(&name), 0, "{plant}: a worker started");
         assert!(std::fs::read_dir(elsewhere.path()).unwrap().next().is_none(), "{plant}: the launcher wrote through the link");
     }
+}
+
+/// E-WSANDBOX close, review round 2 (blocker): the app pins `nodeLinker: hoisted` in its own
+/// pnpm-workspace.yaml, and under hoisted pnpm materialises the package tree in `<worktree>/app/node_modules`,
+/// where the sandbox's hard-coded cwd-anchored `**/.vscode/**` deny refuses a package that ships one
+/// (xmlbuilder 15.1.1), so a granted `pnpm install` fails. The session env pins the isolated linker with
+/// an external virtual store instead, which pnpm 11.18.0 honours over the workspace file, so the package
+/// files stay outside the worktree and the install succeeds. Skipped, loudly, only where pnpm is absent.
+#[test]
+fn a_hoisted_app_install_with_the_sessions_env_keeps_the_vscode_path_outside() {
+    let pnpm = common::cmd("pnpm").arg("--version").output();
+    if !pnpm.map(|o| o.status.success()).unwrap_or(false) {
+        eprintln!("skipped: pnpm is not installed, so the hoisted-app install cannot be run here");
+        return;
+    }
+    let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
+    let pkg = l.wt.join("pkg");
+    std::fs::create_dir_all(pkg.join(".vscode")).unwrap();
+    std::fs::write(pkg.join("package.json"), "{\"name\":\"wsb-vscode\",\"version\":\"1.0.0\"}\n").unwrap();
+    std::fs::write(pkg.join(".vscode/launch.json"), "{}\n").unwrap();
+    let app = l.wt.join("app");
+    std::fs::create_dir_all(&app).unwrap();
+    std::fs::write(app.join("package.json"), "{\"name\":\"wsb-app\",\"version\":\"1.0.0\",\"dependencies\":{\"wsb-vscode\":\"file:../pkg\"}}\n").unwrap();
+    std::fs::write(app.join("pnpm-workspace.yaml"), "nodeLinker: hoisted\n").unwrap();
+    let (ok, out) = l.run_env(&["spawn", "a", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
+    let settings: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, "a"), "--settings")).unwrap();
+    let env = settings["env"].as_object().expect("the session has no pnpm env");
+    let mut c = common::cmd("pnpm");
+    c.arg("install").current_dir(&app);
+    for (k, v) in env {
+        c.env(k, v.as_str().unwrap());
+    }
+    let o = c.output().unwrap();
+    assert!(o.status.success(), "{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    let find = |root: &Path| -> Vec<String> {
+        let o = common::cmd("find").arg(root).args(["-name", "launch.json"]).output().unwrap();
+        String::from_utf8_lossy(&o.stdout).lines().map(str::to_string).collect()
+    };
+    assert!(find(&app).is_empty(), "a package's .vscode landed inside the worktree: {:?}", find(&app));
+    let home = pnpm_home_of(&tmp, &l.wt);
+    assert!(!find(&home).is_empty(), "the package files are not in the session's home: {home:?}");
+}
+
+/// E-WSANDBOX close, review round 2 (important): `reclaim_pnpm` runs after git has already removed the
+/// worktree, so its failure must never turn a completed removal into a reported failure. The worker can
+/// leave its own allowWrite home unemptiable; the warning names what is left for the owner, and a later
+/// attempt finishes it.
+#[test]
+fn a_failed_pnpm_reclaim_does_not_report_a_failed_worktree_removal() {
+    let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
+    let (ok, out) = l.run_env(&["worktree", "add", "wu/E-X/w1"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
+    let wt = PathBuf::from(field(&out, "path="));
+    let home = pnpm_home_of(&tmp, &wt);
+    std::fs::create_dir_all(home.join("store")).unwrap();
+    std::fs::write(home.join("store/x"), "x").unwrap();
+    let mode = |p: &Path, m: u32| std::fs::set_permissions(p, std::os::unix::fs::PermissionsExt::from_mode(m)).unwrap();
+    // the worker's own trick: it cannot remove through the parent it does not control
+    mode(&tmp, 0o500);
+    let (ok, out) = l.run_env(&["worktree", "remove", "wu/E-X/w1"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    mode(&tmp, 0o700);
+    assert!(ok, "a completed removal was reported as a failure: {out}");
+    assert!(out.contains("REMOVED path="), "the REMOVED line is missing: {out}");
+    assert!(out.contains("could not reclaim"), "the reclaim failure is not named: {out}");
+    assert!(home.is_dir(), "the home is gone though the reclaim could not run");
+    std::fs::remove_dir_all(&home).unwrap();
 }
 
 /// E-WSANDBOX.W3 (security, independent review round 2): the launcher must never write through a
