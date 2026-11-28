@@ -63,3 +63,5 @@ worker_default_effort = "low"
 planner_effort = "high"
 worker_permission_mode = "auto"
 watchdog_model = "haiku"
+reuse_max_context_cold = 200000
+reuse_max_context_warm = 400000

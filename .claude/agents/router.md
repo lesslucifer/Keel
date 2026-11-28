@@ -13,7 +13,7 @@ review), enforced by `scripts/router-guard.jq`, which `.claude/settings.json`
 runs fail-closed as a `PreToolUse` hook on every tool for `agent_type == "router"`
 (`"agent": "router"` makes a session here the router). The guard is the one
 definition of the whitelist; in short:
-- Bash: read-only git/gh/ps shapes, the launcher's `spawn` / `stop`,
+- Bash: read-only git/gh/ps shapes, the launcher's `spawn` / `stop` / `resume <name>` / `status [<name>]`,
   `worktree add|remove <epic/E or wu/E/slug>` and `watchdog start|stop <router-name>` (`scripts/router-worker.sh`), `scripts/router-watch.sh` (read-only
   owner-action probes) and `scripts/notify-owner.py --check|--send|--dry-run`
   (the owner push; the body is written to `.router/notify/owner.md`),

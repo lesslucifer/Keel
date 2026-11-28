@@ -43,8 +43,8 @@ short one-shot read-only checks, reviews and watches.
 - **Report**: the worker ends with `SubagentHandback`; the report reaches only
   you, not the owner. Digest it; never forward it.
 - **Follow-up**: `SendMessage({to: "<name>", message})` — a send to a finished
-  agent resumes it from its transcript (use for a fix round only when keeping
-  its context is the point; otherwise a fresh worker per phase).
+  agent resumes it from its transcript; the reuse rule (SKILL.md "Reuse or
+  fresh") decides between that and a fresh worker.
 - **Retire**: a finished subagent holds no process; nothing to retire. A running
   one stops with `TaskStop` (`task_id` = its name) — only when idle-and-clean
   rules allow, since it cuts the turn. Its worktree is removed by a worker after
@@ -143,10 +143,39 @@ Claude Code trusts (pitfall 3); the target's branch carries the worker persona
   `worker <name> is <state>: the owner decides (claude stop <id>)`. `stop` reads
   a row's `status`, else its `state`: a row listed only as `state: working` is
   refused that way at once, not after 30 s, with the same outcome.
-- **No resume**: a stopped, crashed or rebooted worker is never revived (a plain
-  `claude --bg --resume` comes back without the persona, the sandbox or the
-  settings): spawn a fresh worker with a new brief that says what the last one
-  left (uncommitted work: keep and check it).
+- **Resume** (E-WSANDBOX.W5): `<launcher> resume <name>` brings back a stopped,
+  crashed or rebooted worker when the reuse rule (SKILL.md "Reuse or fresh")
+  says so. It takes the newest run of exactly that name, runs every spawn check
+  and rebuilds every flag from the committed policy (a plain `claude --bg
+  --resume` would come back without the persona, the sandbox or the settings,
+  and `claude respawn` reuses flags the session itself can change), and starts
+  `claude --bg --resume <session>` with a resume prompt: the worker re-reads
+  its brief, runs the first check and reports back. It prints
+  `RESUMED name=… id=… session=… permission-mode=… effort=… branch=… snapshot=…
+  brief=… sha256=… worktree=…`, or `DEAD` / `UNLISTED` as a spawn does. It
+  refuses, before any start: a live session of the name, no transcript, a brief
+  snapshot whose sha256 changed, a worktree that is off the run's branch,
+  unlinked or without the persona, an effort, mode or model the policy no
+  longer admits. Then spawn a fresh worker with a new brief that says what the
+  last one left (uncommitted work: keep and check it).
+- **Status**: `<launcher> status [<name>]` is read-only. One line per worker with
+  a recorded run, newest first (20 at most), from its transcript's usage records
+  and timestamps only: `STATUS name=… state=… session=… context=… peak=…
+  idle=…m cache=warm|cold ttl=1h|5m cold-max=… warm-max=… fits=yes|no`. `state`
+  is the session list's own word for a live worker (its status, else its state:
+  `busy`, `idle`, or a blocked one such as `waiting`) and `stopped` for one not
+  listed. A synthetic API-error record (a rate limit) is not the worker's
+  context and is skipped. `transcript=none` when the transcript is gone,
+  `usage=none` before its first real answer, `usage=unreadable` when the
+  transcript cannot be read or its last record has no timestamp. The cache is
+  warm while the idle time is under the lifetime of its newest cache write;
+  `fits` compares the context with the ceiling for that state.
+- **Resume's limits**: `resume` and `status` take a name's newest run dir that
+  recorded a session; a spawn that failed before its session was listed
+  records none, so after a failed fresh spawn of a reused name, resume takes
+  the older run. A worker still listed after a crash (a row that is neither
+  idle nor gone) is refused as live: the owner stops it (`claude stop <id>`),
+  then resume it (backlog e-router-v2 R56).
 
 **Background-session pitfalls (found 2026-11-08 and 2026-11-11; prove a spawn
 path with a real spawn, lessons K5):**
@@ -334,7 +363,9 @@ wake must cover here:
 
 1. **Workers.** Claude Code: `ListAgents` — every expected name listed, busy or
    idle; idle without a report → `SendMessage` asking for it; not listed unasked →
-   a fresh worker from a new brief that keeps and checks uncommitted work, and
+   SKILL.md "Reuse or fresh": `<launcher> resume <name>` when `status` says it
+   fits, else a fresh worker from a new brief that keeps and checks uncommitted
+   work, and
    confirm `RUNNING`; blocked on a prompt or silent too long → tell the owner;
    workers live and no `watchdog-<your-name>` listed → `watchdog start`; reported
    and clean → `stop`. DSH: a `MSG` line from the report channel's watcher names

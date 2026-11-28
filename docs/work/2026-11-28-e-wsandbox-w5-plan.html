@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b0a5c659f34851f0dfb2d8c">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-WSANDBOX.W5 plan: resume and reuse</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-WSANDBOX.W5 · Bring a stopped worker back, and reuse it when that is cheaper</h1>
+      <p>A worker that knows the work answers the follow-up, instead of a fresh one reading everything again.</p>
+      <div class="meta">T3 · WU plan · 2026-11-28 · Keel · its data file, 2026-11-28-e-wsandbox-w5-plan.yaml, sits beside this page</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="problem">The problem</h2>
+<p data-c="problem">A stopped worker is never brought back, because a plain resume loses its safety settings. So each follow-up goes to a fresh worker, which spends about 36,000 tokens, then re-reads the files. The router also cannot see a worker's memory size or cache, so it cannot tell when reuse is cheaper.</p>
+
+<h2 id="get">What you get</h2>
+<table data-c="get">
+  <thead><tr><th>When</th><th>Today</th><th>After</th></tr></thead>
+  <tbody>
+    <tr><td>A follow-up for a stopped worker</td><td>A fresh worker, from nothing</td><td>The launcher brings it back with today's safety settings, or says why not</td></tr>
+    <tr><td>The router picks a worker</td><td>Guesswork</td><td>One read shows each worker's memory size, idle time and warm or cold cache</td></tr>
+    <tr><td>A fix after review</td><td>Two rules disagree: the author, or a fresh worker</td><td>One rule: the author if under the ceiling, else fresh</td></tr>
+  </tbody>
+</table>
+
+<h2 id="how">How it works</h2>
+<ol data-c="how">
+  <li><b>Resume.</b> The launcher finds the named worker's last session and rebuilds every setting from the committed rules, with the code a new start uses. It refuses a running worker, a lost history, a moved worktree, a changed brief, or settings the rules no longer allow.</li>
+  <li><b>Reuse.</b> Reuse wins when the task is the worker's own or a follow-up, and its memory is under 200,000 tokens (cold cache) or 400,000 (warm). A reviewer starts fresh.</li>
+</ol>
+
+<h2 id="probe">Your probe decides one design</h2>
+<p data-c="probe">Can a stopped and removed worker come back with its history? Your probe answers this first, before any build.</p>
+<table data-c="probe-table">
+  <thead><tr><th>Probe shows</th><th>Design</th></tr></thead>
+  <tbody>
+    <tr><td>History kept (expected)</td><td>Stop stays as it is; any stopped worker can come back</td></tr>
+    <tr><td>History lost</td><td>Stop keeps the session; a new "retire" step removes it once its unit is merged</td></tr>
+    <tr><td>No way keeps it</td><td>Resume is dropped; reuse covers live workers</td></tr>
+  </tbody>
+</table>
+
+<h2 id="approve">How you approve</h2>
+<ol data-c="approve">
+  <li>Run the probe and send its log.</li>
+  <li>Answer or accept the questions below.</li>
+  <li>I commit tests and notes; scripts, settings and router skills are staged for your one commit.</li>
+  <li>A fresh reviewer runs; you sign off and merge.</li>
+  <li>At the epic's last check, you run a live stop and resume.</li>
+</ol>
+
+<h2 id="decide">What you decide</h2>
+<table data-c="decide">
+  <thead><tr><th>Question</th><th>Answer first</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Are the two limits settings?</td><td>Yes, in the project config</td><td>One place</td></tr>
+    <tr><td>When is a cache warm?</td><td>While idle under its last write's lifetime (1 hour or 5 minutes)</td><td>Each turn refreshes it</td></tr>
+    <tr><td>May the code's author, a worker, keep a fix past a limit?</td><td>Not on its own; you may always override</td><td>You watch the sessions</td></tr>
+    <tr><td>Where does the router read the facts?</td><td>A read-only launcher command</td><td>The watchdog stays as it is</td></tr>
+    <tr><td>Can a reviewer come back?</td><td>Don't, as an instruction only</td><td>Your ruling</td></tr>
+    <tr><td>A stopped worker's effort is no longer allowed?</td><td>Refuse; start fresh</td><td>Resume never widens the rules</td></tr>
+  </tbody>
+</table>
+
+<h2 id="know">How you'll know it worked</h2>
+<ul data-c="know">
+  <li>A resumed worker's command line matches a new start's, plus its session.</li>
+    <li>The status read matches a recorded history at a fixed clock.</li>
+  <li>No router text still says "never revived", and the two fix rules agree.</li>
+  <li>Live: the resumed worker remembers a word and is still refused a write outside its worktree.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>

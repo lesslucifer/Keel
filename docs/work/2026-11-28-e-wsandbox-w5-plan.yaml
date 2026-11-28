@@ -1,0 +1,221 @@
+artifact: wu-plan
+status: ready
+id: E-WSANDBOX.W5
+epic: E-WSANDBOX
+title: "E-WSANDBOX.W5 plan: resume a stopped worker, and reuse it when that is cheaper"
+date: "2026-11-28"
+page: 2026-11-28-e-wsandbox-w5-plan.html
+requirement: >-
+  The launcher brings back a stopped worker by name (`resume <name>`) with every flag a spawn of it would get today,
+  rebuilt from the committed policy by the one flag builder spawn uses, or refuses with a reason; a read-only
+  `status` reads each worker's context and cache state from its transcript's usage records and timestamps; and the
+  router's texts carry one set of reuse rules (the owner's locked rulings of 2026-11-26) with no rule left that
+  forbids resume.
+maps-to: >-
+  E-WSANDBOX.W5 (wu-summaries); the owner's request of 2026-11-26 (worker resume) and rulings of 2026-11-26 (reuse);
+  the merge ruling of 2026-11-28; UC-ROUTE-1, UC-ROUTE-5 and UC-ROUTE-6 (amended); backlog R23 and R53.
+expected: >-
+  With a stub claude, `resume <name>` of a stopped worker starts `claude --bg` with the same argv a spawn of that
+  worker builds now (sandbox and file guard, grant, deny list, persona, setting sources, MCP off, mode, model,
+  effort) plus `--resume <recorded session id>` and the fixed resume prompt, prints `RESUMED name=...`, and each
+  refusal in details.resume.refusals fires before any start; `stop` does what the probe outcome selects;
+  `status` on a recorded fixture transcript at a fixed clock prints the expected context, peak, idle minutes,
+  lifetime, warm or cold, both ceilings and whether reuse fits; the router guard and settings admit exactly
+  `resume <name>`, `status` and `status <name>` (plus `retire <name>` under outcome B) and no other new shape; a text
+  test finds no "never revived" / "no resume" rule and finds the reuse rules naming the ceiling keys, not numbers;
+  the rule-bearing files of both parts are staged together for one owner `keel mr commit`.
+test-plan:
+  unit: >-
+    Per worker commit (each red on the code before the owner commit, as W9's): (1) resume - the run-dir lookup by
+    exact name (w5 never matches w5-fix), the newest run dir, every refusal, the copied-back brief, the RESUMED
+    line, a --review run resumed with its recorded review grant (cr note, no edit tools); (2) stop - per the probe outcome (A: unchanged stop then rm; B: stop keeps the
+    session, retire removes it, and spawn, facts and worktree remove read a stopped row as not live); (3) the
+    policy reader - `reuse_max_context_cold` and `reuse_max_context_warm` as digit values, a repeat, a non-digit or
+    a warm below cold refused whole, both optional for spawn and resume and required by status; (4) status - the
+    usage arithmetic (input + cache write + cache read of the last record), the peak, idle minutes at ROUTER_NOW,
+    the 1h/5m lifetime label from ephemeral_1h / ephemeral_5m, warm/cold, a transcript with no usage record, a
+    sidechain record ignored. All in tests/suite/router.rs through the launcher with the stub claude.
+  integration: >-
+    tests/suite/router.rs: argv parity - spawn a worker, stop it, resume it; the resume argv equals the spawn argv
+    with --resume <sid> added and only the prompt changed, for a plain, a planner and an `--permission-mode plan`
+    worker; the stub claude keeps a given --resume id. The guard test admits `resume <name>`, `status`,
+    `status <name>` (and `retire <name>` under B) in plain words and refuses `resume <name> <sid>`, a path, a quote,
+    a separator; the settings test lists exactly the guard's launcher shapes; the retired "resume is gone" pins
+    (launcher_has_only_its_modes_and_writes_no_out_dir, router_guard_admits_spawn_and_stop_and_refuses_resume_wait_and_send,
+    settings_allow_exactly_the_launcher_shapes_the_guard_admits, epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end,
+    router_text_names_what_the_launcher_prints_and_no_retired_mechanism) are rewritten, not deleted; worker-ops
+    names RESUMED and STATUS (and RETIRED under B) as the outcome-word test demands; a text test reads both
+    keel-router copies, project-router, router.md and AGENTS.md and finds no "never revived", no "has no resume",
+    the fix row and "One live session per WU" agreeing with the reuse rules, and the ceiling keys named with no
+    200000/400000 in a skill.
+  e2e: >-
+    Owed to the epic e2e (an owner step in the probe clone, after W7, per the epic's e2e-plan): a haiku worker is
+    spawned by the launcher, told a word, stopped and resumed by the launcher; it answers the word, keeps its
+    session id (outcome A; under the mixed outcome, its history), is still refused a Write outside its worktree, and
+    `status` of it live and stopped matches its transcript's last usage record and timestamp.
+details:
+  grounding:
+    tip: "0f68238b950bb6536f4d805159fa06ac9241ebef (= epic/E-WSANDBOX); line numbers below are at this tip."
+    launcher: |-
+      scripts/router-worker.sh (647 lines). Header 1-53: line 24-27 'stop closes an idle worker (claude stop, then
+      claude rm ...) A stopped worker is never revived (DEC-46: a plain --bg --resume drops every launch flag)'.
+      snapshot() 79-91 writes the run dir .router/runs/<name>-<YYYYmmddHHMMSS>-<pid>-spawn with brief.md, name,
+      worktree, branch, permission-mode, effort, review, sha256, brief-copy; seal() 170 adds session and makes it
+      read-only. No model file is recorded (spawn only admits the policy model). cleanup() 95-108 matches run dirs
+      by session id, so a second run dir with the same session id is cleaned by stop too. read_policy() 185-212:
+      flat grammar, any other line in [router] refuses the policy. stop mode 385-415: claude stop, then claude rm.
+      Mode dispatch: line 456 'spawn|stop|worktree|watchdog'. Spawn 457-647: the --settings sandbox JSON 586-596
+      and argv 597-621 are built inline (no function): part a extracts them into one flag
+      builder that spawn and resume both call.
+    guard: "scripts/router-guard.jq:40 bash_ok admits 'scripts/router-worker.sh (spawn|stop) [A-Za-z0-9._/ -]+'; its deny text at line 58 lists the shapes."
+    settings: ".claude/settings.json:33-38 allow spawn, stop, watchdog start|stop, worktree add|remove."
+    config: ".keel/config.toml:59-65 [router] (worker_model opus, worker_efforts [low, high], worker_default_effort low, planner_effort high, worker_permission_mode auto, watchdog_model haiku); rule_bearing at line 14 holds .keel/, skills/, .claude/skills/, .claude/settings.json, .claude/agents/, scripts/router-guard.jq, scripts/router-worker.sh. docs/*.html does not reach docs/decisions/ (W9 committed DEC-39 by worker)."
+    skill-texts: |-
+      skills/keel-router/SKILL.md and .claude/skills/keel-router/SKILL.md (identical): 273 (subagent 'resumes it
+      after it finished'), 275 ('a stopped worker is never revived'), 291 (Stop row: 'never revived'), 319-324 ('One
+      live session per WU' ... 'the launcher has no resume'), 444 (review table: 'fix round (fresh worker, new tip,
+      re-gate)'). references/worker-ops.md (both): 46-47, 129 ('A new WU gets a fresh worker'), 133-145 (Retire),
+      146-149 ('No resume'). references/checklists.md:85 ('One live session per WU'). .claude/skills/project-router
+      SKILL.md:68 (Workers). The epic plan's line numbers (267, 282, 314-315, 431) predate W9.
+    tests: |-
+      tests/suite/router.rs (5064 lines): stub_claude 602-631 assigns a new uuid per start (learns --resume <sid> in
+      this WU); pins that say resume is gone: 2050-2072, 2074-2104, 2111-2125, 2289-2297, 5003-5045 (its retired list
+      holds 'router-worker.sh resume' and '<launcher> resume'); argv checks refusing --resume at 3291 (watchdog, kept)
+      and 4326 (a spawn's argv, kept: a spawn never carries --resume).
+  resume:
+    shape: "scripts/router-worker.sh resume <name> - no other argument; the name rule is valid_name."
+    finds: >-
+      The newest run dir whose directory name is exactly <name>-<14 digits>-<digits>-(spawn|resume) and whose name
+      file holds <name>, with a session file; its session id is the one resumed.
+    refusals:
+      - "a live session of that name (rows), or the session list unreadable"
+      - "no run dir with a recorded session for that name"
+      - "no transcript ~/.claude/projects/<the recorded worktree's slug>/<sid>.jsonl"
+      - "the recorded worktree is not a registered worktree, is the router's or the main checkout, sits inside one, fails linked_ok, has no .claude/agents/worker.md, or is on a branch other than the recorded one (or detached)"
+      - "the run dir's brief.md no longer hashes to its sha256 file"
+      - "the recorded effort is not in worker_efforts, the recorded mode is wider than worker_permission_mode, or no policy"
+      - "a launch of that name in progress (the same .lock-<name> as spawn)"
+    builds: >-
+      A new run dir <name>-<ts>-<pid>-resume: the snapshot's brief.md and sha256 copied, the same name, worktree,
+      branch, effort, mode and review files (a --review run comes back with the review grant: owner comment 2026-11-28, no check refuses it), and from this WU a model file in both modes; a fresh brief copy in the
+      worktree (stop removed the old one); then the one flag builder's argv with --resume <sid> and the fixed resume
+      prompt. Never claude respawn, never the job state's respawnFlags.
+    prompt: >-
+      Fixed text: you are resumed by the launcher after a stop; your brief is at <copy>; first check git rev-parse
+      --show-toplevel prints <worktree> (else report and stop), then the branch, log -6 and status; send the router
+      your brief names one message saying you are back with those outputs; end your turn and wait for its task;
+      the sandbox sentence of the spawn prompt.
+    prints: "RESUMED name=<n> id=<id> session=<sid> permission-mode=<m> effort=<e> branch=<b> snapshot=<path> brief=<copy> sha256=<hex> worktree=<wt>; DEAD and UNLISTED as spawn prints them."
+  probe-outcomes:
+    question: "Does claude --bg --resume <sid> after claude stop and claude rm keep the history and the session id? (epic details.w5-resume.owner-probe; not run yet)"
+    A-kept: >-
+      Expected from the 2.1.288 code reading (rm deletes the job state, the transcript stays; --resume reads the
+      transcript). Design A: stop is unchanged (claude stop, then claude rm); resume works for any stopped worker
+      whose transcript exists (cleanupPeriodDays, 30 by default); the guard gains resume and status only.
+    B-lost: >-
+      The resume fails or comes back without the history. Design B: stop runs claude stop only and keeps the
+      session; a new mode retire <name> runs claude rm (after stop if still idle) and is what the router runs once a
+      WU is merged; spawn's one-session-per-name check, the watchdog's facts (a stopped row is not STUCK) and
+      worktree remove (a stopped session blocks it until retired) read a stopped row as the probe's second question
+      shows it listed; the guard and settings gain retire too; worker-ops names RETIRED.
+    mixed: >-
+      History kept, new session id: design A, and resume records the new id in its run dir; the e2e checks the
+      remembered word, not id equality.
+    neither: >-
+      No resume keeps the history either way: the resume part stops and the owner is told; the reuse part builds with
+      'a stopped worker is not reusable' and status still reads it.
+  reuse:
+    rules: |-
+      Locked (owner 2026-11-26), written once in skills/keel-router SKILL.md and pointed at elsewhere:
+      1. Reuse a worker (live, or stopped and resumed) when the task is its own WU's or a follow-up of its last task
+         and its context now is under the cold ceiling with a cold cache, or the warm ceiling with a warm one.
+      2. A fix is not forced fresh: the router offers it to the author (the worker that wrote the WU's code) by
+         rule 1; the author may answer 'take it fresh' in its report and the router then spawns fresh; past a
+         ceiling it goes fresh unless the owner says otherwise. The owner watches the sessions and may override
+         any reuse or fresh choice with an ad-hoc instruction, which the router follows (owner comment 2026-11-28).
+      3. Reviewers, independent checks and a new WU stay fresh (unchanged). For a reviewer this is a soft
+         instruction in the router skill ('do not resume a reviewer'), never a launcher check (owner comment
+         2026-11-28).
+      4. The router reads the facts with status before each decision.
+    conflicts-resolved:
+      - "SKILL.md 319-324 'One live session per WU' vs 444 'fix round (fresh worker ...)': 444 becomes 'fix round (the author by the reuse rule, else fresh), new tip, re-gate'."
+      - "SKILL.md 275, 291; worker-ops 146-149; project-router 68; DEC-30, DEC-44, DEC-46; UC-ROUTE-5: 'never revived' becomes 'resume <name>' with the reuse rule."
+      - "worker-ops 46-47 (subagent resumed only when context is the point) and 129 ('A new WU gets a fresh worker'): kept, cited to rule 3; 46-47 points at rule 1."
+      - "checklists.md 85: names the reuse rule; the rest found by the part's grep of both skill copies, AGENTS.md, .claude/agents and the brief skeleton."
+    status: |-
+      scripts/router-worker.sh status [<name>]: read-only, no claude call but agents --json, no git write. Per
+      worker (every name with a run dir whose transcript exists, newest first, at most 20; or the one named): from
+      its transcript's assistant records only (isSidechain false): context = input_tokens +
+      cache_creation_input_tokens + cache_read_input_tokens of the last record; peak = the largest; idle = minutes
+      from the last record's timestamp to now (ROUTER_NOW in tests, like ROUTER_CLAUDE); lifetime = 1h when the newest
+      cache write has ephemeral_1h_input_tokens > 0, else 5m; warm when idle < lifetime; the two ceilings from
+      [router]; fits = context under the ceiling for its state. One line:
+      STATUS name=<n> state=<busy|idle|stopped> session=<sid> context=<n> peak=<n> idle=<m>m cache=<warm|cold>
+      ttl=<1h|5m> cold-max=<n> warm-max=<n> fits=<yes|no>.
+    config: "[router] reuse_max_context_cold = 200000 and reuse_max_context_warm = 400000; the reader learns the two digit keys; skills name the keys, never the numbers."
+  open-questions:
+    - q: "What does stop keep? (the probe decides)"
+      default: "Design A: stop unchanged, resume after any stop."
+      under-default: "Build details.probe-outcomes.A-kept. If the probe shows B, the plan switches to B-lost without a new plan round; the result report records which ran."
+    - q: "Are the two ceilings settings?"
+      default: "Yes, two [router] keys in .keel/config.toml, printed by status."
+      under-default: "The reader and the config change in the one owner commit (the reader refuses an unknown key, so they land together)."
+    - q: "When is a cache warm?"
+      default: "While the idle time is under the lifetime of the newest cache write (1h or 5m); every turn's cache read refreshes it, so idle counts from the last turn."
+      under-default: "status prints warm/cold by the clock only, live or stopped; the e2e checks status against the transcript, not a fixed 'cold'."
+    - q: "May the author keep a fix past a ceiling?"
+      default: >-
+        RULED (owner, 2026-11-28): (a) - the worker cannot keep a fix past a ceiling on its own; only the owner's
+        instruction sends it to the author. Owner comment 2026-11-28 ('if the author is the user, yes; the user
+        monitors sessions and gives ad-hoc instructions'). The author is the worker that wrote the code, not the owner. Recommended (a): the worker
+        cannot keep a fix past a ceiling on its own; the owner can always send it to the author (or fresh) by an
+        ad-hoc instruction, which the router follows. Option (b): the worker may also keep it past a ceiling by
+        saying so in its report.
+      under-default: "Rule 2 as written in details.reuse.rules: the router's default plus the owner's override; the skill text says so, no launcher check."
+    - q: "Is status a launcher mode or a line in the watchdog's facts?"
+      default: "A launcher mode the router runs before each decision; the watchdog's 5-minute message is unchanged."
+      under-default: "The guard admits status and status <name>; facts() is not touched."
+    - q: "Is a review worker ever resumed?"
+      default: "RULED (owner comment 2026-11-28): don't, but as a soft instruction - no rule or check restricts it."
+      under-default: "No launcher refusal and no test for it; the keel-router skill says 'do not resume a reviewer; a review round is a fresh worker'; resume of a --review run rebuilds its recorded review grant."
+    - q: "What if the policy no longer admits a stopped worker's effort (medium after this epic lands)?"
+      default: "Refuse; the router spawns fresh. resume takes no --effort or --role."
+      under-default: "One refusal and its test; the guard shape stays resume <name> alone."
+  confirmed: "Owner, 2026-11-28: the plan confirmed at 40da8cb with every default; the author question ruled (a). The resume probe has not run: design A is built, stop unchanged."
+  epic-question-not-resolved: "The epic's 'What effort policy holds when this epic reaches main?' stays open; this WU does not change worker_efforts. It meets resume through the last open question above."
+  rule-bearing-map:
+    staged-for-one-owner-commit:
+      - "scripts/router-worker.sh (the flag builder, resume, status, stop per outcome, the model file, the header comment; retire under B)"
+      - "scripts/router-guard.jq (resume <name>, status [<name>]; retire under B; the deny text)"
+      - ".claude/settings.json (allow resume *, status, status *; retire * under B)"
+      - ".keel/config.toml (the two ceiling keys)"
+      - "skills/keel-router/SKILL.md, references/worker-ops.md, references/checklists.md and their .claude/skills/keel-router mirrors"
+      - ".claude/skills/project-router/SKILL.md (Workers)"
+      - ".claude/agents/router.md only if a tool line changes (none expected: status is Bash)"
+    committed-by-worker:
+      - "docs/work/2026-11-28-e-wsandbox-w5-plan.html and .yaml (this pair), later the result pair"
+      - "tests/suite/router.rs"
+      - "docs/decisions/router.html (DEC-30, DEC-43, DEC-44, DEC-46 amended rows)"
+      - "docs/use-cases/router.yaml (UC-ROUTE-1, UC-ROUTE-5, UC-ROUTE-6)"
+      - "docs/backlog/e-router-v2.yaml (R23 and R53 closed)"
+  commit-order:
+    - "1. docs: this plan pair (now)."
+    - "Owner: the probe, then the plan confirmed. Nothing below starts before both."
+    - "2. test(W5 resume): the resume and stop pins, the stub's --resume, the rewritten 'resume is gone' pins; red on the old launcher."
+    - "3. test(W5 reuse): the policy reader's ceilings, status on fixture transcripts, the guard and settings shapes, the text test; red on the old texts."
+    - "4. docs(W5): DEC, UC and backlog rows."
+    - "Staged, not committed by the worker: every file under rule-bearing-map.staged-for-one-owner-commit, resume first in the work, reuse after."
+    - "5. Owner: one keel mr commit of the staged files (the tests go green on it)."
+    - "6. docs(W5): the result pair; then a fresh worker re-gates and a fresh reviewer runs the round."
+  owner-steps:
+    - "1. Run the probe (epic plan details.w5-resume.owner-probe) in the probe clone and send the log; it selects design A, B, mixed or neither."
+    - "2. Read this page; answer or accept the open questions (htmldoc comments)."
+    - "3. After the worker stages: one keel mr commit of the staged rule-bearing files."
+    - "4. After the review round and the result pair: keel mr confirm wu, then git merge --no-ff into epic/E-WSANDBOX."
+    - "5. At the epic e2e (after W7): the W5 probe-clone run in test-plan.e2e."
+  gates:
+    - "keel check raw and keel verify-doc on every changed doc, by the worker."
+    - "keel preflight wu and keel verify-dod wu after the owner commit (they bind the tip)."
+    - "Note: the router runs the main checkout's launcher, which reads main's HEAD; resume and status reach the router only once the epic lands on main."
+  htmldoc:
+    id: 6b0a5c659f34851f0dfb2d8c
