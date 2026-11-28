@@ -14,7 +14,7 @@ files:
     scope: >-
       Router work deferred at the E-ROUTER close and since: the launcher, the worker environment and sandbox, the
       watchdog, the report channel, the shared git dir; rows for the next router epic.
-    next-free: R56
+    next-free: R57
   - letter: A
     file: local-app.yaml
     scope: >-
@@ -72,7 +72,7 @@ order:
     status: not yet proposed; the owner orders it
     rows: >-
       R5's live part, R6 row 4's note, R7's open rows, R14 (DEC-48 item 4), R20 - R22, R24 - R29, R31, R32, R34 -
-      R42, R44 - R48, R51, R52, R54, R55 (R23 and R53 done by E-WSANDBOX.W5). R40, the live check of `auto`, is owed at the first spawn after E-WMODE's merge; R47's L3 is
+      R42, R44 - R48, R51, R52, R54 - R56 (R23 and R53 done by E-WSANDBOX.W5). R40, the live check of `auto`, is owed at the first spawn after E-WMODE's merge; R47's L3 is
       wanted soon.
   - rank: none
     epic: E-CRLEVEL · a review schedule per level

@@ -609,6 +609,19 @@ open:
       refusal that outlasts the retries.
     source: "E-WSANDBOX.W5 (the owner's resume probe, 2026-11-28; analysed by the W5 worker)."
     taken-by: "unowned: the next router epic"
+  - id: R56
+    title: "A crashed worker still listed cannot be resumed"
+    status: "open: unverified live; a launcher question, rule-bearing"
+    problem: >-
+      `resume <name>` refuses any session the CLI still lists under the name (`rows` matches by name), so a worker
+      whose process crashed but whose row stays listed in a state other than idle cannot be resumed; the router has
+      no `claude stop`, so it falls to the owner. Found by the E-WSANDBOX.W5 independent review (round 1), not seen
+      live.
+    proposal: >-
+      Probe what `claude agents --json` lists for a crashed background session; if it stays, let `stop` (or resume)
+      close a listed session whose process is gone, or name the owner step in the refusal.
+    source: "E-WSANDBOX.W5 independent review round 1 (2026-11-28), a low."
+    taken-by: "unowned: the next router epic"
 closed:
   - id: R1
     title: "Worker persona missing in branches without it"

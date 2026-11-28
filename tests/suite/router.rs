@@ -5507,3 +5507,25 @@ fn the_guards_worker_name_is_the_launchers_name_rule() {
         assert!(tail.starts_with(&rule), "the guard's {shape:?} name is not the launcher's rule {rule:?}: {}", &tail[..60]);
     }
 }
+
+/// E-WSANDBOX.W5 independent review round 1: no text sends an unlisted or stopped worker straight to a
+/// fresh one past "Reuse or fresh" (the WAKE step, the retire rule, lesson C13); rule 4 names every
+/// refusal; worker-ops documents status's state word, the skipped synthetic record, usage=unreadable,
+/// and resume's limits (a run with no session, a crashed worker still listed: R56).
+#[test]
+fn an_unlisted_or_stopped_worker_goes_through_reuse_or_fresh() {
+    let read = |p: &str| std::fs::read_to_string(root().join(p)).unwrap();
+    let flat = |p: &str| read(p).split_whitespace().collect::<Vec<_>>().join(" ");
+    let ops = flat("skills/keel-router/references/worker-ops.md");
+    assert!(ops.contains("not listed unasked → SKILL.md \"Reuse or fresh\""), "worker-ops' WAKE step bypasses the reuse rule");
+    for said in ["usage=unreadable", "synthetic API-error record", "a blocked one such as `waiting`", "records none", "R56"] {
+        assert!(ops.contains(said), "worker-ops does not document {said:?}");
+    }
+    let skill = flat("skills/keel-router/SKILL.md");
+    assert!(!skill.contains("Never stop uncommitted work; hand it to a fresh worker"), "SKILL.md's retire rule bypasses the reuse rule");
+    assert!(skill.contains("comes back by \"Reuse or fresh\""), "SKILL.md's retire rule does not point at the reuse rule");
+    assert!(skill.contains("unlinked or without the worker persona, a model, effort or mode"), "rule 4 omits a refusal");
+    let lessons = flat("skills/keel-router/references/lessons.md");
+    assert!(!lessons.contains("spawns a fresh one for an unlisted one"), "lesson C13 bypasses the reuse rule");
+    assert!(lessons.contains("\"Reuse or fresh\""), "lesson C13 does not point at the reuse rule");
+}
