@@ -49,6 +49,7 @@ follow-ups:
   - "The live proof of cause (b), probe 2's printenv and install, the split probe 3, probe 5's own deny refusal, probe 9 and the fixed red-doc count: the E-WSANDBOX epic e2e re-run (owner's prepare, start, finish), judged by a worker from ~/keel-wsandbox-e2e-evidence.txt."
   - "DEC-37, DEC-46 point 9 and UC-ROUTE-5 rows for W10's rulings: E-WSANDBOX epic close distillation."
   - "If probe 3's split forms show which part prompted (the cd outside the worktree or the env wrapper): a launcher grant or a brief rule, in the E-WSANDBOX close or backlog e-router-v2."
+  - "The watch family's parallel-only test failure (keel check red on this machine): a test-isolation fix, in the E-WSANDBOX close or backlog e-router-v2."
 details:
   rulings: "q1 (b), q2 (a)+(c), q3 (a) - RULED (owner, 2026-11-28), relayed by the router of the time, keel-57; the plan yaml's details.open-questions records them."
   fix-round-1:
@@ -77,6 +78,16 @@ details:
       round read that diff, verified all eight findings and every changed line against 743ddf2c, kept all of it, and
       finished it; nothing was dropped. Added in this round: this record, one sentence on the result page, the
       runbook's precision about which message is the report, and the pages' rule for a report that never comes.
+    gate: >-
+      keel check is red on this machine, so preflight's 0·tree is red: four full runs on the new tip failed 5, 1, 6
+      and 6 tests, and every failure whose log survives is in tests/suite/router.rs's watch family (watch_* and
+      watcher_run_is_bounded_when_the_watch_outpolls_its_releases) at :1859 "watch never reached poll 1"; an
+      earlier run also failed resume_finds_the_transcript_by_session_id_and_names_a_missing_run_file (RESUMED
+      where a refusal was wanted). Each failing test passes alone (--exact), and the 23 router::watch* tests pass
+      23/23 with --test-threads=1, so the watch family is not parallel-safe. Pre-existing: this diff changes no
+      code path, and it was not fixed here because a code change would orphan the cr PASS. bash -n, shellcheck
+      -S warning and keel verify-doc are clean; verify-dod is red only on the missing cr note (the review round 2
+      writes it) and the owner's sign-off.
   changed-outside-code-paths:
     - "docs/work/2026-11-24-e-wsandbox-plan.yaml"
     - "docs/work/2026-11-28-e-wsandbox-w10-plan.html"
