@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b0a8e539f34851f0dfb2e49">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-WSANDBOX e2e: your steps</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>The E-WSANDBOX check: your three steps</h1>
+      <p>This proves the epic works for real. A worker gets ports, packages and the sites the reviewer allows, and is still refused your files. A stopped worker comes back remembering its work. The router and the watchdog close what is finished.</p>
+      <div class="meta">T3 · owner steps · 2026-11-28 · Keel</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="what">What happens</h2>
+<p data-c="what">You set up the probe clone, sign one config change, and start a test router there. That router does the rest with cheap Haiku workers and tells your router when it is done. Then you run one last command that checks two things and cleans up. Use one terminal. Everything goes into one log: <code>~/keel-wsandbox-e2e.log</code>.</p>
+<p data-c="fail"><b>If a step does not show what it should:</b> stop and send your router the last lines of the terminal, or the log.</p>
+
+<h2 id="s1">1 · Set up the probe clone</h2>
+<pre data-c="s1">cd /Users/nguyenvanluong/Documents/proj/misc/Keel-probe &amp;&amp; bash /Users/nguyenvanluong/Documents/proj/misc/Keel-E-WSANDBOX/docs/work/2026-11-28-e-wsandbox-e2e-setup.sh prepare</pre>
+<p><b>It worked when</b> the last lines say <code>ok: built the epic's keel</code> and then <code>NEXT, the owner types this one line</code> with a line under it. That line is step 2. If it says <code>FAIL:</code>, stop and send the output.</p>
+
+<h2 id="s2">2 · Sign the Haiku setting and start the test router</h2>
+<p>The setup changed one line, so workers in the clone use Haiku. That file needs your signature, so this step is yours.</p>
+<pre data-c="s2">cd /Users/nguyenvanluong/Documents/proj/misc/Keel-probe &amp;&amp; keel mr commit -m "probe: haiku workers for the E-WSANDBOX e2e" --as vuluu &amp;&amp; bash /Users/nguyenvanluong/Documents/proj/misc/Keel-E-WSANDBOX/docs/work/2026-11-28-e-wsandbox-e2e-setup.sh start</pre>
+<p><b>It worked when</b> the last line says <code>ok: probe-router runs (session …)</code>. If the commit is refused, or a line says <code>FAIL:</code>, stop and send the output.</p>
+
+<h2 id="wait">While you wait</h2>
+<p data-c="wait">The test router now runs on its own: a worker's probes, a stop and a resume, the two effort levels, the watchdog's list of what to close, and the cleanup command. It waits for the watchdog at least once, so it is not instant. <b>You know it finished</b> when your router tells you "E-WSANDBOX e2e probe run finished", with a pass/fail table.</p>
+
+<h2 id="s3">3 · Check and clean up</h2>
+<pre data-c="s3">cd /Users/nguyenvanluong/Documents/proj/misc/Keel-probe &amp;&amp; bash /Users/nguyenvanluong/Documents/proj/misc/Keel-E-WSANDBOX/docs/work/2026-11-28-e-wsandbox-e2e-setup.sh finish</pre>
+<p><b>It worked when</b> it prints two lines starting <code>PASS</code>, then <code>ok: no probe session, worktree or branch left</code> and <code>Done.</code>. A line starting <code>FAIL</code> is a result, not a stop: send the log to your router either way.</p>
+
+<h2 id="optional">One more check, optional, before step 3</h2>
+<p data-c="optional">This checks something only you can do by hand: an extra folder you allow a worker during its session is gone after a resume. Do it after the router's "finished" message and before step 3, or skip it.</p>
+<ol data-c="optional-steps">
+  <li><pre>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-probe &amp;&amp; scripts/router-worker.sh resume probe-w1</pre>
+  It prints <code>RESUMED name=probe-w1 id=…</code>. Copy that id.</li>
+  <li><code>claude attach &lt;that id&gt;</code>, type <code>/add-dir /tmp</code> and accept it, then leave with the detach key the screen shows (not <code>/exit</code>).</li>
+  <li><pre>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-probe &amp;&amp; scripts/router-worker.sh stop probe-w1 &amp;&amp; scripts/router-worker.sh resume probe-w1</pre>
+  It prints <code>STOPPED …</code>, then <code>RESUMED … id=…</code>. Copy the new id.</li>
+  <li><code>claude attach &lt;the new id&gt;</code>, type <code>/permissions</code>, and look at the folder list: <code>/tmp</code> should <b>not</b> be there. Detach, then tell your router what you saw.</li>
+</ol>
+
+<p data-c="details">The details, every step's expected output and what the test router is allowed to do are in the <a href="2026-11-28-e-wsandbox-e2e-runbook.html">detailed runbook</a>.</p>
+
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
