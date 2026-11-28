@@ -5227,12 +5227,15 @@ fn resume_refuses_what_it_cannot_rebuild_before_any_start() {
         c.replace("worker_efforts = [\"low\", \"high\"]", "worker_efforts = [\"high\"]")
             .replace("worker_default_effort = \"low\"", "worker_default_effort = \"high\"")
     });
-    refused(&["resume", "e1"], "effort low");
+    refused(&["resume", "e1"], "effort must be one of: high ([router] worker_efforts in .keel/config.toml): spawn a fresh worker");
     l.commit_config(Some(&kept));
 
     spawn_and_stop(&l, "m1", &l.wt, &[]);
     let kept = commit_edited_config(&l, |c| c.replace("worker_permission_mode = \"auto\"", "worker_permission_mode = \"plan\""));
-    refused(&["resume", "m1"], "wider than the policy");
+    refused(
+        &["resume", "m1"],
+        "permission mode auto is wider than the policy's plan ([router] worker_permission_mode in .keel/config.toml): spawn a fresh worker",
+    );
     l.commit_config(Some(&kept));
 
     spawn_and_stop(&l, "g1", &l.wt2, &[]);
@@ -5433,4 +5436,74 @@ fn the_reuse_rules_are_stated_once_by_their_keys() {
     let agent = read(".claude/agents/router.md");
     let flat = agent.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(flat.contains("`resume <name>`") && flat.contains("`status [<name>]`"), "router.md's Bash posture omits resume or status");
+}
+
+/// E-WSANDBOX.W5 review round 1 (blocker): Claude Code writes a synthetic assistant record for an API
+/// error (model `<synthetic>`, `isApiErrorMessage`, all-zero usage); it is not the worker's context, so
+/// status reads the last real record.
+#[test]
+fn status_skips_synthetic_api_error_records() {
+    let l = launcher();
+    let now = [("ROUTER_NOW", "1800000000")];
+    let (ok, out) = l.run(&["spawn", "f", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+    assert!(ok, "{out}");
+    let f = field(&out, "session=").to_string();
+    let synthetic = |ts: &str| {
+        serde_json::json!({"type": "assistant", "isSidechain": false, "isApiErrorMessage": true, "timestamp": ts,
+            "message": {"model": "<synthetic>", "role": "assistant", "content": [{"type": "text", "text": "API Error: 429 rate_limit"}],
+                "usage": {"input_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 0}}})
+        .to_string()
+    };
+    write_transcript(&l, &l.wt, &f, &[usage("2027-01-15T07:30:00Z", 2, 1000, 180000, "1h", false), synthetic("2027-01-15T07:58:00Z")]);
+    let (ok, out) = l.run_env(&["status", "f"], &now);
+    assert!(ok, "{out}");
+    assert_eq!(
+        out.trim_end(),
+        format!("STATUS name=f state=idle session={f} context=181002 peak=181002 idle=30m cache=warm ttl=1h cold-max=200000 warm-max=400000 fits=yes")
+    );
+    write_transcript(&l, &l.wt, &f, &[synthetic("2027-01-15T07:58:00Z")]);
+    let (ok, out) = l.run_env(&["status", "f"], &now);
+    assert!(ok && out.trim_end().ends_with(&format!("session={f} usage=none")), "{out}");
+}
+
+/// E-WSANDBOX.W5 review round 1: resume and status find a session's transcript by its id in any project
+/// dir, as the watchdog does (no re-encoding of the worktree path); and a run dir missing one of its files is refused by that file's
+/// name, before any start (each record is read on its own line, so set -e stops on the first missing).
+#[test]
+fn resume_finds_the_transcript_by_session_id_and_names_a_missing_run_file() {
+    let l = launcher();
+    assert!(l.run(&["spawn", "s1", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
+    let sid = field(&l.run(&["status", "s1"]).1, "session=").to_string();
+    l.stop("s1");
+    let dir = l.state.join("home/.claude/projects/-p");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(format!("{sid}.jsonl")), usage("2027-01-15T07:00:05Z", 3, 30000, 0, "1h", false) + "\n").unwrap();
+    let (ok, out) = l.run_env(&["status", "s1"], &[("ROUTER_NOW", "1800000000")]);
+    assert!(ok && out.contains(&format!("session={sid} context=30003 ")), "status reads the transcript in any project dir: {out}");
+    let (ok, out) = l.run(&["resume", "s1"]);
+    assert!(ok && out.starts_with("RESUMED name=s1 "), "{out}");
+    l.stop("s1");
+
+    let before = l.starts("s1");
+    let run = runs_of(&l, "s1", "resume")[0].clone();
+    std::fs::set_permissions(&run, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    std::fs::remove_file(run.join("effort")).unwrap();
+    let (ok, out) = l.run(&["resume", "s1"]);
+    assert!(!ok && out.contains("lacks its effort file"), "{out}");
+    assert_eq!(l.starts("s1"), before);
+}
+
+/// E-WSANDBOX.W5 review round 1: the guard's resume and status shapes repeat the launcher's one name
+/// rule (valid_name); this ties the two, so a change to either fails here.
+#[test]
+fn the_guards_worker_name_is_the_launchers_name_rule() {
+    let launcher = std::fs::read_to_string(root().join("scripts/router-worker.sh")).unwrap();
+    let guard = std::fs::read_to_string(root().join("scripts/router-guard.jq")).unwrap();
+    let rule = regex::Regex::new(r"(?m)^name_ok\(\) \{ expr .\$1. : '\^(.+)\$' >/dev/null; \}$").unwrap();
+    let rule = rule.captures(&launcher).expect("the launcher's name_ok rule")[1].replace(r"\{", "{").replace(r"\}", "}");
+    for shape in ["resume ", "status( "] {
+        let at = guard.find(&format!("scripts/router-worker\\\\.sh {shape}")).unwrap_or_else(|| panic!("no {shape} shape in the guard"));
+        let tail = &guard[at + "scripts/router-worker\\\\.sh ".len() + shape.len()..];
+        assert!(tail.starts_with(&rule), "the guard's {shape:?} name is not the launcher's rule {rule:?}: {}", &tail[..60]);
+    }
 }
