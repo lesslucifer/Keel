@@ -10,13 +10,13 @@
     <div class="inner">
       <h1>E-WSANDBOX.W7 · What the router and the watchdog can do, and what you add</h1>
       <p>Today's limits first; then the new abilities. W7 builds only your picks.</p>
-      <div class="meta">T3 · WU plan · 2026-11-28 · Keel · v3, after your comments · its data file, 2026-11-28-e-wsandbox-w7-plan.yaml, sits beside this page</div>
+      <div class="meta">T3 · WU plan · 2026-11-28 · Keel · v4, after your comments · its data file, 2026-11-28-e-wsandbox-w7-plan.yaml, sits beside this page</div>
     </div>
   </header>
   <main>
 
 <h2 id="problem">The problem</h2>
-<p data-c="problem">The router and the watchdog run with your rights, outside any sandbox. One guard script limits them. Dead workers and finished worktrees pile up until you close them by hand.</p>
+<p data-c="problem">The router and the watchdog run with your rights, outside any sandbox; one guard script limits them. Dead workers and finished worktrees pile up until you close them.</p>
 
 <h2 id="router">The router today</h2>
 <table data-c="router-today">
@@ -46,24 +46,24 @@
     <tr><td>C10 · Router cleans up: missing worktrees, leftover brief copies and locks</td><td>Only launcher-made files</td><td>You asked: build</td></tr>
     <tr><td>C11 · Watchdog reports merged worktrees, workers still on them, and missing folders</td><td>One more git read, in the router's checkout</td><td>You asked: build</td></tr>
     <tr><td>C1 · Router searches other branches, lists worktrees</td><td>Little</td><td>Add?</td></tr>
-    <tr><td>C5 · Router stops looping on a red doc</td><td>Nothing</td><td>Add?</td></tr>
-    <tr><td>C6 · Watchdog warns before its schedule ends</td><td>Nothing</td><td>Add?</td></tr>
+    <tr><td>C5 · Router hands a red doc to a worker instead of looping</td><td>A red doc may wait for its worker</td><td>You said: build</td></tr>
+    <tr><td>C6 · Watchdog warns before its schedule ends</td><td>Nothing</td><td>You said: build</td></tr>
     <tr><td>C4 · Router runs git in a worker's folder</td><td>A worker's git settings run with your rights</td><td>No</td></tr>
   </tbody>
 </table>
 <p data-c="dropped">Dropped by you: C2, C3, C7; C8, since the router already makes worktrees on DSH.</p>
 
 <h3 id="c5">C5, by example</h3>
-<p data-c="c5">At every turn end a hook checks all docs and refuses while one is red. A worker fixes the doc. The router cannot, so it retries. On 10 November a router was refused 332 times in 21 minutes.</p>
+<p data-c="c5">At every turn end a hook checks all docs and refuses while one is red. On 10 November a router was refused 332 times in 21 minutes. After C5 the router is told once, sends the doc's worker to fix it, and ends its turn. Workers keep today's hook. The merge still refuses a red doc.</p>
 
 <h3 id="c6">C6, by example</h3>
-<p data-c="c6">The watchdog's schedule ends 7 days after it starts. Started Monday, it goes silent next Monday. Silence also means "no workers", so a stuck worker goes unreported. From day 6 it tells the router to restart it.</p>
+<p data-c="c6">Its schedule ends after 7 days, and the silence looks like "no workers". From day 6 it tells the router to restart it.</p>
 
 <h2 id="decide">What you decide</h2>
 <table data-c="decide">
   <thead><tr><th>Question</th><th>Answer first</th><th>Why</th></tr></thead>
   <tbody>
-    <tr><td>C1, C5, C6?</td><td>Add all three</td><td>Small, little exposed</td></tr>
+    <tr><td>C1?</td><td>Add</td><td>Small, little exposed</td></tr>
     <tr><td>May the router stop a busy worker that has gone quiet?</td><td>No, that stays yours</td><td>It may be mid-commit</td></tr>
     <tr><td>Does cleanup also remove merged worktrees?</td><td>No, one by one</td><td>Each removal keeps its checks</td></tr>
     <tr><td>Four small text and settings fixes</td><td>Fix three; leave the watchdog's local settings</td><td>Details in the data file</td></tr>
@@ -77,7 +77,7 @@
 <ul data-c="know">
   <li>The router closes a dead worker and cleans up with one command.</li>
   <li>The watchdog names each finished worktree and the step that closes it.</li>
-  <li>Nothing you did not pick changed.</li>
+  <li>Nothing else changed.</li>
 </ul>
 
   </main>

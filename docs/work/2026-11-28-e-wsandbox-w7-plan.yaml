@@ -129,21 +129,35 @@ details:
       build: "-"
       tests: "-"
     - id: C5
-      ability: "Router: end its turn while a doc is red (the Stop doc hook skips the router)"
-      gives: "No loop on a red doc it cannot fix (R20)."
-      exposes: "Nothing: the router writes no doc; a worker still sees the hook."
+      ability: "Router: a red doc is told to the router once per turn end, and it sends a worker to fix it, instead of looping"
+      gives: "No loop. The router never fixes a doc (owner, 2026-11-28: 'The router shouldn't fix doc, if it finds problems, it tells the worker to fix'); it learns the red doc once and dispatches the worker that owns it."
+      exposes: "The router may end a turn while a doc in its checkout is red; the doc stays red until a worker fixes it, and the merge gate (keel verify-dod) still refuses a red doc. Nothing else."
       recommend: "Yes."
+      hook-facts: |-
+        The Stop hook: .claude/settings.json:65-74 runs <git common dir>/keel-hooks/verify-doc-stop, which keel hooks
+        install writes from src/main.rs:521-528 (DOC_STOP): it runs keel verify-doc over the whole checkout and, on any
+        failure (a red doc, or keel itself failing), prints 'A doc is red - fix it before ending the turn' and exits 2,
+        which refuses the turn end. It ignores the event's input.
+        Claude Code 2.1.288 (strings of ~/.local/share/claude/versions/2.1.288): the Stop input is the base hook input
+        plus hook_event_name, stop_hook_active (true while the turn already continues because a Stop hook blocked) and
+        last_assistant_message; after a cap of consecutive blocks it overrides and ends the turn, with the hint 'check
+        stop_hook_active in the input and return success while it's true' (CLAUDE_CODE_STOP_HOOK_BLOCK_CAP raises it).
+        Whether the base input carries agent_type for an --agent session is not read from the minified code.
       example: |-
-        Owner question 2026-11-28 ('what is this actually?'). The project's Stop hook (.claude/settings.json:65-74) runs
-        <git dir>/keel-hooks/verify-doc-stop, which runs keel verify-doc over the whole checkout and refuses the turn end
-        (exit 2) on any failure. A worker must leave its docs green, so it fixes the doc. The router cannot edit a doc,
-        so each refused turn end hands the same error back and it tries again. On record: router session a726782e
-        (2026-11-10 05:25 - 05:46 UTC, ~/.claude/projects/-Users-nguyenvanluong-Documents-proj-misc-Keel) was refused
-        332 times in 21 minutes with 'A doc is red - fix it before ending the turn: keel: not inside a git repository'.
-        Other triggers: a doc the owner left half-edited in the main checkout, or a newer keel rule turning an old doc red.
-      ruling: "OWED: the owner asked for an explanation; the page now gives this example. Default: add."
-      build: "settings.json Stop hook: skip when the hook input's agent_type is router (checked against a captured Stop event first; if Stop carries no agent_type, the plan reports it and drops C5)."
-      tests: "The wired Stop command with a red doc: a router event passes, a worker event is refused."
+        Router session a726782e (2026-11-10 05:25 - 05:46 UTC, ~/.claude/projects/-Users-nguyenvanluong-Documents-proj-misc-Keel)
+        was refused 332 times in 21 minutes with 'A doc is red - fix it before ending the turn: keel: not inside a git
+        repository': keel itself failed there, and the hook treats any failure as red. The router cannot edit, so each
+        refusal handed it the same error and it tried again.
+      build: >-
+        .claude/settings.json Stop entry only (the keel template is not changed, so no other project and no worker
+        changes): read the hook input; when the session is the router and stop_hook_active is true, exit 0; otherwise
+        run verify-doc-stop as today. For the router the first refusal's text becomes 'A doc is red: send the worker
+        that owns it to fix it; you never edit a doc', then its next turn end passes. The router is known by the
+        input's agent_type == "router"; if a captured Stop event shows no agent_type, by the transcript's
+        agentSetting "router" (the transcript_path in every hook input; the router's transcripts carry it). The
+        keel-router skill's posture section says the same: a red doc is a worker's task.
+      tests: "The wired Stop command (as settings_run_the_guard_on_every_tool_and_fail_closed runs PreToolUse) in a fixture checkout with a red doc: a router event with stop_hook_active false is refused with the worker sentence; a router event with stop_hook_active true passes; a worker event is refused either way; a green checkout passes. Red on the epic tip."
+      ruling: "RULED (owner, 2026-11-28, page comments): add, redesigned - the router does not fix a doc, it tells a worker."
     - id: C6
       ability: "Watchdog: warn the router before its 7-day schedule ends"
       gives: "The router restarts it (watchdog stop, start) before reports stop (R29)."
@@ -155,7 +169,7 @@ details:
         reports until about the next Monday 09:00, then goes silent. Silence also means 'no live worker', so the router
         cannot tell; a worker stuck after that is never reported. The fix: from day 6 the facts block says 'Schedule
         ends in under a day: restart the watchdog', and the router runs watchdog stop, then start.
-      ruling: "OWED: the owner asked for an explanation; the page now gives this example. Default: add."
+      ruling: "RULED (owner, 2026-11-28, page comment 'ok, add'): add."
       build: "router-worker.sh facts: read the watchdog session's start time from its transcript's first record and print 'Schedule ends in under a day: restart the watchdog.' past six days; keel-router worker-ops.md:198 names it."
       tests: "Facts at ROUTER_NOW six days and one hour after a fixture start print the line; at five days they do not."
     - id: C7
@@ -234,8 +248,8 @@ details:
       of W5's merged versions. C11 changes facts(), which W5 leaves alone (its plan: 'facts() is not touched'); C11's
       tests and the Close block can be written before W5 merges.
   rule-bearing:
-    staged-for-one-owner-commit: "scripts/router-worker.sh (C9 stop, C10 prune, C11 facts; C6 if picked); scripts/router-guard.jq (C10 prune; C1 if picked); .claude/settings.json (C10 prune; C1, C5, G1 if picked); skills/keel-router and .claude/skills/keel-router (posture; worker-ops.md: STOPPED state, PRUNED, the Close block; C6 if picked); .claude/skills/project-router (G4; Who runs what for C9 and C10); .claude/agents/router.md (the prune shape, or G2's pointer)."
-    committed-by-worker: "This plan pair and the result pair; tests/suite/router.rs; docs/decisions/router.html (DEC-30, DEC-45 Amended rows); docs/use-cases/router.yaml (UC-ROUTE-1, UC-ROUTE-6); docs/backlog/e-router-v2.yaml (R20, R29 closed if C5, C6 picked)."
+    staged-for-one-owner-commit: "scripts/router-worker.sh (C6 the schedule warning, C9 stop, C10 prune, C11 facts); scripts/router-guard.jq (C10 prune; C1 if picked); .claude/settings.json (C5 the Stop entry, C10 prune; C1, G1 if picked); skills/keel-router and .claude/skills/keel-router (posture: a red doc is a worker's task; worker-ops.md: STOPPED state, PRUNED, the Close block, the schedule warning); .claude/skills/project-router (G4; Who runs what for C9 and C10); .claude/agents/router.md (the prune shape, or G2's pointer)."
+    committed-by-worker: "This plan pair and the result pair; tests/suite/router.rs; docs/decisions/router.html (DEC-30, DEC-45 Amended rows); docs/use-cases/router.yaml (UC-ROUTE-1, UC-ROUTE-6); docs/backlog/e-router-v2.yaml (R20 closed by C5, R29 by C6)."
   commit-order:
     - "1. docs(E-WSANDBOX.W7): this plan pair."
     - "Owner: picks abilities and gap fixes, and confirms the plan. Nothing below starts before it."
@@ -246,19 +260,19 @@ details:
     - "5. Owner: one keel mr commit; the red cases go green."
     - "6. docs(E-WSANDBOX.W7): the result pair; a fresh worker re-gates; a fresh reviewer runs the round."
   owner-steps:
-    - "1. Read the page; answer the owed picks (C1, C5, C6, G1-G4) and Q1-Q3, or accept the defaults, by htmldoc comment; confirm the plan."
+    - "1. Read the page; answer the owed picks (C1, G1-G4) and Q1-Q3, or accept the defaults, by htmldoc comment; confirm the plan."
     - "2. Sign off and merge W5 as its plan says; W7 then merges the epic in by itself."
     - "3. One keel mr commit of the staged files (--as vuluu)."
     - "4. After the re-gate, the review and the result pair: keel mr confirm wu <tip> --as vuluu --target epic/E-WSANDBOX, then git merge --no-ff wu/E-WSANDBOX/w7-bounds into epic/E-WSANDBOX."
   rulings-2026-11-28:
     source: "Owner comments on the page, htmldoc 6b0a62cc9f34851f0dfb2dae, 2026-11-28."
     dropped: "C2, C3, C7 ('no need'); C8 ('it can definitely do it now' - already possible; G4 fixes the stale text)."
-    wanted: "C9, C10 (router: start / stop / remove / clean up workers and worktrees); C11 (watchdog: report dead and obsolete workers and worktrees to the router to close)."
-    explained-owed: "C5 and C6: the owner asked what they are; the page and details.candidates give an example each; picks owed, default add."
+    wanted: "C5, C6 (second round); C9, C10 (router: start / stop / remove / clean up workers and worktrees); C11 (watchdog: report dead and obsolete workers and worktrees to the router to close)."
+    second-round: "C6 'ok, add' - RULED add. C5 'The router shouldn't fix doc, if it finds problems, it tells the worker to fix' - RULED add, redesigned: the router is told once per turn end and dispatches a worker (details.candidates.C5)."
     no-comment-owed: "C1 (default add), C4 (default not built), G1-G3 (defaults: fix, fix, leave), G4 (new, default fix)."
   open-questions:
-    - q: "Q1 - The owed picks: C1, C5, C6, G1, G2, G3, G4?"
-      default: "My advice: add C1, C5, C6; fix G1, G2, G4; leave G3."
+    - q: "Q1 - The owed picks: C1, G1, G2, G3, G4?"
+      default: "My advice: add C1; fix G1, G2, G4; leave G3."
       under-default: "Built with C9-C11 in the one owner commit; any the owner drops is left out with its tests."
     - q: "Q2 - May the router stop a busy worker that has been quiet 15 minutes or more (the watchdog's STUCK)?"
       default: "No: busy stays the owner's (claude stop <id>); stopping cuts a turn that may be mid-commit."
