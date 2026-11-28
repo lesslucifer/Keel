@@ -5411,6 +5411,7 @@ fn the_reuse_rules_are_stated_once_by_their_keys() {
         assert!(flat.contains(said), "keel-router SKILL.md does not state {said:?}");
     }
     assert!(!flat.contains("fix round (fresh worker, new tip, re-gate)"), "the review table still sends every fix fresh");
+    let numbers = regex::Regex::new(r"\b(200000|400000|200,000|400,000|200k|400k)\b").unwrap();
     for doc in [
         "skills/keel-router/SKILL.md",
         "skills/keel-router/references/worker-ops.md",
@@ -5418,9 +5419,7 @@ fn the_reuse_rules_are_stated_once_by_their_keys() {
         ".claude/skills/project-router/SKILL.md",
     ] {
         let text = read(doc);
-        for number in ["200000", "400000", "200,000", "400,000", "200k", "400k"] {
-            assert!(!text.contains(number), "{doc} writes the ceiling {number} instead of its key");
-        }
+        assert!(!numbers.is_match(&text), "{doc} writes a ceiling instead of its key: {:?}", numbers.find(&text));
     }
     assert!(read("skills/keel-router/references/checklists.md").contains("reuse rule"), "checklists do not point at the reuse rule");
     let ops = read("skills/keel-router/references/worker-ops.md");
