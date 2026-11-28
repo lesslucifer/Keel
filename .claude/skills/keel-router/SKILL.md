@@ -342,8 +342,9 @@ in another skill.
      run gets its review grant back).
   4. `<launcher> resume <name>` refuses what it cannot rebuild (a live session
      of the name, no transcript, a changed brief snapshot, a worktree off the
-     run's branch, an effort or mode the policy no longer admits): spawn fresh
-     then, with a brief that says what the last worker left.
+     run's branch, unlinked or without the worker persona, a model, effort or
+     mode the policy no longer admits): spawn fresh then, with a brief that
+     says what the last worker left.
 - **Tasks** (skill keel-workflow §1). When a piece of a WU waits on anything
   outside its worker's hands, split it off: `<launcher> worktree add
   wu/<E>/<wu>_<task>` (cut off its WU branch) and a worker in it. When the task
@@ -390,8 +391,9 @@ in another skill.
 - Retire with `<launcher> stop <name>` only when idle AND clean (its WU merged,
   or no longer needed); the launcher refuses a busy worker. Once the `merged`
   watch fired and the worker is stopped, `<launcher> worktree remove <branch>`
-  (it takes only a clean, merged worktree with no session in it; the branch stays). Never stop uncommitted work; hand it to a
-  fresh worker told to keep and check it. Tell workers not to
+  (it takes only a clean, merged worktree with no session in it; the branch stays). Never stop uncommitted work. A worker
+  gone with uncommitted work comes back by "Reuse or fresh": resumed when
+  `status` says it fits, else a fresh worker told to keep and check it. Tell workers not to
   talk to the owner directly. To ask a peer, use a one-shot idle notification;
   never poll.
 - Every try-it helper is run once before handing over and lives at a stable path.
