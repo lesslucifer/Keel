@@ -3,7 +3,7 @@
 
 # Path prefixes the gate treats as code (cr binds them). A diff touching none is
 # docs/infra-only and exempt from test/cr/doc evidence. Adjust to your layout.
-code_paths = ["src/", "tests/", "app/"]
+code_paths = ["src/", "tests/", "app/", "scripts/"]
 
 # Optional: narrow that exemption to paths matching these globs (and outside
 # code_paths). Unset = every non-code path is docs/infra.
@@ -49,7 +49,7 @@ tiers = ["username", "key"]   # accepted .keel/mr-allowed tiers; key-only is def
 [review]   # modules, rubric: read by the keel-code-review skill. The schedule keys (max_rounds, whole_range_rounds, fix_importants_from, fix_blockers_from): by the CLI from the target branch's committed copy
 # at the review's level: a review whose target is main is an epic review, any other a WU review; per key [review.epic] or [review.wu] wins, then [review], then the default (the rule: skill keel-code-review section 5)
 # [review] sets no schedule key here; a staged change is checked by the pre-commit hook and keel mr commit; keel mr confirm tags the review history's rounds by the target's settings
-modules = ["src/*"]          # each match of a glob's * is one module (altitude finder)
+modules = ["src/*", "scripts/*"]          # each match of a glob's * is one module (altitude finder)
 rubric = ".keel/rubric.md"   # optional project-local rubric
 
 [review.wu]   # the WU review's own schedule: blockers too are fixed under a fix-PASS, with no further round and no cap waiver; the epic review follows [review] and the defaults
