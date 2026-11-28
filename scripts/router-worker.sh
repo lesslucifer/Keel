@@ -158,15 +158,23 @@ cleanup() {
 # reclaims it when it removes that worktree - finding 3 of the epic close's review round 1: without
 # this, every retired worktree left a full package tree under the temp folder. Guards: the home is a
 # real directory this user owns under the temp root, and its name is the launcher's. The old shared
-# layout's modules-<cksum> is reclaimed too when it is there.
+# layout's modules-<cksum> is reclaimed too when it is there. It runs after git's removal, so it never
+# exits non-zero: a reclaim that cannot finish names what is left and leaves the removal a success
+# (review round 2's important).
 reclaim_pnpm() {
-  rp_root=$(cd -P "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P) || die "cannot resolve the temp folder ${TMPDIR:-/tmp}"
+  rp_root=$(cd -P "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P) || return 0
   rp_sum=$(printf '%s\n' "$1" | cksum | cut -d' ' -f1)
   for rp_d in "$rp_root/keel-worker-pnpm-$rp_sum" "$rp_root/keel-worker-pnpm/modules-$rp_sum"; do
     [ -e "$rp_d" ] || [ -L "$rp_d" ] || continue
     [ -d "$rp_d" ] && [ ! -L "$rp_d" ] && [ -O "$rp_d" ] || continue
-    rm -rf -- "$rp_d" || die "cannot reclaim the worker's pnpm home $rp_d"
+    # The worker owns this tree through its allowWrite root and can leave it unwritable; the owner can
+    # still chmod it. A reclaim that fails must not fail the removal git has already made (review round
+    # 2's important): name what is left for the owner, exit 0, and leave it removable later.
+    chmod -R u+rwX -- "$rp_d" 2>/dev/null || :
+    rm -rf -- "$rp_d" 2>/dev/null || :
+    [ ! -e "$rp_d" ] || echo "router-worker: could not reclaim the worker's pnpm home $rp_d: remove it as the owner" >&2
   done
+  return 0
 }
 # this repository's git dir (git's common dir), resolved from the router's checkout, never from a
 # worker's worktree (whose .git a worker could point elsewhere: E-WMODE review round 2, H2)
@@ -813,7 +821,11 @@ done
 # session, because an absolute modules dir redirects a granted pnpm command run outside app/ into the
 # app's tree and prints success with no node_modules where the worker ran (finding 2). pnpm writes a
 # real app/node_modules of its own whose package files all live in that virtual store, so Node and
-# Vite resolve through it and nothing the sandbox denies lands in the worktree. The three variables
+# Vite resolve through it and nothing the sandbox denies lands in the worktree. The app pins
+# `nodeLinker: hoisted` for Forge, and under hoisted pnpm writes the package tree straight into
+# app/node_modules, .vscode and all (review round 2's blocker), so the session pins the isolated linker
+# too - pnpm 11.18.0 honours the env over the workspace file (probed) - and a worker's install keeps
+# the files in the virtual store. The four variables
 # travel in the --settings env object: claude --bg hands the session to the Claude Code daemon, which
 # does not pass the launcher's own environment on (E-WSANDBOX.W10, the e2e of 2026-11-28). What the
 # launcher finds at the home's name must be a real directory this user owns. Trade-off: Forge's
@@ -851,7 +863,7 @@ sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --argjson o "$ot
     denyRead: ["~/.ssh", "~/.claude/channels"]},
   network: {allowLocalBinding: true, allowedDomains: ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com", "registry.npmjs.org"]}},
   hooks: {PreToolUse: [{matcher: "*", hooks: [{type: "command", command: $hook, timeout: 10}]}]}}
-  + (if $ph == "" then {} else {env: {PNPM_HOME: $ph, pnpm_config_store_dir: ($ph + "/store"), pnpm_config_virtual_store_dir: ($ph + "/vstore")}} end)')
+  + (if $ph == "" then {} else {env: {PNPM_HOME: $ph, pnpm_config_store_dir: ($ph + "/store"), pnpm_config_virtual_store_dir: ($ph + "/vstore"), pnpm_config_node_linker: "isolated"}} end)')
 set -- --bg -n "$name" --model "$model" --effort "$effort" --agent worker --setting-sources project,local --strict-mcp-config \
   --settings "$sandbox" --allowedTools
 for c in "cargo build" "cargo test" "cargo check" "cargo clippy" "cargo fmt" "keel preflight" \
