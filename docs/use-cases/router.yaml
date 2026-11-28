@@ -198,8 +198,9 @@ areas:
           One `PreToolUse` guard on every tool (Keel: `scripts/router-guard.jq`) allows only the tools in the
           router's agent file (no `Agent`, `Edit`, `Monitor`), the inline keel skills, `ListAgents`, `SendMessage` to
           any named session (DEC-42), `Write` to `<cwd>/.router/briefs/<name>.md`, and Bash commands of plain words
-          matching the whitelist (read-only git - status, log, diff, show, `grep` never with `-O`, `ls-tree`, `worktree
-          list`, `branch --list <names>` (E-WSANDBOX.W7) - gh with named query flags only, ps, the launcher's shapes: spawn,
+          matching the whitelist (read-only git - `status|log|diff|show`, `branch -v|-vv|-a|-av|-va|-a -v|--all|--all
+          -v`, and since E-WSANDBOX.W7 `grep` (never `-O` or `--open-files-in-pager`, which run a command), `ls-tree`,
+          `worktree list` and `branch --list <names>` - gh with named query flags only, ps, the launcher's shapes: spawn,
           stop, `prune`, `resume <name>`, `status [<name>]`, `worktree add|remove <epic/E or wu/E/slug>` and `watchdog
           start|stop <router-name>`, the five
           `router-watch.sh` kinds, the owner sender's three plain shapes (`scripts/notify-owner.py

@@ -35,11 +35,26 @@ distillation: >-
   R20 (C5) and R29 (C6) taken by W7, to close when W7 merges. The plan and this result are T3 and archive at epic
   close.
 follow-ups:
-  - "Owner, after the epic lands on main: install the new keel and run keel hooks install in the router checkout, so C5's hook script lands there (E-WSANDBOX epic close)."
+  - "Owner, after the epic lands on main, in /Users/nguyenvanluong/Documents/proj/misc/Keel: cargo install --path . --locked (or the release install of docs/install.html), then keel hooks install, so C5's hook script lands in the router's checkout (E-WSANDBOX epic close; the epic plan's details.close-steps-w7)."
+  - "scripts/router-scratch.sh init failed for the independent reviewer with 'fatal: your current branch 'main' does not have any commits yet'. The helper is W4's (merged), not W7's; keel init succeeds on a repo with no commit in Keel's own tests (tests/suite/init.rs fresh_repo), and this worker may not run keel init, so the cause is unconfirmed: a worker allowed to run the helper reproduces it, then fixes it in the helper or keel init (E-WSANDBOX epic close, or a backlog row in docs/backlog/e-router-v2.yaml)."
   - "Close backlog R20 and R29 when W7 merges into the epic (E-WSANDBOX epic close distillation)."
   - "W5's keel-router posture line omits resume and status among the launcher's shapes: a rule-bearing wording fix at E-WSANDBOX epic close or in the next router epic, if the review agrees."
   - "A live check that a router's Stop event carries agent_type (the transcript fallback covers it if not), and a live prune and Close line: E-WSANDBOX epic e2e in the probe clone."
 details:
+  review-round-1: |-
+    Code review round 1 of 1 on c6ef9f2f: FAIL, 2 blockers, 2 importants, 1 nit; fixed in this round, no new round (fix_blockers_from=1).
+    - Blocker :370 (close_lines): a fresh branch a sibling had back-merged read as merged. Fixed: only merges on the base's first-parent line count (git rev-list --first-parent --merges --parents), the branch's own --no-ff merge (DEC-45). Test watchdog_close_ignores_a_fresh_branch_a_sibling_back_merged, red first.
+    - Blocker :646 (prune): about D squared forks. Fixed: one pass over the run dirs, the list held in memory, the brief removal shared with cleanup as drop_brief. Test prune_reads_the_run_dirs_once (red first: 24.9 s for 120 run dirs). Measured after: 0.85 s for 120, 3.2 s for 480.
+    - Important :649: a list prune could not read cleaned every brief. Fixed: anything but a JSON array of sessions stops prune (nolist). Test prune_stops_on_a_session_list_it_cannot_read, red first.
+    - Important :642: the list was read before the run dirs. Fixed: glob first, then the list. Test prune_never_takes_a_worker_started_after_its_list_for_a_gone_one (the stub's one-shot after-agents hook), red first.
+    - Nit src/main.rs:1103 (the C5 unit test repeats the integration test): kept both - the unit test pins DOC_STOP's text, the commit-level charter for src/main.rs; the integration test runs the hook keel hooks install writes.
+    Independent review round 1:
+    - HIGH: stop closed a worker listed only as state working. Fixed: one helper, norm_state, maps working to busy and done to idle for stop, the watchdog's facts and the update log; worker-ops says it. Test stop_holds_a_worker_listed_only_as_working, red first. Such a row now gets the busy wait, then the refusal, not a refusal at once.
+    - MEDIUM: the posture line names resume <name> and status [<name>] (both copies).
+    - LOW: settings allow git grep by design, recorded in DEC-30 (the guard refuses -O for the router; a worker's pager runs in its own sandbox; no deny pattern names an -O inside a cluster).
+    - LOW: DEC-44 names prune, resume and status among the guard's shapes. UC-ROUTE-6's git list is whole and names --open-files-in-pager. project-router's DSH launcher row opens with today's fact.
+    - LOW: the owner step names the exact commands (result page, follow-ups, the epic plan's details.close-steps-w7).
+    - Raised out of scope: prune and git_dirs_ok - it held already (git_dirs_ok runs before every mode, :416); prune also checks the router checkout's own .git link, as spawn does, and both git-dir tests now run prune.
   picks:
     built: "C1, C5, C6, C9, C10, C11, G1, G2, G4 - RULED (owner, 2026-11-28; page comments and the plan confirmed at d96d0c23 with the defaults)."
     not-built: "C2, C3, C7 ('no need'), C8 (already possible), C4 (default not built), G3 (left, recorded in DEC-45)."
