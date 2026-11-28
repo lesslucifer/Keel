@@ -34,7 +34,10 @@ test-plan:
     admitted by the guard and every new guard shape has its allow line; the router.md tools test (:261-288) kept; for
     C5 the wired Stop hook run as Claude Code runs it (as settings_run_the_guard_on_every_tool_and_fail_closed :543
     runs the PreToolUse one); for C6 the watchdog facts at a fixed clock (ROUTER_NOW) with a schedule age past six
-    days. After W5 merges in: W5's resume and status shapes sit in the same extended tests.
+    days; for C9 the stub sessions in each state through stop; for C10 a fixture repo with a deleted worktree dir,
+    an unlisted session's run dir and a stale lock through prune; for C11 facts over merged, unmerged and missing
+    worktrees (details.candidates[].tests). After W5 merges in: W5's resume, status and stop shapes sit in the same
+    extended tests, and C9 runs against W5's stop.
   e2e: >-
     none: every ability on offer is a guard, settings or launcher shape proven by the fixture tests; the epic e2e is
     W5's probe-clone run, unchanged by W7. If the owner picks C3 (htmldoc comments), one live read of a page's
@@ -79,7 +82,8 @@ details:
       - {cannot: "Load any other skill (htmldoc, loop, code review)", where: "router-guard.jq:18,65-66"}
       - {cannot: "End its turn while a doc in its checkout is red: the Stop doc hook refuses, and it cannot fix docs (backlog R20)", where: ".claude/settings.json:65-74; docs/backlog/e-router-v2.yaml:165-176"}
       - {cannot: "Run keel checks, read git notes refs remotely, read CI runs or htmldoc comments itself: a worker does it", where: "skills/keel-router/SKILL.md:49-51"}
-      - {cannot: "Create or remove worktrees on DSH (the preset denies the launcher there)", where: "project-router SKILL.md:41"}
+      - {cannot: "Stop a worker in any state but idle (busy after 30 s, or waiting on a prompt, or any other state: 'the owner decides')", where: "scripts/router-worker.sh:396-409"}
+      - {cannot: "Remove a worktree that is dirty, unmerged, holds docs/.archive or has a session in it; prune a worktree whose directory is gone, or leftover run dirs, brief copies and locks", where: "router-worker.sh:427-453; .router/runs/.lock-<name> (header :47-48)"}
     watchdog:
       - {can: "Create its one schedule: CronCreate of */5 * * * *, prompt tick, recurring", where: "router-guard.jq:46-47; router-worker.sh:374-376"}
       - {can: "Message its own router", where: "router-guard.jq:48"}
@@ -89,9 +93,11 @@ details:
       - {cannot: "Use any tool but those two: no shell, read or write", where: "router-worker.sh:375 (--tools SendMessage CronCreate)"}
       - {cannot: "Message anyone else, or change or delete its schedule", where: "router-guard.jq:46-51"}
       - {cannot: "Load project or user settings, or MCP servers", where: "router-worker.sh:374-375"}
+      - {cannot: "Report a worktree with no worker (merged and left, or its directory gone), or a worker whose branch is already merged: it reports live workers only", where: "router-worker.sh:214-217, 241-244"}
       - {cannot: "Keep its schedule past 7 days: the recurring job ends and its reports stop (backlog R29)", where: "docs/backlog/e-router-v2.yaml:273-282; skills/keel-router/references/worker-ops.md:198"}
   candidates:
     - id: C1
+      ruling: "OWED: no comment on it. Default: add."
       ability: "Router: more read-only git - git grep (at a ref), git ls-tree, git worktree list, git branch --list <name>"
       gives: "Search another branch or tip and list worktrees without a worker (14 denials on record)."
       exposes: "git grep -O / --open-files-in-pager runs a command, so those flags are refused; the rest reads the repo only, as git show already does."
@@ -103,6 +109,7 @@ details:
       gives: "Check a red CI run without a worker (delegated today, SKILL.md:49)."
       exposes: "Run logs are untrusted text, like PR bodies; no -R or URL, so the token reaches only this repo's host."
       recommend: "Yes."
+      ruling: "RULED (owner, 2026-11-28, page comment): dropped - 'no need'."
       build: "router-guard.jq: gh run (view|list) with gh_args plus --log and --job; settings.json; posture text."
       tests: "Admitted: gh run list --limit 5, gh run view 44453026886 --log. Refused: gh run rerun 1, gh run view 1 -R x/y, gh run view 1 --jq .x."
     - id: C3
@@ -110,9 +117,11 @@ details:
       gives: "Relay and route the owner's page comments without a worker."
       exposes: "A new unsandboxed script with network to htmldoc.wfomobile.com; comments are untrusted text."
       recommend: "Not now: the owner's comments reach the worker that owns the page; revisit if relaying them by hand costs."
+      ruling: "RULED (owner, 2026-11-28, page comment): dropped - 'no need'."
       build: "scripts/router-htmldoc.sh comments <24-hex id> (fixed URL, jq summary); rule_bearing entry in .keel/config.toml; guard shape; settings line."
       tests: "Stubbed curl: the fixed URL, an id refused unless 24 hex; guard admits only that shape."
     - id: C4
+      ruling: "OWED: no comment on it. Default: not built."
       ability: "Router: git in another worktree (git -C <path> log|status)"
       gives: "Read a worker's branch state directly."
       exposes: "git in a worktree whose .git a worker rewrote runs the worker's config, hooks or fsmonitor with the owner's rights (why the launcher checks linked_ok first)."
@@ -124,6 +133,15 @@ details:
       gives: "No loop on a red doc it cannot fix (R20)."
       exposes: "Nothing: the router writes no doc; a worker still sees the hook."
       recommend: "Yes."
+      example: |-
+        Owner question 2026-11-28 ('what is this actually?'). The project's Stop hook (.claude/settings.json:65-74) runs
+        <git dir>/keel-hooks/verify-doc-stop, which runs keel verify-doc over the whole checkout and refuses the turn end
+        (exit 2) on any failure. A worker must leave its docs green, so it fixes the doc. The router cannot edit a doc,
+        so each refused turn end hands the same error back and it tries again. On record: router session a726782e
+        (2026-11-10 05:25 - 05:46 UTC, ~/.claude/projects/-Users-nguyenvanluong-Documents-proj-misc-Keel) was refused
+        332 times in 21 minutes with 'A doc is red - fix it before ending the turn: keel: not inside a git repository'.
+        Other triggers: a doc the owner left half-edited in the main checkout, or a newer keel rule turning an old doc red.
+      ruling: "OWED: the owner asked for an explanation; the page now gives this example. Default: add."
       build: "settings.json Stop hook: skip when the hook input's agent_type is router (checked against a captured Stop event first; if Stop carries no agent_type, the plan reports it and drops C5)."
       tests: "The wired Stop command with a red doc: a router event passes, a worker event is refused."
     - id: C6
@@ -131,6 +149,13 @@ details:
       gives: "The router restarts it (watchdog stop, start) before reports stop (R29)."
       exposes: "Nothing: one more line in the facts block; no new tool."
       recommend: "Yes."
+      example: |-
+        Owner question 2026-11-28 ('what is this?'). The watchdog's 5-minute schedule is a Claude Code recurring job,
+        which ends after 7 days (skills/keel-router/references/worker-ops.md:198; backlog R29). Started Monday 09:00, it
+        reports until about the next Monday 09:00, then goes silent. Silence also means 'no live worker', so the router
+        cannot tell; a worker stuck after that is never reported. The fix: from day 6 the facts block says 'Schedule
+        ends in under a day: restart the watchdog', and the router runs watchdog stop, then start.
+      ruling: "OWED: the owner asked for an explanation; the page now gives this example. Default: add."
       build: "router-worker.sh facts: read the watchdog session's start time from its transcript's first record and print 'Schedule ends in under a day: restart the watchdog.' past six days; keel-router worker-ops.md:198 names it."
       tests: "Facts at ROUTER_NOW six days and one hour after a fixture start print the line; at five days they do not."
     - id: C7
@@ -138,6 +163,7 @@ details:
       gives: "Verify a worker's gate claim without a worker."
       exposes: "keel runs git in the worker's worktree with the owner's rights (the C4 risk) and reads code the worker wrote."
       recommend: "No."
+      ruling: "RULED (owner, 2026-11-28, page comment): dropped - 'no need'."
       build: "-"
       tests: "-"
     - id: C8
@@ -145,8 +171,33 @@ details:
       gives: "No worker for worktrees on DSH."
       exposes: "DSH has no hook to bound the shape; a host preset change outside this repo."
       recommend: "No in W7 (a DSH preset, not this repo's guard); a backlog row if wanted."
+      ruling: "RULED (owner, 2026-11-28, page comment): dropped - 'it can definitely do it now'. The router on DSH already makes worktrees; the can't row (from project-router SKILL.md:18, :41, checked 2026-11-14) was stale and is removed; the stale project-router text is gap G4."
       build: "-"
       tests: "-"
+    - id: C9
+      ability: "Router: stop a dead worker - one in any state but idle or busy (waiting on a permission prompt, failed, unknown)"
+      gives: "The router closes a dead worker itself; today stop refuses it and the owner runs claude stop by hand."
+      exposes: "A worker stopped on a prompt loses that pending call; its commits and its worktree's files stay. A busy worker stays the owner's (stopping cuts its turn mid-write)."
+      recommend: "Add; busy stays refused (open question Q2)."
+      ruling: "RULED (owner, 2026-11-28, page comment): wanted - 'Routers should have ability to start / stop / remove / clean up workers & worktrees'."
+      build: "router-worker.sh stop: the state check at :409 admits any listed state but busy; the 30 s busy wait stays; built on W5's stop (and retire under W5's outcome B). STOPPED line gains state=<s>."
+      tests: "Stub sessions in states waiting, failed and empty: each stopped and removed (claude stop then rm), STOPPED state=...; busy past the wait still refused; idle unchanged. Red on the epic tip (refused today)."
+    - id: C10
+      ability: "Router: clean up - one launcher mode, prune, that clears what dead workers and removed worktrees leave"
+      gives: "One command after a WU or a crash: git worktree prune for worktrees whose directory is gone; run dirs whose session is no longer listed get their brief copies removed and are marked closed; a .router/runs/.lock-<name> whose launcher process is gone is removed. Removing a merged worktree stays worktree remove <branch>, one per worktree, with its checks."
+      exposes: "Little: it deletes only launcher-made files and git's own records of a missing worktree; it never deletes a worktree directory, a branch or a transcript."
+      recommend: "Add (scope open: Q3)."
+      ruling: "RULED (owner, 2026-11-28, page comment): wanted - the same comment."
+      build: "router-worker.sh prune (no argument): git_dirs_ok first; git worktree prune; per run dir whose session is not listed, the brief copy removed as stop's cleanup() does (linked_ok first); stale locks; prints PRUNED worktrees=<n> briefs=<n> locks=<n>. Guard shape 'scripts/router-worker.sh prune'; settings line; worker-ops names PRUNED."
+      tests: "Fixture repo: a worktree dir deleted, a run dir of an unlisted session with a brief copy, a lock whose pid is gone, plus a live session's run dir and lock: prune removes the three and keeps the live ones; an unlinked .git is skipped; the guard admits prune and refuses prune x. Red on the epic tip (no such mode)."
+    - id: C11
+      ability: "Watchdog: report dead and obsolete workers and worktrees, so the router closes them"
+      gives: "Each tick also lists: a worker whose branch is merged into its base (obsolete: stop it); a worker in a dead state (already STUCK, now with 'stop it'); a worktree with no worker whose branch is merged (remove it); a worktree whose directory is gone (prune). The router acts with stop, worktree remove and prune."
+      exposes: "One more git read per worktree, in the router's checkout only (merge-base on refs); no git in a worker's worktree beyond today's linked_ok path; the watchdog still has no tool to act."
+      recommend: "Add."
+      ruling: "RULED (owner, 2026-11-28, page comment): wanted - 'Watch dog should watch the dead / obsolete worktrees / workers and report to the router to close'."
+      build: "router-worker.sh facts: after the worker blocks, one 'Close:' block - for each registered worktree but the router's and main: its branch, its base by worktree mode's rule (epic/E -> main, wu/E/slug -> epic/E, task -> its WU), git -C ROOT merge-base --is-ancestor, the prunable flag of git worktree list --porcelain, and whether a live session runs there. Lines: '<branch>: merged, worker <name> still running - stop it', '<branch>: merged, no worker - worktree remove <branch>', '<path>: directory gone - prune'. Kept under the 9000-byte cap (DEC-45). The watchdog prompt puts Close lines with DONE and STUCK."
+      tests: "facts on fixtures: a merged WU worktree with a live worker, one without, an unmerged one, a deleted dir: the three Close lines and nothing for the unmerged; no git run in an unlinked worktree; the block still under the cap with 40 worktrees. Red on the epic tip."
   gaps:
     - id: G1
       gap: "settings.json:32 allows Bash(scripts/router-watch.sh *); the guard admits five kinds only"
@@ -160,6 +211,10 @@ details:
       gap: "The watchdog loads the router checkout's .claude/settings.local.json (router-worker.sh:374)"
       effect: "Hooks or permissions in that file reach the watchdog. Absent today; git-ignored; only the owner writes it (a worker's sandbox cannot write the router checkout)."
       recommend: "Leave, and record it in DEC-45."
+    - id: G4
+      gap: ".claude/skills/project-router/SKILL.md:18 and :41 say the DSH preset denies the launcher's worktree add|remove; the owner says the router on DSH can do it now (comment on C8, 2026-11-28)"
+      effect: "A DSH router following the skill hands worktrees to a worker for nothing."
+      recommend: "Fix the two rows to say the router makes worktrees on DSH too (rule-bearing, in the one owner commit)."
   sandbox-fork:
     question: "The epic's open question: do the router and the watchdog stay outside a sandbox?"
     default: "Yes. A sandbox bounds the Bash tool only: the watchdog has none and its facts hook runs outside any sandbox; the router's Bash runs only fixed scripts that need ~/.claude, the git dir and the network."
@@ -173,10 +228,13 @@ details:
       resolves them. Then the rule-bearing edits go on top of W5's and are staged for the one owner commit.
     cost: "W7's owner commit and sign-off wait for W5's merge (which waits on the owner's W5 probe). No second owner commit, no re-review."
     alternatives: "B - W7 first; W5 merges the epic in and its settings and guard tests carry W7's shapes (W5's plan amended). C - W7 signs before W5 merges; a second owner commit and review if W5's shapes then break W7's tests."
-    if-nothing-picked: "No overlap: W7 closes with its plan and result only."
-    if-only-c6: "Overlap only in router-worker.sh, worker-ops.md and router.rs; A still holds."
+    with-the-rulings: >-
+      C9 and C10 change the launcher's stop and add a mode beside W5's resume, status and (outcome B) retire; C9 is
+      built on W5's stop, so A is no longer a preference but a need: W7's launcher, guard and settings edits go on top
+      of W5's merged versions. C11 changes facts(), which W5 leaves alone (its plan: 'facts() is not touched'); C11's
+      tests and the Close block can be written before W5 merges.
   rule-bearing:
-    staged-for-one-owner-commit: "Per pick: scripts/router-guard.jq (C1, C2, C3), .claude/settings.json (C1, C2, C3, C5, G1), .claude/agents/router.md (G2), scripts/router-worker.sh (C6), skills/keel-router and .claude/skills/keel-router (posture and worker-ops.md), .claude/skills/project-router, scripts/router-htmldoc.sh and .keel/config.toml rule_bearing (C3 only)."
+    staged-for-one-owner-commit: "scripts/router-worker.sh (C9 stop, C10 prune, C11 facts; C6 if picked); scripts/router-guard.jq (C10 prune; C1 if picked); .claude/settings.json (C10 prune; C1, C5, G1 if picked); skills/keel-router and .claude/skills/keel-router (posture; worker-ops.md: STOPPED state, PRUNED, the Close block; C6 if picked); .claude/skills/project-router (G4; Who runs what for C9 and C10); .claude/agents/router.md (the prune shape, or G2's pointer)."
     committed-by-worker: "This plan pair and the result pair; tests/suite/router.rs; docs/decisions/router.html (DEC-30, DEC-45 Amended rows); docs/use-cases/router.yaml (UC-ROUTE-1, UC-ROUTE-6); docs/backlog/e-router-v2.yaml (R20, R29 closed if C5, C6 picked)."
   commit-order:
     - "1. docs(E-WSANDBOX.W7): this plan pair."
@@ -188,10 +246,28 @@ details:
     - "5. Owner: one keel mr commit; the red cases go green."
     - "6. docs(E-WSANDBOX.W7): the result pair; a fresh worker re-gates; a fresh reviewer runs the round."
   owner-steps:
-    - "1. Read the page; pick abilities (C1-C8) and gap fixes (G1-G3), or none, by htmldoc comment; confirm the plan."
+    - "1. Read the page; answer the owed picks (C1, C5, C6, G1-G4) and Q1-Q3, or accept the defaults, by htmldoc comment; confirm the plan."
     - "2. Sign off and merge W5 as its plan says; W7 then merges the epic in by itself."
     - "3. One keel mr commit of the staged files (--as vuluu)."
     - "4. After the re-gate, the review and the result pair: keel mr confirm wu <tip> --as vuluu --target epic/E-WSANDBOX, then git merge --no-ff wu/E-WSANDBOX/w7-bounds into epic/E-WSANDBOX."
+  rulings-2026-11-28:
+    source: "Owner comments on the page, htmldoc 6b0a62cc9f34851f0dfb2dae, 2026-11-28."
+    dropped: "C2, C3, C7 ('no need'); C8 ('it can definitely do it now' - already possible; G4 fixes the stale text)."
+    wanted: "C9, C10 (router: start / stop / remove / clean up workers and worktrees); C11 (watchdog: report dead and obsolete workers and worktrees to the router to close)."
+    explained-owed: "C5 and C6: the owner asked what they are; the page and details.candidates give an example each; picks owed, default add."
+    no-comment-owed: "C1 (default add), C4 (default not built), G1-G3 (defaults: fix, fix, leave), G4 (new, default fix)."
+  open-questions:
+    - q: "Q1 - The owed picks: C1, C5, C6, G1, G2, G3, G4?"
+      default: "My advice: add C1, C5, C6; fix G1, G2, G4; leave G3."
+      under-default: "Built with C9-C11 in the one owner commit; any the owner drops is left out with its tests."
+    - q: "Q2 - May the router stop a busy worker that has been quiet 15 minutes or more (the watchdog's STUCK)?"
+      default: "No: busy stays the owner's (claude stop <id>); stopping cuts a turn that may be mid-commit."
+      options: "(a) no - default; (b) yes, after the 30 s wait, only when the watchdog's quiet rule says STUCK."
+      under-default: "C9 admits every state but busy. Under (b): C9 also stops a busy worker whose transcript is 15 minutes quiet, with its own test."
+    - q: "Q3 - What does prune clean?"
+      default: "Only launcher-made leftovers and git's record of a missing worktree; merged worktrees are removed one by one with worktree remove, as the watchdog's Close lines say."
+      options: "(a) leftovers only - default; (b) prune also removes every merged, clean, session-free worktree (worktree remove's checks, in a loop)."
+      under-default: "C10 as in details.candidates. Under (b): prune runs remove's checks per worktree and prints REMOVED lines; one more test."
   dropped-from-first-draft: "The first draft (5ebdcb6d) built two bounds tables as a new decision and pinned them with tests, adding no power. The owner rejected that direction on 2026-11-28; its facts are kept above (can-today, gaps), its deliverable is dropped."
   gates:
     - "keel verify-doc on every changed doc, keel check raw, by the worker."

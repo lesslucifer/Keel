@@ -9,25 +9,23 @@
   <header class="doc-hero">
     <div class="inner">
       <h1>E-WSANDBOX.W7 · What the router and the watchdog can do, and what you add</h1>
-      <p>Today's limits first; then the new abilities you may pick. W7 builds only your picks.</p>
-      <div class="meta">T3 · WU plan · 2026-11-28 · Keel · v2 · its data file, 2026-11-28-e-wsandbox-w7-plan.yaml, sits beside this page</div>
+      <p>Today's limits first; then the new abilities. W7 builds only your picks.</p>
+      <div class="meta">T3 · WU plan · 2026-11-28 · Keel · v3, after your comments · its data file, 2026-11-28-e-wsandbox-w7-plan.yaml, sits beside this page</div>
     </div>
   </header>
   <main>
 
 <h2 id="problem">The problem</h2>
-<p data-c="problem">The router and the watchdog run with your rights, outside any sandbox. One guard script limits them. The router hit that guard 83 times this month, and some of that work went to workers. You cannot add abilities without first seeing today's limits.</p>
+<p data-c="problem">The router and the watchdog run with your rights, outside any sandbox. One guard script limits them. Dead workers and finished worktrees pile up until you close them by hand.</p>
 
 <h2 id="router">The router today</h2>
 <table data-c="router-today">
   <thead><tr><th>Can</th><th>Can't</th></tr></thead>
   <tbody>
-    <tr><td>Read and search any file you can read</td><td>Edit any file</td></tr>
-    <tr><td>Read git history, diffs and branches; read pull requests</td><td>Search other branches, read CI runs, or run git in another worktree</td></tr>
-    <tr><td>Start and stop workers, worktrees and the watchdog</td><td>Start a subagent or a shell watcher</td></tr>
-    <tr><td>Watch for your commit, sign-off, merge, push and tag; push you a message</td><td>Run keel checks, or read page comments</td></tr>
-    <tr><td>Write briefs and your message body; message any session</td><td>Use pipes, quotes or any other command</td></tr>
-    <tr><td>Load five Keel skills</td><td>End its turn while a doc is red: it loops</td></tr>
+    <tr><td>Read any file you can read; read git history and pull requests</td><td>Edit any file; search other branches</td></tr>
+    <tr><td>Start workers; stop an idle one; add and remove clean, merged worktrees</td><td>Stop a dead worker, or clean up leftovers</td></tr>
+    <tr><td>Watch for your commit, sign-off, merge, push and tag; message you</td><td>Start a subagent; use pipes or other commands</td></tr>
+    <tr><td>Write briefs; message any session; load five Keel skills</td><td>End its turn while a doc is red</td></tr>
   </tbody>
 </table>
 
@@ -35,42 +33,50 @@
 <table data-c="watchdog-today">
   <thead><tr><th>Can</th><th>Can't</th></tr></thead>
   <tbody>
-    <tr><td>Report every 5 minutes, to its router only</td><td>Use a shell, read or write</td></tr>
-    <tr><td>Read each worker's branch and recent history, after checking its link</td><td>Message anyone else, or load project settings</td></tr>
-    <tr><td>Stop itself when the router is gone</td><td>Last past 7 days: its schedule ends</td></tr>
+    <tr><td>Report live workers every 5 minutes, to its router only</td><td>Report finished or abandoned worktrees</td></tr>
+    <tr><td>Stop itself when the router is gone</td><td>Last past 7 days</td></tr>
   </tbody>
 </table>
 
-<h2 id="pick">Abilities you may add</h2>
+<h2 id="pick">Abilities</h2>
 <table data-c="pick">
-  <thead><tr><th>Ability</th><th>Exposes</th><th>My advice</th></tr></thead>
+  <thead><tr><th>Ability</th><th>Exposes</th><th>Status</th></tr></thead>
   <tbody>
-    <tr><td>C1 · Router: search other branches, list worktrees</td><td>Little; one flag runs commands, so it stays refused</td><td>Add</td></tr>
-    <tr><td>C2 · Router: read CI runs and logs</td><td>Untrusted log text</td><td>Add</td></tr>
-    <tr><td>C3 · Router: read page comments</td><td>A new networked script</td><td>Not now</td></tr>
-    <tr><td>C4 · Router: run git in a worker's worktree</td><td>A worker's git settings run with your rights</td><td>No</td></tr>
-    <tr><td>C5 · Router: stop looping on a red doc</td><td>Nothing</td><td>Add</td></tr>
-    <tr><td>C6 · Watchdog: warn a day before its schedule ends</td><td>Nothing</td><td>Add</td></tr>
-    <tr><td>C7 · Router: run keel checks itself</td><td>As C4</td><td>No</td></tr>
-    <tr><td>C8 · Router on DSH: make worktrees</td><td>Nothing checks it there</td><td>No</td></tr>
+    <tr><td>C9 · Router stops a dead worker (stuck on a prompt, failed)</td><td>That worker's pending call; its files stay</td><td>You asked: build</td></tr>
+    <tr><td>C10 · Router cleans up: missing worktrees, leftover brief copies and locks</td><td>Only launcher-made files</td><td>You asked: build</td></tr>
+    <tr><td>C11 · Watchdog reports merged worktrees, workers still on them, and missing folders</td><td>One more git read, in the router's checkout</td><td>You asked: build</td></tr>
+    <tr><td>C1 · Router searches other branches, lists worktrees</td><td>Little</td><td>Add?</td></tr>
+    <tr><td>C5 · Router stops looping on a red doc</td><td>Nothing</td><td>Add?</td></tr>
+    <tr><td>C6 · Watchdog warns before its schedule ends</td><td>Nothing</td><td>Add?</td></tr>
+    <tr><td>C4 · Router runs git in a worker's folder</td><td>A worker's git settings run with your rights</td><td>No</td></tr>
   </tbody>
 </table>
-<p data-c="gaps">Three small fixes: one settings line is wider than the guard; the agent file's command list is out of date; the watchdog reads your local settings file, which does not exist today. My advice: fix the first two, leave the third. Both sessions stay outside a sandbox: it would limit only the shell, which the watchdog lacks.</p>
+<p data-c="dropped">Dropped by you: C2, C3, C7; C8, since the router already makes worktrees on DSH.</p>
+
+<h3 id="c5">C5, by example</h3>
+<p data-c="c5">At every turn end a hook checks all docs and refuses while one is red. A worker fixes the doc. The router cannot, so it retries. On 10 November a router was refused 332 times in 21 minutes.</p>
+
+<h3 id="c6">C6, by example</h3>
+<p data-c="c6">The watchdog's schedule ends 7 days after it starts. Started Monday, it goes silent next Monday. Silence also means "no workers", so a stuck worker goes unreported. From day 6 it tells the router to restart it.</p>
+
+<h2 id="decide">What you decide</h2>
+<table data-c="decide">
+  <thead><tr><th>Question</th><th>Answer first</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>C1, C5, C6?</td><td>Add all three</td><td>Small, little exposed</td></tr>
+    <tr><td>May the router stop a busy worker that has gone quiet?</td><td>No, that stays yours</td><td>It may be mid-commit</td></tr>
+    <tr><td>Does cleanup also remove merged worktrees?</td><td>No, one by one</td><td>Each removal keeps its checks</td></tr>
+    <tr><td>Four small text and settings fixes</td><td>Fix three; leave the watchdog's local settings</td><td>Details in the data file</td></tr>
+  </tbody>
+</table>
 
 <h2 id="build">What W7 builds</h2>
-<p data-c="build">Only what you pick. Each pick gets a test that fails first, then the change, staged for your one commit. W5 edits the same files, so W5 merges first. W7 then merges the epic in and stages on top of it. Cost: your W7 commit waits for W5. No second commit or review. If you pick nothing, W7 ends here.</p>
-
-<h2 id="approve">How you approve</h2>
-<ol data-c="approve">
-  <li>Comment your picks (or none); confirm the plan.</li>
-  <li>Sign off and merge W5.</li>
-  <li>One commit of W7's staged files.</li>
-  <li>After a fresh review: sign off and merge W7.</li>
-</ol>
+<p data-c="build">Your picks, each behind a test that fails first, staged for your one commit. W5 changes how a worker stops, so W5 merges first and W7 builds on it. Your W7 commit waits for W5.</p>
 
 <h2 id="know">How you'll know it worked</h2>
 <ul data-c="know">
-  <li>Each pick works, and its near misses are still refused.</li>
+  <li>The router closes a dead worker and cleans up with one command.</li>
+  <li>The watchdog names each finished worktree and the step that closes it.</li>
   <li>Nothing you did not pick changed.</li>
 </ul>
 
