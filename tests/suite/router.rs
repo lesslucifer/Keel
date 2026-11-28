@@ -1061,9 +1061,18 @@ fn one_effort_policy_is_stated_in_the_skills_as_the_launcher_enforces_it() {
 #[test]
 fn project_router_states_the_w10_launcher_and_the_interactive_router() {
     let s = std::fs::read_to_string(root().join(".claude/skills/project-router/SKILL.md")).unwrap();
-    for said in ["pnpm_config_store_dir", "`--settings` `env` object", "`pnpm install|add|run|test`", "`sh`, `bash`, `zsh`", "never `claude --bg`"] {
+    for said in [
+        "pnpm_config_store_dir",
+        "pnpm_config_virtual_store_dir",
+        "`--settings` `env` object",
+        "`pnpm install|add|run|test`",
+        "`sh`, `bash`, `zsh`",
+        "never `claude --bg`",
+        "no modules dir is named",
+    ] {
         assert!(s.contains(said), "project-router does not state {said}");
     }
+    assert!(!s.contains("pnpm_config_modules_dir"), "project-router still names the modules dir that redirects a command run outside app/");
 }
 
 /// E-ROUTER3.W4 (R3, DEC-48): in a self-clone with keel's hooks a plain commit touching a router security file is refused naming it,
@@ -4419,7 +4428,6 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
     let l = launcher();
     let t = tempfile::tempdir().unwrap();
     let tmp = std::fs::canonicalize(t.path()).unwrap();
-    let pnpm_home = format!("{}/keel-worker-pnpm", tmp.display());
     std::fs::create_dir_all(l.wt.join("app")).unwrap();
     std::fs::create_dir_all(l.wt2.join("app")).unwrap();
     let g = l.main.join(".git");
@@ -4427,13 +4435,14 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
     // E-WMODE round 2: ~/.cargo only where cargo writes (H3); the worktree's .git link, its two
     // settings files and its admin dir's link files are not the shell's (H2, M2); ~/.claude.json (M1)
     let want = |wt: &Path, admin: &str, other: &str| {
+        let pnpm_home = pnpm_home_of(&tmp, wt);
         serde_json::json!({"sandbox": {
             "enabled": true,
             "autoAllowBashIfSandboxed": true,
             "allowUnsandboxedCommands": false,
             "filesystem": {
                 "allowWrite": [g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
-                    "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm", &pnpm_home],
+                    "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm", pnpm_home.to_str().unwrap()],
                 "denyWrite": [format!("{g}/config"), format!("{g}/hooks"), format!("{g}/keel-hooks"), format!("{g}/info"),
                     // backlog R33 (DEC-37): the git dir's commondir, then the worker's
                     // own admin link files, then every other worktree's
@@ -4561,11 +4570,19 @@ fn the_scratch_helper_runs_keel_init_in_a_fresh_dir() {
     assert!(d.join("AGENTS.md").is_file() && d.join(".keel/config.toml").is_file(), "keel init did not run: {out}");
 }
 
+/// The launcher's name for a worktree's pnpm home: `keel-worker-pnpm-<cksum of the worktree path>`
+/// under the temp root (E-WSANDBOX close, review round 1: one home per worktree, never one shared).
+fn pnpm_home_of(temp_root: &Path, wt: &Path) -> PathBuf {
+    let o = common::cmd("sh").arg("-c").arg("printf '%s\\n' \"$1\" | cksum | cut -d' ' -f1").arg("sh").arg(wt).output().unwrap();
+    let c = String::from_utf8(o.stdout).unwrap().trim().to_string();
+    temp_root.join(format!("keel-worker-pnpm-{c}"))
+}
+
 /// E-WSANDBOX.W3 (owner q3), corrected in review round 1: the whole pnpm package tree lives outside
-/// the worker's worktree, not just the content store - the launcher sets pnpm's modules dir under the
-/// temp folder and links the git-ignored app/node_modules at it, so a package's .vscode path is never
-/// materialised under the worktree, where the sandbox denies it. A real install is left alone, and the
-/// sandbox allowWrite gains nothing for any of it.
+/// the worker's worktree, not just the content store. The launcher gives the session a per-worktree pnpm
+/// home whose virtual store holds the package files, so a package's .vscode path is never materialised
+/// under the worktree, where the sandbox denies it. A real install is left alone, and the sandbox
+/// allowWrite gains nothing for any of it.
 #[test]
 fn launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree() {
     let l = launcher();
@@ -4584,40 +4601,30 @@ fn launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree() {
     assert!(ok, "{out}");
     // E-WSANDBOX.W10: what the session sees comes from --settings alone (the stub models the daemon)
     let env = std::fs::read_to_string(l.state.join("pnpm-env")).unwrap_or_default();
-    let home = format!("PNPM_HOME={}/keel-worker-pnpm", tmp.display());
-    assert!(env.lines().any(|l| l == home), "the worker's session does not get PNPM_HOME through --settings: {env:?}");
-    let line = env.lines().rev().find(|l| l.starts_with("pnpm_config_modules_dir=")).expect("the modules dir is not set");
-    let modules = Path::new(&line["pnpm_config_modules_dir=".len()..]);
-    assert!(modules.starts_with(tmp.join("keel-worker-pnpm")), "the package tree is not in the worker's temp folder: {modules:?}");
-    let store = format!("pnpm_config_store_dir={}/keel-worker-pnpm/store", tmp.display());
-    assert!(env.lines().any(|l| l == store), "the content store is not under the pnpm home: {env:?}");
-    let meta = std::fs::symlink_metadata(modules).unwrap_or_else(|e| panic!("the launcher did not create the modules dir {modules:?}: {e}"));
-    assert!(meta.is_dir() && !meta.file_type().is_symlink(), "the modules dir is not a real directory: {modules:?}");
-    let link = l.wt.join("app/node_modules");
-    assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink(), "app/node_modules is not a link");
-    assert_eq!(std::fs::read_link(&link).unwrap(), modules, "the link does not point at the ruled modules dir");
-    // the ignored link must leave the worker's worktree clean (a symlink is not a directory to git)
-    assert!(
-        git(&l.wt, &["status", "--short"]).stdout.is_empty(),
-        "the link dirtied the worktree: {}",
-        String::from_utf8_lossy(&git(&l.wt, &["status", "--short"]).stdout)
-    );
+    let home = pnpm_home_of(&tmp, &l.wt);
+    let hs = home.to_str().unwrap();
+    assert!(env.lines().any(|l| l == format!("PNPM_HOME={hs}")), "the worker's session does not get PNPM_HOME through --settings: {env:?}");
+    assert!(env.lines().any(|l| l == format!("pnpm_config_store_dir={hs}/store")), "the content store is not under the pnpm home: {env:?}");
+    assert!(env.lines().any(|l| l == format!("pnpm_config_virtual_store_dir={hs}/vstore")), "the virtual store is not under the pnpm home: {env:?}");
+    assert!(env.lines().all(|l| !l.starts_with("pnpm_config_modules_dir=")), "a global modules dir redirects a package command run outside app/: {env:?}");
+    let meta = std::fs::symlink_metadata(&home).unwrap_or_else(|e| panic!("the launcher did not create the pnpm home {home:?}: {e}"));
+    assert!(meta.is_dir() && !meta.file_type().is_symlink(), "the pnpm home is not a real directory: {home:?}");
+    assert!(!home.join("modules").exists(), "the launcher still makes a modules dir: {home:?}");
+    // no link: pnpm writes a real node_modules of its own, which Node and Vite resolve through
+    assert!(!l.wt.join("app/node_modules").exists(), "the launcher made an app/node_modules link pnpm cannot install through");
     let a = worker_argv(&l.state, "b");
     let settings: serde_json::Value = serde_json::from_str(&option(&a, "--settings")).unwrap();
     let allow = &settings["sandbox"]["filesystem"]["allowWrite"];
-    let home = &home["PNPM_HOME=".len()..];
-    assert!(allow.as_array().unwrap().iter().any(|v| v.as_str() == Some(home)), "the pnpm home is not an allowWrite root: {allow}");
-    assert!(Path::new(home).is_dir(), "the launcher did not create the pnpm home");
-    let want = serde_json::json!({"PNPM_HOME": home, "pnpm_config_modules_dir": modules.to_str().unwrap(), "pnpm_config_store_dir": format!("{home}/store")});
+    assert!(allow.as_array().unwrap().iter().any(|v| v.as_str() == Some(hs)), "the pnpm home is not an allowWrite root: {allow}");
+    let want = serde_json::json!({"PNPM_HOME": hs, "pnpm_config_store_dir": format!("{hs}/store"), "pnpm_config_virtual_store_dir": format!("{hs}/vstore")});
     assert_eq!(settings["env"], want, "the session's env object");
-    // a resume rebuilds the same env object, and the existing link is kept
+    // a resume rebuilds the same env object
     l.stop("b");
     write_transcript(&l, &l.wt, field(&out, "session="), &[user_line("2027-01-15T07:00:00Z")]);
     let (ok, out) = l.run_env(&["resume", "b"], &[("TMPDIR", t.path().to_str().unwrap())]);
     assert!(ok, "{out}");
     let resumed: serde_json::Value = serde_json::from_str(&option(&bg_argv(&l.state, "b"), "--settings")).unwrap();
     assert_eq!(resumed["env"], want, "the resumed session's env object");
-    assert_eq!(std::fs::read_link(&link).unwrap(), modules);
     l.stop("b");
     // a worktree without an app gets no pnpm env at all
     let (ok, out) = l.run_env(&["spawn", "c", l.wt2.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
@@ -4626,30 +4633,25 @@ fn launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree() {
     assert!(plain.get("env").is_none(), "a worktree without app got a pnpm env: {plain}");
 }
 
-/// E-WSANDBOX.W10: the launcher creates the worker's modules dir with the owner's rights, so the dir
-/// it finds there must be a real directory this user owns - a symlink or a file planted at its fixed
-/// name is refused before any session starts, as the pnpm home is.
+/// E-WSANDBOX close, review round 1 findings 1 and 3: one pnpm home per worktree, named from its path.
+/// The launcher creates it with the owner's rights, so what it finds at that name must be a real
+/// directory this user owns - a symlink or a file planted there is refused before any session starts.
 #[test]
-fn launcher_refuses_a_modules_dir_that_is_not_a_real_directory() {
+fn launcher_refuses_a_pnpm_home_that_is_not_a_real_directory() {
     let l = launcher();
     std::fs::create_dir_all(l.wt.join("app")).unwrap();
-    let cksum = |p: &Path| {
-        let o = common::cmd("sh").arg("-c").arg("printf '%s\\n' \"$1\" | cksum | cut -d' ' -f1").arg("sh").arg(p).output().unwrap();
-        String::from_utf8(o.stdout).unwrap().trim().to_string()
-    };
     for (i, plant) in ["link", "file"].into_iter().enumerate() {
         let t = tempfile::tempdir().unwrap();
-        let home = std::fs::canonicalize(t.path()).unwrap().join("keel-worker-pnpm");
-        std::fs::create_dir_all(&home).unwrap();
-        let modules = home.join(format!("modules-{}", cksum(&l.wt)));
+        let tmp = std::fs::canonicalize(t.path()).unwrap();
+        let home = pnpm_home_of(&tmp, &l.wt);
         let elsewhere = tempfile::tempdir().unwrap();
         match plant {
-            "link" => std::os::unix::fs::symlink(elsewhere.path(), &modules).unwrap(),
-            _ => std::fs::write(&modules, "x").unwrap(),
+            "link" => std::os::unix::fs::symlink(elsewhere.path(), &home).unwrap(),
+            _ => std::fs::write(&home, "x").unwrap(),
         }
         let name = format!("m{i}");
         let (ok, out) = l.run_env(&["spawn", &name, l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
-        assert!(!ok && out.contains("modules dir"), "{plant}: the launcher accepted a planted modules dir: {out}");
+        assert!(!ok && out.contains("pnpm home"), "{plant}: the launcher accepted a planted pnpm home: {out}");
         assert_eq!(l.starts(&name), 0, "{plant}: a worker started");
         assert!(std::fs::read_dir(elsewhere.path()).unwrap().next().is_none(), "{plant}: the launcher wrote through the link");
     }
@@ -4670,7 +4672,83 @@ fn launcher_refuses_a_symlinked_app_before_linking_node_modules() {
     let (ok, out) = l.run_env(&["spawn", "a", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
     assert!(!ok && out.contains("not a real directory"), "the launcher accepted a symlinked app: {out}");
     assert!(!other_app.join("node_modules").exists(), "the launcher wrote node_modules through the symlinked app");
-    assert!(!t.path().join("keel-worker-pnpm").exists(), "the launcher created the pnpm home before refusing");
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
+    assert!(!pnpm_home_of(&tmp, &l.wt).exists(), "the launcher created the pnpm home before refusing");
+}
+
+/// E-WSANDBOX close, review round 1 finding 1: one pnpm home per worktree. A shared home was an
+/// allowWrite root for every worker, so a worker in one worktree could overwrite another's package
+/// tree or store, and that other worktree's granted `pnpm test` then ran the poisoned code.
+#[test]
+fn each_worktree_gets_its_own_pnpm_home_and_no_shared_root() {
+    let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
+    std::fs::create_dir_all(l.wt.join("app")).unwrap();
+    std::fs::create_dir_all(l.wt2.join("app")).unwrap();
+    let mut homes = Vec::new();
+    for (name, wt) in [("a", &l.wt), ("b", &l.wt2)] {
+        let (ok, out) = l.run_env(&["spawn", name, wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
+        assert!(ok, "{out}");
+        let settings: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, name), "--settings")).unwrap();
+        let home = pnpm_home_of(&tmp, wt);
+        let hs = home.to_str().unwrap();
+        assert_eq!(settings["env"]["PNPM_HOME"], hs, "{name}: its session does not get its own home");
+        let allow = settings["sandbox"]["filesystem"]["allowWrite"].as_array().unwrap();
+        assert!(allow.iter().any(|v| v.as_str() == Some(hs)), "{name}: its own home is not writable: {allow:?}");
+        let other = if name == "a" { pnpm_home_of(&tmp, &l.wt2) } else { pnpm_home_of(&tmp, &l.wt) };
+        assert!(!allow.iter().any(|v| v.as_str() == Some(other.to_str().unwrap())), "{name}: the other worktree's home is writable: {allow:?}");
+        assert!(!allow.iter().any(|v| v.as_str() == Some(tmp.join("keel-worker-pnpm").to_str().unwrap())), "{name}: a shared pnpm root is writable: {allow:?}");
+        assert!(home.is_dir(), "{name}: the launcher did not create its home");
+        homes.push(home);
+    }
+    assert_ne!(homes[0], homes[1], "two worktrees share one pnpm home");
+}
+
+/// E-WSANDBOX close, review round 1 finding 3: the home is named from the worktree path, so removing
+/// the worktree through the launcher reclaims it - and the old shared layout's `modules-<cksum>` with
+/// it - instead of leaving a full package tree under the temp folder for every retired worktree.
+#[test]
+fn removing_a_worktree_reclaims_its_pnpm_home() {
+    let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
+    let (ok, out) = l.run_env(&["worktree", "add", "wu/E-X/w1"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
+    let wt = PathBuf::from(field(&out, "path="));
+    let home = pnpm_home_of(&tmp, &wt);
+    let cksum = home.file_name().unwrap().to_str().unwrap().rsplit_once('-').unwrap().1.to_string();
+    let legacy = tmp.join("keel-worker-pnpm").join(format!("modules-{cksum}"));
+    let keep = pnpm_home_of(&tmp, &l.wt2);
+    for h in [&home, &legacy, &keep] {
+        std::fs::create_dir_all(h.join("store")).unwrap();
+        std::fs::write(h.join("store/x"), "x").unwrap();
+    }
+    let (ok, out) = l.run_env(&["worktree", "remove", "wu/E-X/w1"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
+    assert!(!home.exists(), "the removed worktree's pnpm home is still there: {home:?}");
+    assert!(!legacy.exists(), "the old shared layout's modules dir is still there: {legacy:?}");
+    assert!(keep.is_dir(), "another worktree's pnpm home was removed: {keep:?}");
+}
+
+/// E-WSANDBOX close, review round 1 finding 2: no absolute modules dir in the session env - it is what
+/// redirected a granted package command run outside `app/` into the app's tree, printing success with no
+/// node_modules in the target - and the launcher clears the old link so pnpm writes a real node_modules
+/// of its own, which Node and Vite resolve through.
+#[test]
+fn launcher_sets_no_modules_dir_and_clears_the_old_node_modules_link() {
+    let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
+    let app = l.wt.join("app");
+    std::fs::create_dir_all(&app).unwrap();
+    std::os::unix::fs::symlink(tmp.join("old-tree"), app.join("node_modules")).unwrap();
+    let (ok, out) = l.run_env(&["spawn", "a", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
+    let settings: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, "a"), "--settings")).unwrap();
+    assert_eq!(settings["env"].get("pnpm_config_modules_dir"), None, "a global modules dir is still set: {settings}");
+    let link = std::fs::symlink_metadata(app.join("node_modules")).map(|m| m.file_type().is_symlink()).unwrap_or(false);
+    assert!(!link, "the old app/node_modules link is still there, so pnpm cannot install through it");
 }
 
 /// Backlog R33 (DEC-37): a commondir file in the main git dir would send
@@ -5656,6 +5734,24 @@ fn resume_refuses_what_it_cannot_rebuild_before_any_start() {
     git(&l.wt2, &["checkout", "-q", "--", ".claude/agents/worker.md"]);
     let (ok, out) = l.run(&["resume", "q1"]);
     assert!(ok && out.starts_with("RESUMED name=q1 "), "{out}");
+}
+
+/// E-WSANDBOX close, review round 1 finding 4: a transcript the launcher cannot read is named
+/// usage=unreadable, never usage=none (the word for a worker before its first real answer), so the
+/// reuse rule refuses to judge that worker instead of taking it for a fresh, empty one.
+#[test]
+fn status_names_a_transcript_it_cannot_read() {
+    let l = launcher();
+    let (ok, out) = l.run(&["spawn", "a", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+    assert!(ok, "{out}");
+    let sid = field(&out, "session=").to_string();
+    write_transcript(&l, &l.wt, &sid, &[usage("2027-01-15T07:00:00Z", 1, 1000, 0, "5m", false)]);
+    let path = transcript_path(&l, &l.wt, &sid);
+    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o000)).unwrap();
+    let (ok, out) = l.run_env(&["status", "a"], &[("ROUTER_NOW", "1800000000")]);
+    let _ = std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o644));
+    assert!(ok, "{out}");
+    assert!(out.contains("usage=unreadable"), "an unreadable transcript was not named: {out}");
 }
 
 /// E-WSANDBOX.W5 (owner rulings 2026-11-26, rule 4): `status` reads each worker's context and cache

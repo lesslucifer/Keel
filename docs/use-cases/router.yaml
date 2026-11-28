@@ -117,10 +117,11 @@ areas:
           inside the worktree, and a path holding a quote, a backslash or a newline (DEC-37); `--review` starts the
           review worker, the only one granted the `cr` note and denied every edit tool, `git add` and `git commit`; it
           copies the brief into the worker's worktree and prints its sha256 and the session's id; a start the CLI
-          refuses is `DEAD` with the CLI's text. Since E-WSANDBOX.W3 and W10 it also gives the worker pnpm's home,
-          content store and modules dir under the temp folder with the worktree's `app/node_modules` linked at them,
-          so the package tree - a package's denied path included - stays outside the worktree, and it grants
-          `pnpm install|add|run|test`; `pnpm make` stays the owner's. Scratch goes through
+          refuses is `DEAD` with the CLI's text. Since E-WSANDBOX.W3 and W10 it also gives the worker one pnpm home
+          per worktree under the temp folder (its content store and its virtual store, and no modules dir, so a
+          `pnpm` command outside `app/` installs where it runs), and pnpm writes a real `app/node_modules` whose
+          package files live in that home, so a package's denied path never lands in the worktree; it grants
+          `pnpm install|add|run|test`, and `pnpm make` stays the owner's. Scratch goes through
           `scripts/router-scratch.sh new|init` under `$TMPDIR`, on the grant; bare `sh`, `bash` and `zsh` are denied
           (a pipe into a shell), best effort. `resume <name>` (E-WSANDBOX.W5) brings back the newest run of that
           name: its session id, worktree, branch, effort, mode and review grant come from the run dir, every check and
