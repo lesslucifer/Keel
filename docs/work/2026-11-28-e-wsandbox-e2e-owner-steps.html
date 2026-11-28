@@ -16,7 +16,7 @@
   <main>
 
 <h2 id="what">What happens</h2>
-<p data-c="what">You set up the probe clone, sign one config change, and start a test router there. That router does the rest with cheap Haiku workers and tells your router when it is done. Then you run one last command that checks two things and cleans up. Use one terminal. Everything goes into one log: <code>~/keel-wsandbox-e2e.log</code>.</p>
+<p data-c="what">You set up the probe clone, sign one config change, and start a test router there. That router does the rest with cheap Haiku workers and ends with a plain report of what every step printed. Then you run one last command: it waits for that report, checks two things and cleans up. Use one terminal. Everything goes into one log: <code>~/keel-wsandbox-e2e.log</code>.</p>
 <p data-c="fail"><b>If a step does not show what it should:</b> stop and send your router the last lines of the terminal, or the log.</p>
 
 <h2 id="s1">1 · Set up the probe clone</h2>
@@ -29,14 +29,15 @@
 <p><b>It worked when</b> the last line says <code>ok: probe-router runs (session …)</code>. If the commit is refused, or a line says <code>FAIL:</code>, stop and send the output.</p>
 
 <h2 id="wait">While you wait</h2>
-<p data-c="wait">The test router now runs on its own: a worker's probes, a stop and a resume, the two effort levels, the watchdog's list of what to close, and the cleanup command. It waits for the watchdog at least once, so it is not instant. <b>You know it finished</b> when your router tells you "E-WSANDBOX e2e probe run finished", with a pass/fail table.</p>
+<p data-c="wait">The test router now runs on its own: a worker's probes, a stop and a resume, the two effort levels, the watchdog's list of what to close, and the cleanup command. It waits for the watchdog at least once, so it is not instant. A Claude Code session cannot message your DSH router, so nothing will pop up: the test router's report is its last message, and step 3 waits for it and prints it. The pass/fail table comes after step 3, from one worker your router starts on the evidence file.</p>
 
 <h2 id="s3">3 · Check and clean up</h2>
 <pre data-c="s3">cd /Users/nguyenvanluong/Documents/proj/misc/Keel-probe &amp;&amp; bash /Users/nguyenvanluong/Documents/proj/misc/Keel-E-WSANDBOX/docs/work/2026-11-28-e-wsandbox-e2e-setup.sh finish</pre>
-<p><b>It worked when</b> it prints two lines starting <code>PASS</code>, then <code>ok: no probe session, worktree or branch left</code> and <code>Done.</code>. A line starting <code>FAIL</code> is a result, not a stop: send the log and <code>~/keel-wsandbox-e2e-evidence.txt</code> to your router either way.</p>
+<p><b>It worked when</b> it prints the test router's report, then two lines starting <code>PASS</code>, then <code>ok: no probe session, worktree or branch left</code> and <code>Done.</code> It waits for the report before it starts, so it can sit for up to 45 minutes, printing a line a minute. A <code>FAIL</code> on one of the two checks is a result, not a stop: the evidence file is written all the same, so tell your router the run finished and point it at the log and <code>~/keel-wsandbox-e2e-evidence.txt</code>. If it prints <code>FAIL the probe router has not written its report</code>, it stopped before writing or cleaning anything: send your router the log and run the command again later. <b>Say this:</b> "The E-WSANDBOX e2e run finished. Read ~/keel-wsandbox-e2e-evidence.txt and judge it."</p>
 
 <h2 id="optional">One more check, optional, before step 3</h2>
-<p data-c="optional">This checks something only you can do by hand: an extra folder you allow a worker during its session is gone after a resume. Do it after the router's "finished" message and before step 3, or skip it.</p>
+<p data-c="optional">This checks something only you can do by hand: an extra folder you allow a worker during its session is gone after a resume. Do it after the test router's report and before step 3, or skip it. First run the wait command below: it returns once the report is written, without checking or cleaning anything.</p>
+<pre data-c="optional-wait">cd /Users/nguyenvanluong/Documents/proj/misc/Keel-probe &amp;&amp; bash /Users/nguyenvanluong/Documents/proj/misc/Keel-E-WSANDBOX/docs/work/2026-11-28-e-wsandbox-e2e-setup.sh wait</pre>
 <ol data-c="optional-steps">
   <li><pre>cd /Users/nguyenvanluong/Documents/proj/misc/Keel-probe &amp;&amp; scripts/router-worker.sh resume probe-w1</pre>
   It prints <code>RESUMED name=probe-w1 id=…</code>. Copy that id.</li>
