@@ -141,9 +141,11 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
     for a in settings()["permissions"]["allow"].as_array().unwrap() {
         let a = a.as_str().unwrap().strip_prefix("Bash(").unwrap().strip_suffix(')').unwrap();
         let cmd = match a.strip_suffix(" *") {
-            Some(p) if p.ends_with(" stop") || p.ends_with(" watchdog start") => format!("{p} n"),
+            Some(p) if p.ends_with(" stop") || p.ends_with(" resume") || p.ends_with(" status") || p.ends_with(" watchdog start") => format!("{p} n"),
             Some(p) if p.ends_with(" worktree add") || p.ends_with(" worktree remove") => format!("{p} wu/E-X/w1-a"),
             Some(p) if p.ends_with("router-watch.sh") => format!("{p} signed 1a2b3c4"),
+            // E-WSANDBOX.W7 G1: one line per kind
+            Some(p) if p.contains("router-watch.sh ") => format!("{p} 1a2b3c4"),
             Some(p) if p.ends_with("router-inbox.sh watch") => format!("{p} 6600"),
             Some(p) if p.ends_with("router-inbox.sh consume") => format!("{p} 1794659383-abc123"),
             Some(p) if p.ends_with("router-app.sh start") => format!("{p} keel-1c"),
@@ -597,24 +599,32 @@ struct Launcher {
 /// succeeds k more times, then fails printing to stderr only. After printing: while $STUB_STATE/vanish
 /// exists it empties the list (a session that ends between two looks), while $STUB_STATE/swap exists a
 /// busy session is replaced by an idle one of the same name under a new id, and while
-/// $STUB_STATE/settle exists every session turns idle (a turn that ends between two looks). `stop <id>`
-/// delists the id, `rm` only records.
+/// $STUB_STATE/settle exists every session turns idle (a turn that ends between two looks), and while
+/// $STUB_STATE/after-agents exists it runs that script once and removes it (a session that starts and
+/// seals its run dir right after a list was read; E-WSANDBOX.W7 review round 1). `stop <id>`
+/// delists the id, `rm` only records. The pnpm variables a session sees are appended to
+/// $STUB_STATE/pnpm-env from its `--settings` env object only, never from the stub's own process env:
+/// `claude --bg` hands the session to the Claude Code daemon, which does not pass the caller's
+/// environment on (E-WSANDBOX.W10, the e2e of 2026-11-28).
 fn stub_claude(stub: &Path) {
     std::fs::write(stub, concat!(
         "#!/bin/sh\nS=$STUB_STATE\nprintf '%s ' \"$PWD\" >> \"$S/calls\"; printf '[%s]' \"$@\" >> \"$S/calls\"; echo >> \"$S/calls\"\n",
         "env | grep '^GIT_' >> \"$S/git-env\"\n",
+        "st= p=; for a in \"$@\"; do [ \"$p\" != --settings ] || st=$a; p=$a; done\n",
+        "[ -z \"$st\" ] || printf '%s' \"$st\" | jq -r '.env // {} | to_entries[] | select(.key | test(\"^(PNPM_HOME|pnpm_config_)\")) | \"\\(.key)=\\(.value)\"' >> \"$S/pnpm-env\"\n",
         "[ -s \"$S/sessions.json\" ] || echo '[]' > \"$S/sessions.json\"\n",
         "case \"$1\" in\n",
         "  agents) if [ -e \"$S/agents-ok\" ]; then k=$(cat \"$S/agents-ok\"); [ \"$k\" -gt 0 ] || { echo 'Error: no supervisor' >&2; exit 1; }; echo $((k - 1)) > \"$S/agents-ok\"; fi\n",
         "    cat \"$S/sessions.json\"; [ ! -e \"$S/vanish\" ] || echo '[]' > \"$S/sessions.json\"\n",
         "    [ ! -e \"$S/swap\" ] || { jq 'map(if .status == \"busy\" then .id = \"new0\" | .sessionId = \"new0-x\" | .status = \"idle\" else . end)' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }\n",
-        "    [ ! -e \"$S/settle\" ] || { jq 'map(.status = \"idle\")' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }; exit 0;;\n",
+        "    [ ! -e \"$S/settle\" ] || { jq 'map(.status = \"idle\")' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }\n",
+        "    [ ! -e \"$S/after-agents\" ] || { sh \"$S/after-agents\"; rm -f \"$S/after-agents\"; }; exit 0;;\n",
         "  stop) jq --arg i \"$2\" 'map(select(.id != $i))' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; echo \"stopped $2\"; exit 0;;\n",
         "  rm) echo \"removed $2\"; exit 0;;\n",
         "esac\n",
         "[ ! -e \"$S/refuse\" ] || { cat \"$S/refuse\"; exit 1; }\n",
-        "name=\nwhile [ $# -gt 0 ]; do case \"$1\" in -n) name=$2;; esac; shift; done\n",
-        "sid=$(uuidgen | tr A-F a-f)\n",
+        "name= rs=\nwhile [ $# -gt 0 ]; do case \"$1\" in -n) name=$2;; --resume) rs=$2;; esac; shift; done\n",
+        "sid=${rs:-$(uuidgen | tr A-F a-f)}\n",
         "id=${sid%%-*}\n",
         "[ -e \"$S/unlisted\" ] || { jq --arg n \"$name\" --arg i \"$id\" --arg s \"$sid\" --arg c \"$PWD\" '. + [{pid: 1, id: $i, cwd: $c, kind: \"background\", sessionId: $s, name: $n, status: \"idle\", state: \"done\"}]' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }\n",
         "echo \"backgrounded · $id · $name\"\n"
@@ -666,7 +676,7 @@ fn build_launcher(base: &Path) {
     std::fs::copy(root().join("scripts/router-guard.jq"), main.join("scripts/router-guard.jq")).unwrap();
     std::fs::copy(root().join("scripts/router-file-guard.sh"), main.join("scripts/router-file-guard.sh")).unwrap();
     std::fs::copy(root().join("scripts/router-app.sh"), main.join("scripts/router-app.sh")).unwrap();
-    std::fs::write(main.join(".gitignore"), ".router/\n/target/\n").unwrap();
+    std::fs::write(main.join(".gitignore"), ".router/\n/target/\napp/node_modules\n").unwrap();
     std::fs::create_dir_all(main.join(".claude/agents")).unwrap();
     std::fs::write(main.join(".claude/agents/worker.md"), "---\nname: worker\n---\nworker\n").unwrap();
     std::fs::write(main.join(".router/briefs/b.md"), "do the thing\n").unwrap();
@@ -831,31 +841,33 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
 
     // E-SEED2.W7 (DEC-39): the policy is [router] in .keel/config.toml as committed at HEAD; anything
     // the launcher's narrow reader does not accept refuses the run and starts nothing
-    let ok_policy = "[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n";
+    let ok_policy = "[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n";
     let mut policy_refusals = vec![(None, "absent".to_string())];
     for (bad, what) in [
         ("code_paths = [\"src/\"]\n", "no [router]"),
-        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\n", "missing key"),
-        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"max\"\n", "default not in list"),
-        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"ultracode\"]\nworker_default_effort = \"medium\"\n", "unknown level"),
-        ("[router]\nworker_model = opus\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n", "unquoted"),
-        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\" \"high\"]\nworker_default_effort = \"medium\"\n", "list without comma"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\nplanner_effort = \"high\"\n", "missing worker_default_effort"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\n", "missing planner_effort"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"max\"\nplanner_effort = \"high\"\n", "default not in list"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"max\"\n", "planner not in list"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"ultracode\"]\nworker_default_effort = \"low\"\nplanner_effort = \"low\"\n", "unknown level"),
+        ("[router]\nworker_model = opus\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n", "unquoted"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\" \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n", "list without comma"),
         (&format!("{ok_policy}worker_model = \"opus\"\n"), "repeated key"),
         (&format!("{ok_policy}worker_extra = \"x\"\n"), "unknown key"),
         (
-            "[router]\nworker_model = \"opus\"\n[other]\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n",
+            "[router]\nworker_model = \"opus\"\n[other]\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n",
             "key outside the section",
         ),
         (
-            "[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\n[other]\nworker_default_effort = \"medium\"\n",
+            "[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\n[other]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n",
             "key after another section",
         ),
         (&ok_policy.replace('\n', "\r\n"), "CRLF"),
         (&ok_policy.replace("worker_model = ", "worker_model\t=\t"), "tabs around ="),
         (&ok_policy.replace("\"opus\"", "'opus'"), "single quotes"),
-        ("[router]\nworker_model = \"opus\"\nworker_efforts = []\nworker_default_effort = \"medium\"\n", "empty array"),
+        ("[router]\nworker_model = \"opus\"\nworker_efforts = []\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n", "empty array"),
         (&ok_policy.replace("\"high\"]", "\"high\",]"), "trailing comma"),
-        (&ok_policy.replace("[\"medium\", \"high\"]", "[\n  \"medium\",\n  \"high\",\n]"), "multi-line array"),
+        (&ok_policy.replace("[\"low\", \"high\"]", "[\n  \"low\",\n  \"high\",\n]"), "multi-line array"),
         (&format!("{ok_policy}[router.x]\ny = 1\n"), "[router.x]"),
         (&format!("{ok_policy}[[router]]\n"), "[[router]]"),
         (&format!("{ok_policy}[ router ]\n"), "spaced header"),
@@ -864,15 +876,15 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
         (&format!("{ok_policy}  [router]\n"), "indented second header"),
         (&format!("{ok_policy}[router]\n"), "duplicate section"),
         (
-            "[router]\nworker_model = \"opus\"\n[review]\nx = 1\n[router]\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n",
+            "[router]\nworker_model = \"opus\"\n[review]\nx = 1\n[router]\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n",
             "split section",
         ),
         (&ok_policy.replace("[router]\n", "[router]\t\n"), "trailing tab on header"),
         (&ok_policy.replace("[router]\n", "[router] \n"), "trailing space on header"),
         (&ok_policy.replace("\"opus\"", "\"--dangerously-skip-permissions\""), "model starting with -"),
         (&ok_policy.replace("\"opus\"", "\"4opus\""), "model starting with a digit"),
-        (&ok_policy.replace("worker_default_effort = \"medium\"", "worker_default_effort = \"-medium\""), "effort starting with -"),
-        ("[router]\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n", "missing worker_model"),
+        (&ok_policy.replace("worker_default_effort = \"low\"", "worker_default_effort = \"-low\""), "effort starting with -"),
+        ("[router]\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n", "missing worker_model"),
         (&ok_policy.replace("[router]\n", "[router]# c\n"), "no space before the header's comment"),
         (&format!("{ok_policy}\t[router]\n"), "tab-indented second header"),
         (&format!("{ok_policy}[\trouter]\n"), "tab inside a second header"),
@@ -880,21 +892,25 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
         (&ok_policy.replace("worker_model", "  worker_model"), "indented worker_model"),
         (&ok_policy.replace("worker_default_effort", "  worker_default_effort"), "indented worker_default_effort"),
         (&ok_policy.replace("worker_efforts", "  worker_efforts"), "indented worker_efforts"),
+        (&ok_policy.replace("planner_effort", "  planner_effort"), "indented planner_effort"),
         (&ok_policy.replace("\"opus\"", "\"opus\" x"), "junk after worker_model"),
-        (&ok_policy.replace("= \"medium\"\n", "= \"medium\" x\n"), "junk after worker_default_effort"),
+        (&ok_policy.replace("= \"low\"\n", "= \"low\" x\n"), "junk after worker_default_effort"),
+        (&ok_policy.replace("planner_effort = \"high\"\n", "planner_effort = \"high\" x\n"), "junk after planner_effort"),
         (&ok_policy.replace("\"high\"]", "\"high\"] x"), "junk after worker_efforts"),
         (&ok_policy.replace("worker_model = ", "worker_model  =  "), "two spaces around = (model)"),
         (&ok_policy.replace("worker_default_effort = ", "worker_default_effort  =  "), "two spaces around = (default)"),
+        (&ok_policy.replace("planner_effort = ", "planner_effort  =  "), "two spaces around = (planner)"),
         (&ok_policy.replace("worker_efforts = ", "worker_efforts  =  "), "two spaces around = (efforts)"),
         (&ok_policy.replace("worker_efforts = ", "worker_efforts= "), "no space before = (efforts)"),
-        (&format!("{ok_policy}worker_default_effort = \"medium\"\n"), "repeated worker_default_effort"),
-        (&format!("{ok_policy}worker_efforts = [\"medium\", \"high\"]\n"), "repeated worker_efforts"),
+        (&format!("{ok_policy}worker_default_effort = \"low\"\n"), "repeated worker_default_effort"),
+        (&format!("{ok_policy}planner_effort = \"high\"\n"), "repeated planner_effort"),
+        (&format!("{ok_policy}worker_efforts = [\"low\", \"high\"]\n"), "repeated worker_efforts"),
         (&ok_policy.replace("\"opus\"", "\"opus x\""), "model with a space"),
         (&ok_policy.replace("\"opus\"", "\"opUs\""), "model with a capital"),
-        (&ok_policy.replace("= \"medium\"\n", "= \"medium high\"\n"), "default with a space"),
-        (&ok_policy.replace("[\"medium\", \"high\"]", "[\"medium high\"]"), "list entry with a space"),
-        (&ok_policy.replace("\"high\"]", "\"high medium\"]"), "later list entry with a space"),
-        (&ok_policy.replace("\"medium\", \"high\"", "\"medium\",  \"high\""), "two spaces after a comma"),
+        (&ok_policy.replace("= \"low\"\n", "= \"low high\"\n"), "default with a space"),
+        (&ok_policy.replace("[\"low\", \"high\"]", "[\"low high\"]"), "list entry with a space"),
+        (&ok_policy.replace("\"high\"]", "\"high low\"]"), "later list entry with a space"),
+        (&ok_policy.replace("\"low\", \"high\"", "\"low\",  \"high\""), "two spaces after a comma"),
         (&ok_policy.replace("\"high\"]", "\"below\"]"), "level word below"),
         (&ok_policy.replace("\"high\"]", "\"highest\"]"), "level word highest"),
     ] {
@@ -904,51 +920,65 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
         l.commit_config(config.as_deref());
         let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus"]);
         assert!(
-            !ok && out.contains("no worker policy: [router] worker_model / worker_efforts / worker_default_effort in .keel/config.toml at HEAD of"),
+            !ok && out
+                .contains("no worker policy: [router] worker_model / worker_efforts / worker_default_effort / planner_effort in .keel/config.toml at HEAD of"),
             "{what}: {out}"
         );
         assert_eq!(l.starts("q"), 0, "{what}: started a worker");
     }
 
     // an uncommitted edit, even staged, cannot widen the committed policy
-    l.commit_config(Some("[router]   # comment\nworker_model = \"opus\"  # trailing\n\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n[next]\nx = 1\n"));
-    std::fs::write(l.main.join(".keel/config.toml"), "[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"max\"]\nworker_default_effort = \"max\"\n")
-        .unwrap();
+    l.commit_config(Some("[router]   # comment\nworker_model = \"opus\"  # trailing\n\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n[next]\nx = 1\n"));
+    std::fs::write(
+        l.main.join(".keel/config.toml"),
+        "[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"max\"]\nworker_default_effort = \"max\"\nplanner_effort = \"max\"\n",
+    )
+    .unwrap();
     git(&l.main, &["add", ".keel"]);
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
     assert!(!ok && out.contains("model must be opus"), "{out}");
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus", "--effort", "max"]);
-    assert!(!ok && out.contains("effort must be one of: medium high"), "{out}");
+    assert!(!ok && out.contains("effort must be one of: low high"), "{out}");
 
     // the launcher enforces whatever the committed policy says; it hardcodes no model
-    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\"]\nworker_default_effort = \"high\"\n"));
+    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\"]\nworker_default_effort = \"high\"\nplanner_effort = \"high\"\n"));
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus"]);
     assert!(!ok && out.contains("model must be sonnet ([router] worker_model"), "{out}");
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
     assert!(ok && out.contains(" effort=high "), "{out}");
     l.stop("q");
 
-    // the accepted efforts are the committed list, not a built-in one: narrowed, medium is refused;
+    // the accepted efforts are the committed list, not a built-in one: narrowed, low is refused;
     // widened, max is accepted
-    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "medium"]);
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "low"]);
     assert!(!ok && out.contains("effort must be one of: high ("), "{out}");
-    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"max\"]\nworker_default_effort = \"high\"\n"));
+    l.commit_config(Some(
+        "[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"max\"]\nworker_default_effort = \"high\"\nplanner_effort = \"high\"\n",
+    ));
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--effort", "max"]);
     assert!(ok && out.contains(" effort=max "), "{out}");
     l.stop("q");
     assert_eq!(option(&worker_argv(&l.state, "q"), "--effort"), "max");
 
-    // the default is worker_default_effort, not the list's first entry, read from HEAD on a branch
-    // other than main
+    // the worker's default is worker_default_effort, and a planner's is planner_effort, neither the
+    // list's first entry, read from HEAD on a branch other than main
     git(&l.main, &["checkout", "-qb", "router"]);
-    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"medium\"]\nworker_default_effort = \"medium\"\n"));
+    l.commit_config(Some(
+        "[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"high\", \"low\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n",
+    ));
     let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet"]);
-    assert!(ok && out.contains(" effort=medium "), "{out}");
+    assert!(ok && out.contains(" effort=low "), "{out}");
     l.stop("q");
-    assert_eq!(option(&worker_argv(&l.state, "q"), "--effort"), "medium");
+    assert_eq!(option(&worker_argv(&l.state, "q"), "--effort"), "low");
+    let (ok, out) = l.run(&["spawn", "q", wt, brief, "sonnet", "--role", "planner"]);
+    assert!(ok && out.contains(" effort=high "), "{out}");
+    l.stop("q");
+    assert_eq!(option(&worker_argv(&l.state, "q"), "--effort"), "high");
 
     // every level word is accepted when committed: low and xhigh, as the default and as --effort (review r5 V1)
-    l.commit_config(Some("[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"low\", \"xhigh\"]\nworker_default_effort = \"low\"\n"));
+    l.commit_config(Some(
+        "[router]\nworker_model = \"sonnet\"\nworker_efforts = [\"low\", \"xhigh\"]\nworker_default_effort = \"low\"\nplanner_effort = \"xhigh\"\n",
+    ));
     for (extra, effort) in [(vec![], "low"), (vec!["--effort", "xhigh"], "xhigh")] {
         let mut args = vec!["spawn", "q", wt, brief, "sonnet"];
         args.extend(&extra);
@@ -961,7 +991,7 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
     // the reader's accepted edges in one policy: a tab before the header's comment, a dotted and
     // hyphenated model, trailing blanks after a value, a three-entry list, and indented or similarly
     // named headers that end the section
-    l.commit_config(Some("[router]\t# c\nworker_model = \"opus-4.5\" \t\nworker_efforts = [\"low\", \"medium\", \"xhigh\"]\nworker_default_effort = \"low\"\n\t[next]\nx = 1\n  [routers]\ny = 2\n"));
+    l.commit_config(Some("[router]\t# c\nworker_model = \"opus-4.5\" \t\nworker_efforts = [\"low\", \"medium\", \"xhigh\"]\nworker_default_effort = \"low\"\nplanner_effort = \"medium\"\n\t[next]\nx = 1\n  [routers]\ny = 2\n"));
     for effort in ["low", "medium", "xhigh"] {
         let (ok, out) = l.run(&["spawn", "q", wt, brief, "opus-4.5", "--effort", effort]);
         assert!(ok && out.contains(&format!(" effort={effort} ")), "{out}");
@@ -974,10 +1004,11 @@ fn launcher_refuses_unsafe_targets_and_runs_one_worker_per_name() {
     }
 }
 
-/// DEC-39: the repo's committed worker policy is opus at medium or high effort, medium by default.
+/// DEC-39 (amended by E-WSANDBOX.W9, owner ruling 2026-11-26): one effort policy, a worker low and a
+/// planner high, held in `[router]` and enforced by the launcher.
 /// E-WMODE.W1 (DEC-37 amended): Keel's workers start in auto mode, and project-router says so.
 #[test]
-fn committed_worker_policy_is_opus_at_medium_or_high_effort_in_auto_mode_with_a_haiku_watchdog() {
+fn committed_worker_policy_is_low_for_a_worker_and_high_for_a_planner_in_auto_mode() {
     let config = std::fs::read_to_string(root().join(".keel/config.toml")).unwrap();
     let section: Vec<&str> =
         config.lines().skip_while(|l| !l.starts_with("[router]")).skip(1).take_while(|l| !l.starts_with('[')).filter(|l| !l.trim().is_empty()).collect();
@@ -985,14 +1016,64 @@ fn committed_worker_policy_is_opus_at_medium_or_high_effort_in_auto_mode_with_a_
         section,
         [
             "worker_model = \"opus\"",
-            "worker_efforts = [\"medium\", \"high\"]",
-            "worker_default_effort = \"medium\"",
+            "worker_efforts = [\"low\", \"high\"]",
+            "worker_default_effort = \"low\"",
+            "planner_effort = \"high\"",
             "worker_permission_mode = \"auto\"",
-            "watchdog_model = \"haiku\""
+            "watchdog_model = \"haiku\"",
+            "reuse_max_context_cold = 200000",
+            "reuse_max_context_warm = 400000"
         ]
     );
     let project_router = std::fs::read_to_string(root().join(".claude/skills/project-router/SKILL.md")).unwrap();
     assert!(project_router.contains("`worker_permission_mode = \"auto\"`"), "project-router does not state the committed worker mode");
+}
+
+/// E-WSANDBOX.W9: the skills state the policy the launcher enforces - the project-router names Keel's
+/// keys and the role, the generic keel-router names the two hosts' mapping - and no skill still calls
+/// medium the worker default.
+#[test]
+fn one_effort_policy_is_stated_in_the_skills_as_the_launcher_enforces_it() {
+    let read = |p: &str| std::fs::read_to_string(root().join(p)).unwrap();
+    let project_router = read(".claude/skills/project-router/SKILL.md");
+    for line in ["worker_efforts = [\"low\", \"high\"]", "worker_default_effort = \"low\"", "planner_effort = \"high\""] {
+        assert!(project_router.contains(line), "project-router does not state {line}");
+    }
+    assert!(project_router.contains("--role worker|planner"), "project-router does not name the spawn role");
+
+    let keel_router = read("skills/keel-router/SKILL.md");
+    assert_eq!(keel_router, read(".claude/skills/keel-router/SKILL.md"), "the two keel-router copies differ");
+    for host in ["planner", "worker_spawn", "`low`", "`high`", "always"] {
+        assert!(keel_router.contains(host), "keel-router does not state {host}");
+    }
+
+    for doc in [".claude/skills/project-router/SKILL.md", "skills/keel-router/SKILL.md", ".claude/skills/keel-router/SKILL.md", ".claude/agents/worker.md"] {
+        let text = read(doc).to_lowercase();
+        for stale in ["--effort medium", "medium by default", "effort medium", "[\"medium\", \"high\"]"] {
+            assert!(!text.contains(stale), "{doc} still names medium as the worker effort ({stale})");
+        }
+    }
+}
+
+/// E-WSANDBOX.W10: project-router states what the launcher now does - the pnpm env through --settings
+/// (a background session gets no caller env), the pnpm grant (owner q2), the bare-shell deny (owner q1) -
+/// and that the router itself is never a background session (owner q3).
+#[test]
+fn project_router_states_the_w10_launcher_and_the_interactive_router() {
+    let s = std::fs::read_to_string(root().join(".claude/skills/project-router/SKILL.md")).unwrap();
+    for said in [
+        "pnpm_config_store_dir",
+        "pnpm_config_virtual_store_dir",
+        "pnpm_config_node_linker",
+        "`--settings` `env` object",
+        "`pnpm install|add|run|test`",
+        "`sh`, `bash`, `zsh`",
+        "never `claude --bg`",
+        "no modules dir is named",
+    ] {
+        assert!(s.contains(said), "project-router does not state {said}");
+    }
+    assert!(!s.contains("pnpm_config_modules_dir"), "project-router still names the modules dir that redirects a command run outside app/");
 }
 
 /// E-ROUTER3.W4 (R3, DEC-48): in a self-clone with keel's hooks a plain commit touching a router security file is refused naming it,
@@ -1017,6 +1098,9 @@ fn keels_router_security_files_are_rule_bearing() {
         "scripts/router-file-guard.sh",
         "scripts/router-watch.sh",
         "scripts/router-app.sh",
+        "scripts/router-inbox.sh",
+        "scripts/router-scratch.sh",
+        "scripts/notify-owner.py",
         ".claude/agents/worker.md",
     ] {
         let body = std::fs::read_to_string(c.join(f)).unwrap();
@@ -1030,7 +1114,7 @@ fn keels_router_security_files_are_rule_bearing() {
     }
 }
 
-const WORKER_GRANTS: [&str; 11] = [
+const WORKER_GRANTS: [&str; 16] = [
     "cargo build",
     "cargo test",
     "cargo check",
@@ -1042,7 +1126,19 @@ const WORKER_GRANTS: [&str; 11] = [
     "keel notes write",
     "keel lint",
     "keel check",
+    // E-WSANDBOX.W4 (owner q5): the one scratch shape; two grant entries, `Bash(c)` and `Bash(c *)`
+    "scripts/router-scratch.sh",
+    // E-WSANDBOX.W10 (owner q2, 2026-11-28): the app's package steps run without a per-call review;
+    // the sandbox still bounds their writes and hosts
+    "pnpm install",
+    "pnpm add",
+    "pnpm run",
+    "pnpm test",
 ];
+/// Bare shells denied to every worker, each as `Bash(c)` alone (E-WSANDBOX.W10, owner q1): a pipe into
+/// `sh` is refused at once with a reason; `sh -c` and `sh <script>` are not matched. Best effort - a
+/// wrapper passes; the sandbox is the bound.
+const WORKER_SHELL_DENIES: [&str; 3] = ["Bash(sh)", "Bash(bash)", "Bash(zsh)"];
 /// Denied to every worker, each as `Bash(c)` and `Bash(c *)` (E-ROUTER3.W8, DEC-46).
 const WORKER_DENIES: [&str; 26] = [
     "keel mr",
@@ -1147,6 +1243,7 @@ fn argv_with_root(state: &Path, name: &str, review: bool, router: &str) -> Vec<S
     let mut allow = bash_pairs(WORKER_GRANTS);
     let mut deny = bash_pairs(WORKER_DENIES);
     deny.extend(["Bash(git --git-dir=*)", "Bash(git --work-tree=*)"].map(String::from));
+    deny.extend(WORKER_SHELL_DENIES.map(String::from));
     deny.extend(WORKER_READ_DENIES.map(String::from));
     if review {
         allow.extend(bash_pairs(["keel notes write cr"]));
@@ -1213,12 +1310,16 @@ fn launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validat
         (vec!["--permission-mode"], "[--permission-mode plan|acceptEdits|auto]"),
         (vec!["--bogus", "x"], "[--permission-mode plan|acceptEdits|auto]"),
         (vec!["--permission-mode", "plan", "x"], "[--permission-mode plan|acceptEdits|auto]"),
-        (vec!["--effort", "low"], "effort must be one of: medium high ([router] worker_efforts in .keel/config.toml)"),
-        (vec!["--effort", "max"], "effort must be one of: medium high"),
-        (vec!["--effort", "ultracode"], "effort must be one of: medium high"),
-        (vec!["--effort", "medium high"], "effort must be one of: medium high"),
-        (vec!["--effort", ""], "effort must be one of: medium high"),
+        (vec!["--effort", "medium"], "effort must be one of: low high ([router] worker_efforts in .keel/config.toml)"),
+        (vec!["--effort", "max"], "effort must be one of: low high"),
+        (vec!["--effort", "ultracode"], "effort must be one of: low high"),
+        (vec!["--effort", "medium high"], "effort must be one of: low high"),
+        (vec!["--effort", ""], "effort must be one of: low high"),
+        (vec!["--role", "bogus"], "role must be worker|planner"),
+        (vec!["--role", "planner", "--effort", "low"], "give --role or --effort, not both"),
         (vec!["--effort"], "[--effort <level>]"),
+        (vec!["--role"], "[--role worker|planner"),
+        (vec!["--role", "worker", "--role", "planner"], "[--role worker|planner"),
         (vec!["--effort", "high", "--effort", "high"], "[--effort <level>]"),
         (vec!["--permission-mode", "plan", "--permission-mode", "plan"], "[--effort <level>]"),
         (vec!["--permission-mode", "plan", "--effort"], "[--effort <level>]"),
@@ -1249,8 +1350,9 @@ fn launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validat
     assert_eq!(run_dir_mode("d", "spawn"), ["auto"]);
     assert_eq!(run_dir_mode("p", "spawn"), ["plan"]);
 
-    // E-SEED2.W7: effort is medium by default, high when asked, in either order with the mode; it
-    // lands on the RUNNING line, in the run dir and after --model on the argv
+    // E-SEED2.W7, E-WSANDBOX.W9: a worker takes the policy's low default, a planner its high, and an
+    // explicit effort the level it names; each lands on the RUNNING line, in the run dir and after
+    // --model on the argv
     let effort_of = |name: &str| {
         l.stop(name);
         let a = worker_argv(&l.state, name);
@@ -1258,10 +1360,13 @@ fn launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validat
         (option(&a, "--effort"), option(&a, "--permission-mode"))
     };
     for (name, extra, effort, mode) in [
-        ("e1", vec![], "medium", "auto"),
+        ("e1", vec![], "low", "auto"),
         ("e2", vec!["--effort", "high"], "high", "auto"),
         ("e3", vec!["--effort", "high", "--permission-mode", "plan"], "high", "plan"),
-        ("e4", vec!["--permission-mode", "plan", "--effort", "medium"], "medium", "plan"),
+        ("e4", vec!["--permission-mode", "plan", "--effort", "high"], "high", "plan"),
+        ("e5", vec!["--role", "planner"], "high", "auto"),
+        ("e6", vec!["--role", "worker"], "low", "auto"),
+        ("e7", vec!["--role", "planner", "--permission-mode", "plan"], "high", "plan"),
     ] {
         let mut args = vec!["spawn", name, wt, brief, "opus"];
         args.extend(&extra);
@@ -1274,13 +1379,15 @@ fn launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validat
     // router side: the guard admits the option on the launcher shape, and the grant never reaches it
     assert_eq!(bash("scripts/router-worker.sh spawn n /w .router/briefs/n.md opus --permission-mode plan"), None);
     assert_eq!(bash("scripts/router-worker.sh spawn n /w .router/briefs/n.md opus --effort high --permission-mode plan"), None);
+    assert_eq!(bash("scripts/router-worker.sh spawn n /w .router/briefs/n.md opus --role planner"), None);
     for c in WORKER_GRANTS {
         assert!(bash(&format!("{c} x")).is_some(), "router may run {c}");
     }
 }
 
 /// The worker policy with no `worker_permission_mode` line.
-const MODELESS_POLICY: &str = "[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\n";
+const MODELESS_POLICY: &str =
+    "[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\n";
 
 /// Spawn `name` with `extra`, expecting a start; stop it and return its mode as the worker's argv,
 /// the RUNNING line and the run dir all carry it.
@@ -1933,7 +2040,8 @@ fn stop_stops_then_removes_this_repositorys_idle_worker_by_id() {
     assert!(l.sessions().iter().all(|r| r["name"] != "a") && l.sessions().iter().any(|r| r["name"] == "b"));
 
     // review r2: Claude Code lists a blocked session (rate-limited, or waiting on its user) with a
-    // state and no status: it is refused at once by that state, as a worker waiting on a prompt is
+    // state and no status. E-WSANDBOX.W7 C9 (owner, 2026-11-28): such a dead worker is stopped and
+    // removed at once, without the busy wait, and its STOPPED line names the state; busy stays the owner's
     let mut more = rows.clone();
     more.push(serde_json::json!({"id": "f0", "sessionId": "f0-x", "name": "f", "cwd": wt, "kind": "background", "state": "blocked"}));
     more.push(serde_json::json!({"id": "g0", "sessionId": "g0-x", "name": "g", "cwd": wt, "kind": "background", "status": "waiting", "waitingFor": "permission prompt", "state": "blocked"}));
@@ -1941,8 +2049,14 @@ fn stop_stops_then_removes_this_repositorys_idle_worker_by_id() {
     for (name, state, id) in [("f", "blocked", "f0"), ("g", "waiting", "g0")] {
         let n0 = calls(&l.state).len();
         let (ok, out) = l.run_env(&["stop", name], &[("PATH", &path)]);
-        assert!(!ok && out.contains(&format!("worker {name} is {state}: the owner decides (claude stop {id})")), "{name}: {out}");
-        assert_eq!(calls(&l.state).len() - n0, 1, "{name}: stop waited on a session that is not busy");
+        assert!(ok && out.starts_with(&format!("STOPPED name={name} id={id} session={id}-x state={state}")), "{name}: {out}");
+        let new: Vec<Vec<String>> = calls(&l.state)[n0..].iter().map(|(_, c)| c.clone()).collect();
+        assert_eq!(new.iter().filter(|c| c[0] == "agents").count(), 1, "{name}: stop waited on a session that is not busy");
+        assert_eq!(
+            new.iter().filter(|c| c[0] != "agents").cloned().collect::<Vec<_>>(),
+            [vec!["stop".to_string(), id.into()], vec!["rm".to_string(), id.into()]],
+            "{name}"
+        );
     }
     // E-ROUTER3.W5 (W8 result): a finished review worker listed idle with state blocked is stopped
     more.push(serde_json::json!({"id": "h0", "sessionId": "h0-x", "name": "h", "cwd": wt, "kind": "background", "status": "idle", "state": "blocked"}));
@@ -1984,20 +2098,19 @@ fn stop_stops_then_removes_this_repositorys_idle_worker_by_id() {
 
 /// E-ROUTER3.W10 (owner ruling 2026-11-11): `wait` and `send` are gone, with every file under
 /// .router/out: a spawn and a stop leave only the brief and its run dir. E-ROUTER3.W8 (owner ruling
-/// 2026-11-11, probe P3 i): `resume` is gone too: a plain `--bg --resume` drops every launch flag.
+/// 2026-11-11, probe P3 i): the old `resume <name> <sid> <worktree> <brief>` is gone. E-WSANDBOX.W5:
+/// `resume <name>` and `status [<name>]` are modes again, taking nothing but a name.
 #[test]
 fn launcher_has_only_its_modes_and_writes_no_out_dir() {
     let l = launcher();
-    for args in [
-        vec!["wait", "n"],
-        vec!["send", "n", ".router/briefs/b.md"],
-        vec!["brief", "n", ".router/briefs/b.md"],
-        vec!["resume", "n", "0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b", l.wt.to_str().unwrap(), ".router/briefs/b.md"],
-    ] {
+    for args in [vec!["wait", "n"], vec!["send", "n", ".router/briefs/b.md"], vec!["brief", "n", ".router/briefs/b.md"]] {
         let o = l.cmd(&args, &[]).output().unwrap();
         assert_eq!(o.status.code(), Some(2), "{args:?}");
-        assert!(String::from_utf8_lossy(&o.stderr).contains("spawn|stop|worktree|watchdog"), "{args:?}: {o:?}");
+        assert!(String::from_utf8_lossy(&o.stderr).contains("spawn|stop|resume|status|prune|worktree|watchdog"), "{args:?}: {o:?}");
     }
+    let o = l.cmd(&["resume", "n", "0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b", l.wt.to_str().unwrap(), ".router/briefs/b.md"], &[]).output().unwrap();
+    assert_eq!(o.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("resume <name>"), "{o:?}");
     assert_eq!(calls(&l.state).len(), 0, "an unknown mode called the CLI");
     assert!(l.run(&["spawn", "n", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
     l.stop("n");
@@ -2008,9 +2121,10 @@ fn launcher_has_only_its_modes_and_writes_no_out_dir() {
 }
 
 /// E-ROUTER3.W10: the router's launcher shapes are spawn and stop in plain words; `wait` and `send`
-/// are gone, E-ROUTER3.W8 `resume` too, and nothing else of the script passes.
+/// are gone, E-ROUTER3.W8's `resume` with a session id and paths too (E-WSANDBOX.W5's `resume <name>`
+/// passes: router_guard_admits_resume_and_status_by_name_alone), and nothing else of the script passes.
 #[test]
-fn router_guard_admits_spawn_and_stop_and_refuses_resume_wait_and_send() {
+fn router_guard_admits_spawn_and_stop_and_refuses_wait_send_and_a_resume_with_arguments() {
     for ok in [
         "scripts/router-worker.sh spawn w1 /Users/o/Keel-x .router/briefs/w1.md opus",
         "scripts/router-worker.sh spawn w1 /Users/o/Keel-x .router/briefs/w1.md opus --review",
@@ -2045,17 +2159,28 @@ fn router_guard_leaves_a_background_workers_calls_alone() {
 }
 
 /// E-ROUTER3.W10: the settings allow exactly the launcher shapes the guard admits; `wait` and `send`
-/// are gone from both. E-ROUTER3.W8: `resume` is gone too, and `worktree add|remove` are in.
+/// are gone from both. E-ROUTER3.W8: `worktree add|remove` are in. E-WSANDBOX.W5: `resume <name>`
+/// and `status [<name>]` are in.
 #[test]
 fn settings_allow_exactly_the_launcher_shapes_the_guard_admits() {
     let modes: Vec<String> = settings()["permissions"]["allow"]
         .as_array()
         .unwrap()
         .iter()
-        .filter_map(|a| a.as_str().unwrap().strip_prefix("Bash(scripts/router-worker.sh ").map(|m| m.trim_end_matches(" *)").to_string()))
+        .filter_map(|a| a.as_str().unwrap().strip_prefix("Bash(scripts/router-worker.sh ").map(|m| m.trim_end_matches(" *)").trim_end_matches(')').to_string()))
         .collect();
-    assert_eq!(modes, ["spawn", "stop", "watchdog start", "watchdog stop", "worktree add", "worktree remove"]);
-    for (m, arg) in [("watchdog start", "r1"), ("watchdog stop", "r1"), ("worktree add", "epic/E-X"), ("worktree remove", "wu/E-X/w1-a")] {
+    // E-WSANDBOX.W7 C10: prune, bare
+    assert_eq!(modes, ["spawn", "stop", "resume", "status", "status", "prune", "watchdog start", "watchdog stop", "worktree add", "worktree remove"]);
+    assert_eq!(bash("scripts/router-worker.sh prune"), None, "the guard refuses the allowed prune");
+    assert_eq!(bash("scripts/router-worker.sh status"), None, "the guard refuses the allowed bare status");
+    for (m, arg) in [
+        ("resume", "w1"),
+        ("status", "w1"),
+        ("watchdog start", "r1"),
+        ("watchdog stop", "r1"),
+        ("worktree add", "epic/E-X"),
+        ("worktree remove", "wu/E-X/w1-a"),
+    ] {
         assert_eq!(bash(&format!("scripts/router-worker.sh {m} {arg}")), None, "the guard refuses the allowed {m}");
     }
 }
@@ -2134,6 +2259,10 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     ] {
         std::fs::copy(root().join(f), c.join(f)).unwrap();
     }
+    // the launcher reads [router] from the clone's HEAD: carry the working tree's policy over
+    std::fs::copy(root().join(".keel/config.toml"), c.join(".keel/config.toml")).unwrap();
+    git(&c, &["add", ".keel/config.toml"]);
+    git(&c, &["commit", "-qm", "policy", "--allow-empty"]);
     let keel = Path::new(env!("CARGO_BIN_EXE_keel"));
     assert!(common::cmd(keel).args(["hooks", "install"]).current_dir(&c).output().unwrap().status.success());
     let other = base.join("other");
@@ -2217,17 +2346,19 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     assert!(copy.starts_with(l.wt.to_str().unwrap()) && std::fs::read_to_string(copy).unwrap() == "run the gate\n", "{out}");
 
     // 4 · W2, E-ROUTER3.W1: the router subscribes to the worker's end and may steer it with a message;
-    // E-ROUTER3.W10: a follow-up task is a message too, and `wait`, `send` and `resume` are gone
+    // E-ROUTER3.W10: a follow-up task is a message too, and `wait` and `send` are gone; E-WSANDBOX.W5:
+    // `resume <name>` and `status` pass
     assert_eq!(wired_guard(&c, "SendMessage", serde_json::json!({"to": name, "notify_when_idle": true})), None);
     let steer = serde_json::json!({"to": name, "message": "stop after the plan", "type": "message", "recipient": name, "content": "stop after the plan"});
     assert_eq!(wired_guard(&c, "SendMessage", steer), None);
     assert_eq!(wired_guard(&c, "SendMessage", serde_json::json!({"to": name, "message": "Follow-up task: now write the notes"})), None);
-    for cmd in [
-        format!("scripts/router-worker.sh wait {name}"),
-        format!("scripts/router-worker.sh send {name} .router/briefs/{name}.md"),
-        format!("scripts/router-worker.sh resume {name}"),
-    ] {
+    for cmd in [format!("scripts/router-worker.sh wait {name}"), format!("scripts/router-worker.sh send {name} .router/briefs/{name}.md")] {
         assert!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })).is_some(), "router may run {cmd:?}");
+    }
+    for cmd in
+        [format!("scripts/router-worker.sh resume {name}"), "scripts/router-worker.sh status".to_string(), format!("scripts/router-worker.sh status {name}")]
+    {
+        assert_eq!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })), None, "router may not run {cmd:?}");
     }
     // the grant is the worker's alone
     for cmd in ["cargo test", "keel preflight wu HEAD", "keel mr confirm wu HEAD --as owner"] {
@@ -2375,7 +2506,22 @@ fn watcher() -> Watcher {
     let d = common::fixture(WATCHER, build_watcher);
     let base = d.path().canonicalize().unwrap();
     let main = base.join("main");
+    warm_scripts(&base, &main);
     Watcher { _d: d, base, main }
+}
+
+/// A fresh script pays the host's scan of the new file on its first exec: 420 ms for one, seconds for
+/// 40 under the suite's parallel tests (measured at the E-WSANDBOX close; A12 is the same cost). A
+/// watch asked to reach poll 1 within BOUND must not spend that bound on the scan, so every script a
+/// watch execs is run once here, before the bound starts, and the test measures the watch. Nothing
+/// is written: the watch refuses no arguments before any git, `date` and `git --version` print, and
+/// the sleep shim writes only into a temp dir of its own, which is removed with it.
+fn warm_scripts(base: &Path, main: &Path) {
+    let _ = common::cmd(main.join("scripts/router-watch.sh")).output();
+    let _ = common::cmd(base.join("shim/date")).output();
+    let _ = common::cmd(base.join("shim/git")).arg("--version").output();
+    let steps = TempDir::new().unwrap();
+    let _ = common::cmd(base.join("shim/sleep")).env("STEP_DIR", steps.path()).env("STUB_OWNER", "999999").output();
 }
 
 fn build_watcher(base: &Path) {
@@ -3006,7 +3152,7 @@ const CAPTURED_WATCHDOG_CRON: &str = r#"{"cwd":"/r","scratchpad_dir":"/t","promp
 const CAPTURED_WATCHDOG_SEND: &str = r#"{"cwd":"/r","scratchpad_dir":"/t","prompt_id":"p","permission_mode":"default","agent_type":"watchdog","hook_event_name":"PreToolUse","tool_name":"SendMessage","tool_input":{"to":"r1","summary":"FACTSMARK-185209","message":"FACTSMARK-185209\nSendMessage, CronCreate","type":"message","recipient":"r1","content":"FACTSMARK-185209\nSendMessage, CronCreate"},"tool_use_id":"u2"}"#;
 
 const WATCHDOG_POLICY: &str =
-    "[router]\nworker_model = \"opus\"\nworker_efforts = [\"medium\", \"high\"]\nworker_default_effort = \"medium\"\nwatchdog_model = \"haiku\"\n";
+    "[router]\nworker_model = \"opus\"\nworker_efforts = [\"low\", \"high\"]\nworker_default_effort = \"low\"\nplanner_effort = \"high\"\nwatchdog_model = \"haiku\"\n";
 
 /// The guard run as the watchdog session's hook runs it: with `--arg watchdog_to <to>`.
 fn guard_to(to: &str, event: &serde_json::Value) -> Option<String> {
@@ -4272,22 +4418,32 @@ fn launcher_starts_a_worker_on_project_settings_alone_with_no_mcp_server() {
 
 /// E-ROUTER3.W8 (DEC-46, points 9 and 13): the worker's shell runs in Claude Code's sandbox, which
 /// writes its worktree, the shared git dir but its config and hooks, and cargo's cache, reads no ssh
-/// key or push channel, and reaches five hosts. What the sandbox does is probe P3's; this pins the JSON.
+/// key or push channel, and reaches the host base. What the sandbox does is probe P3's; this pins the JSON.
+/// E-WSANDBOX.W2 (owner q1), corrected after the independent review: allowLocalBinding sits at its real
+/// path, sandbox.network.allowLocalBinding (2.1.288's schema drops a top-level field), so the worker serves
+/// any port and address; the cost is the ruling's - it binds every interface and reaches every local
+/// listener. The worker's pnpm home is an allowWrite root, because the sandbox reaches only the cwd, its own
+/// temp and allowWrite: the package tree outside the worktree must be writable.
 #[test]
 fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
     let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
+    std::fs::create_dir_all(l.wt.join("app")).unwrap();
+    std::fs::create_dir_all(l.wt2.join("app")).unwrap();
     let g = l.main.join(".git");
     let g = g.to_str().unwrap();
     // E-WMODE round 2: ~/.cargo only where cargo writes (H3); the worktree's .git link, its two
     // settings files and its admin dir's link files are not the shell's (H2, M2); ~/.claude.json (M1)
     let want = |wt: &Path, admin: &str, other: &str| {
+        let pnpm_home = pnpm_home_of(&tmp, wt);
         serde_json::json!({"sandbox": {
             "enabled": true,
             "autoAllowBashIfSandboxed": true,
             "allowUnsandboxedCommands": false,
             "filesystem": {
                 "allowWrite": [g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
-                    "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"],
+                    "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm", pnpm_home.to_str().unwrap()],
                 "denyWrite": [format!("{g}/config"), format!("{g}/hooks"), format!("{g}/keel-hooks"), format!("{g}/info"),
                     // backlog R33 (DEC-37): the git dir's commondir, then the worker's
                     // own admin link files, then every other worktree's
@@ -4300,17 +4456,372 @@ fn worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache() {
                     format!("{}/.claude/settings.local.json", wt.display()), "~/.claude.json".to_string()],
                 "denyRead": ["~/.ssh", "~/.claude/channels"]
             },
-            "network": {"allowedDomains": ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com"]}
+            "network": {"allowLocalBinding": true, "allowedDomains": ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com", "registry.npmjs.org"]}
         }})
     };
     // a second worktree of the same repository shares its git dir
     for (name, wt, admin, other) in [("a", &l.wt, "wt", "wt2"), ("b", &l.wt2, "wt2", "wt")] {
-        let (ok, out) = l.run(&["spawn", name, wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+        let (ok, out) = l.run_env(&["spawn", name, wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
         assert!(ok, "{out}");
         let mut s: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, name), "--settings")).unwrap();
         s.as_object_mut().unwrap().remove("hooks");
+        // the pnpm env object is pinned by launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree
+        s.as_object_mut().unwrap().remove("env");
         assert_eq!(s, want(wt, admin, other), "{name}");
     }
+}
+
+/// E-WSANDBOX.W4 (owner q5): the one shape a worker sets a scratch repo up with. `new` makes a
+/// fresh mktemp dir, marks it, and initialises a git repo; its `keel init` step is the deferred
+/// live proof, so this pins the dir and the marker only.
+#[test]
+fn the_scratch_helper_makes_a_fresh_repo_dir_and_marker() {
+    let t = tempfile::tempdir().unwrap();
+    let o = common::cmd("sh").arg(root().join("scripts/router-scratch.sh")).arg("new").env("TMPDIR", t.path()).output().unwrap();
+    let shown = String::from_utf8(o.stdout).unwrap();
+    assert!(o.status.success(), "{shown} {}", String::from_utf8_lossy(&o.stderr));
+    let lines: Vec<&str> = shown.lines().collect();
+    assert_eq!(lines.len(), 1, "one path, nothing else: {shown:?}");
+    let d = Path::new(lines[0]);
+    assert_eq!(d.parent(), Some(t.path()), "not a dir in the caller's TMPDIR: {d:?}");
+    let name = d.file_name().unwrap().to_str().unwrap();
+    assert!(name.starts_with("keel-scratch.") && name.len() == "keel-scratch.".len() + 8, "not a mktemp name: {name}");
+    assert!(d.join(".keel-scratch").is_file(), "the helper's marker is missing");
+    assert!(d.join(".git").is_dir(), "git was not initialised");
+}
+
+/// E-WSANDBOX.W4 (owner q5): `init` runs `keel init` in a fresh helper scratch dir and nowhere
+/// else - not the temp folder, not a dir mktemp did not make, not one that is no longer fresh, not
+/// through a symlink, not outside $TMPDIR; a refused path is never touched.
+#[test]
+fn the_scratch_helper_refuses_a_path_outside_a_fresh_scratch_dir() {
+    let t = tempfile::tempdir().unwrap();
+    let tmp = t.path();
+    let helper = root().join("scripts/router-scratch.sh");
+    let refuse = |path: &Path| {
+        let o = common::cmd("sh").arg(&helper).arg("init").arg(path).env("TMPDIR", tmp).output().unwrap();
+        assert!(!o.status.success(), "accepted {}", path.display());
+        let err = String::from_utf8_lossy(&o.stderr).to_string();
+        assert!(err.starts_with("router-scratch: "), "{err}");
+        assert!(!path.join("AGENTS.md").exists() && !tmp.join("AGENTS.md").exists(), "a refused init ran keel init: {err}");
+    };
+    // the temp folder itself, and a plain dir mktemp did not make
+    refuse(tmp);
+    let plain = tmp.join("plain");
+    std::fs::create_dir(&plain).unwrap();
+    refuse(&plain);
+    // a helper-shaped name with no marker, and a path that does not exist
+    let fake = tmp.join("keel-scratch.12345678");
+    std::fs::create_dir(&fake).unwrap();
+    refuse(&fake);
+    refuse(&tmp.join("keel-scratch.absent1"));
+    // a marked dir that is no longer fresh
+    let used = tmp.join("keel-scratch.abcdefgh");
+    std::fs::create_dir(&used).unwrap();
+    std::fs::write(used.join(".keel-scratch"), "").unwrap();
+    std::fs::write(used.join("extra"), "x").unwrap();
+    refuse(&used);
+    // a symlink to a fresh marked dir
+    std::fs::remove_file(used.join("extra")).unwrap();
+    std::fs::create_dir(used.join(".git")).unwrap();
+    let link = tmp.join("link");
+    std::os::unix::fs::symlink(&used, &link).unwrap();
+    refuse(&link);
+    assert!(!used.join("AGENTS.md").exists(), "a refused init ran keel init in the symlink's target");
+    // outside the temp folder
+    let outside = tempfile::tempdir().unwrap();
+    refuse(outside.path());
+    // a helper-shaped name nested one level down: the name matches but the parent is not the temp folder
+    let nested = tmp.join("sub/keel-scratch.abcdefgh");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::write(nested.join(".keel-scratch"), "").unwrap();
+    std::fs::create_dir(nested.join(".git")).unwrap();
+    refuse(&nested);
+    // a marked dir whose .git is a live symlink to a real directory: `[ -d ]` alone would pass,
+    // so only the `!-L` branch refuses it
+    let linked = tmp.join("keel-scratch.11112222");
+    std::fs::create_dir(&linked).unwrap();
+    std::fs::write(linked.join(".keel-scratch"), "").unwrap();
+    let elsewhere = tmp.join("elsewhere");
+    std::fs::create_dir(&elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, linked.join(".git")).unwrap();
+    let o = common::cmd("sh").arg(&helper).arg("init").arg(&linked).env("TMPDIR", tmp).output().unwrap();
+    let err = String::from_utf8_lossy(&o.stderr).to_string();
+    assert!(!o.status.success() && err.contains("no real .git directory"), "a symlinked .git was accepted: {err}");
+    assert!(!linked.join("AGENTS.md").exists(), "a refused init ran keel init");
+}
+
+/// E-WSANDBOX.W4 (nit 7 of the independent review): the accepted path really runs `keel init` - the
+/// built binary, in the fresh temp repo the helper made, with nothing else in it.
+#[test]
+fn the_scratch_helper_runs_keel_init_in_a_fresh_dir() {
+    let t = tempfile::tempdir().unwrap();
+    let bin = t.path().join("bin");
+    std::fs::create_dir(&bin).unwrap();
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_keel"), bin.join("keel")).unwrap();
+    let path = format!("{}:{}", bin.display(), common::path());
+    let helper = root().join("scripts/router-scratch.sh");
+    let run = |args: &[&str]| common::cmd("sh").arg(&helper).args(args).env("TMPDIR", t.path()).env("PATH", &path).output().unwrap();
+    let new = run(&["new"]);
+    assert!(new.status.success(), "{}", String::from_utf8_lossy(&new.stderr));
+    let d = PathBuf::from(String::from_utf8(new.stdout).unwrap().trim());
+    let o = run(&["init", d.to_str().unwrap()]);
+    let out = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    assert!(o.status.success(), "{out}");
+    assert!(d.join("AGENTS.md").is_file() && d.join(".keel/config.toml").is_file(), "keel init did not run: {out}");
+}
+
+/// The launcher's name for a worktree's pnpm home: `keel-worker-pnpm-<cksum of the worktree path>`
+/// under the temp root (E-WSANDBOX close, review round 1: one home per worktree, never one shared).
+fn pnpm_home_of(temp_root: &Path, wt: &Path) -> PathBuf {
+    let o = common::cmd("sh").arg("-c").arg("printf '%s\\n' \"$1\" | cksum | cut -d' ' -f1").arg("sh").arg(wt).output().unwrap();
+    let c = String::from_utf8(o.stdout).unwrap().trim().to_string();
+    temp_root.join(format!("keel-worker-pnpm-{c}"))
+}
+
+/// E-WSANDBOX.W3 (owner q3), corrected in review round 1: the whole pnpm package tree lives outside
+/// the worker's worktree, not just the content store. The launcher gives the session a per-worktree pnpm
+/// home whose virtual store holds the package files, so a package's .vscode path is never materialised
+/// under the worktree, where the sandbox denies it. A real install is left alone, and the sandbox
+/// allowWrite gains nothing for any of it.
+#[test]
+fn launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree() {
+    let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
+    let real = l.wt.join("app/node_modules");
+    std::fs::create_dir_all(&real).unwrap();
+    std::fs::write(real.join("keep.txt"), "keep").unwrap();
+    let (ok, out) = l.run_env(&["spawn", "a", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
+    assert!(!std::fs::symlink_metadata(&real).unwrap().file_type().is_symlink(), "a real node_modules was replaced");
+    assert_eq!(std::fs::read_to_string(real.join("keep.txt")).unwrap(), "keep");
+    l.stop("a");
+    std::fs::remove_dir_all(&real).unwrap();
+    let (ok, out) = l.run_env(&["spawn", "b", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
+    // E-WSANDBOX.W10: what the session sees comes from --settings alone (the stub models the daemon)
+    let env = std::fs::read_to_string(l.state.join("pnpm-env")).unwrap_or_default();
+    let home = pnpm_home_of(&tmp, &l.wt);
+    let hs = home.to_str().unwrap();
+    assert!(env.lines().any(|l| l == format!("PNPM_HOME={hs}")), "the worker's session does not get PNPM_HOME through --settings: {env:?}");
+    assert!(env.lines().any(|l| l == format!("pnpm_config_store_dir={hs}/store")), "the content store is not under the pnpm home: {env:?}");
+    assert!(env.lines().any(|l| l == format!("pnpm_config_virtual_store_dir={hs}/vstore")), "the virtual store is not under the pnpm home: {env:?}");
+    assert!(env.lines().all(|l| !l.starts_with("pnpm_config_modules_dir=")), "a global modules dir redirects a package command run outside app/: {env:?}");
+    let meta = std::fs::symlink_metadata(&home).unwrap_or_else(|e| panic!("the launcher did not create the pnpm home {home:?}: {e}"));
+    assert!(meta.is_dir() && !meta.file_type().is_symlink(), "the pnpm home is not a real directory: {home:?}");
+    assert!(!home.join("modules").exists(), "the launcher still makes a modules dir: {home:?}");
+    // no link: pnpm writes a real node_modules of its own, which Node and Vite resolve through
+    assert!(!l.wt.join("app/node_modules").exists(), "the launcher made an app/node_modules link pnpm cannot install through");
+    let a = worker_argv(&l.state, "b");
+    let settings: serde_json::Value = serde_json::from_str(&option(&a, "--settings")).unwrap();
+    let allow = &settings["sandbox"]["filesystem"]["allowWrite"];
+    assert!(allow.as_array().unwrap().iter().any(|v| v.as_str() == Some(hs)), "the pnpm home is not an allowWrite root: {allow}");
+    let want = serde_json::json!({"PNPM_HOME": hs, "pnpm_config_store_dir": format!("{hs}/store"),
+        "pnpm_config_virtual_store_dir": format!("{hs}/vstore"), "pnpm_config_node_linker": "isolated"});
+    assert_eq!(settings["env"], want, "the session's env object");
+    // a resume rebuilds the same env object
+    l.stop("b");
+    write_transcript(&l, &l.wt, field(&out, "session="), &[user_line("2027-01-15T07:00:00Z")]);
+    let (ok, out) = l.run_env(&["resume", "b"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
+    let resumed: serde_json::Value = serde_json::from_str(&option(&bg_argv(&l.state, "b"), "--settings")).unwrap();
+    assert_eq!(resumed["env"], want, "the resumed session's env object");
+    l.stop("b");
+    // a worktree without an app gets no pnpm env at all
+    let (ok, out) = l.run_env(&["spawn", "c", l.wt2.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
+    let plain: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, "c"), "--settings")).unwrap();
+    assert!(plain.get("env").is_none(), "a worktree without app got a pnpm env: {plain}");
+}
+
+/// E-WSANDBOX close, review round 1 findings 1 and 3: one pnpm home per worktree, named from its path.
+/// The launcher creates it with the owner's rights, so what it finds at that name must be a real
+/// directory this user owns - a symlink or a file planted there is refused before any session starts.
+#[test]
+fn launcher_refuses_a_pnpm_home_that_is_not_a_real_directory() {
+    let l = launcher();
+    std::fs::create_dir_all(l.wt.join("app")).unwrap();
+    for (i, plant) in ["link", "file"].into_iter().enumerate() {
+        let t = tempfile::tempdir().unwrap();
+        let tmp = std::fs::canonicalize(t.path()).unwrap();
+        let home = pnpm_home_of(&tmp, &l.wt);
+        let elsewhere = tempfile::tempdir().unwrap();
+        match plant {
+            "link" => std::os::unix::fs::symlink(elsewhere.path(), &home).unwrap(),
+            _ => std::fs::write(&home, "x").unwrap(),
+        }
+        let name = format!("m{i}");
+        let (ok, out) = l.run_env(&["spawn", &name, l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
+        assert!(!ok && out.contains("pnpm home"), "{plant}: the launcher accepted a planted pnpm home: {out}");
+        assert_eq!(l.starts(&name), 0, "{plant}: a worker started");
+        assert!(std::fs::read_dir(elsewhere.path()).unwrap().next().is_none(), "{plant}: the launcher wrote through the link");
+    }
+}
+
+/// E-WSANDBOX close, review round 2 (blocker): the app pins `nodeLinker: hoisted` in its own
+/// pnpm-workspace.yaml, and under hoisted pnpm materialises the package tree in `<worktree>/app/node_modules`,
+/// where the sandbox's hard-coded cwd-anchored `**/.vscode/**` deny refuses a package that ships one
+/// (xmlbuilder 15.1.1), so a granted `pnpm install` fails. The session env pins the isolated linker with
+/// an external virtual store instead, which pnpm 11.18.0 honours over the workspace file, so the package
+/// files stay outside the worktree and the install succeeds. Skipped, loudly, only where pnpm is absent.
+#[test]
+fn a_hoisted_app_install_with_the_sessions_env_keeps_the_vscode_path_outside() {
+    let pnpm = common::cmd("pnpm").arg("--version").output();
+    if !pnpm.map(|o| o.status.success()).unwrap_or(false) {
+        eprintln!("skipped: pnpm is not installed, so the hoisted-app install cannot be run here");
+        return;
+    }
+    let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
+    let pkg = l.wt.join("pkg");
+    std::fs::create_dir_all(pkg.join(".vscode")).unwrap();
+    std::fs::write(pkg.join("package.json"), "{\"name\":\"wsb-vscode\",\"version\":\"1.0.0\"}\n").unwrap();
+    std::fs::write(pkg.join(".vscode/launch.json"), "{}\n").unwrap();
+    let app = l.wt.join("app");
+    std::fs::create_dir_all(&app).unwrap();
+    std::fs::write(app.join("package.json"), "{\"name\":\"wsb-app\",\"version\":\"1.0.0\",\"dependencies\":{\"wsb-vscode\":\"file:../pkg\"}}\n").unwrap();
+    std::fs::write(app.join("pnpm-workspace.yaml"), "nodeLinker: hoisted\n").unwrap();
+    let (ok, out) = l.run_env(&["spawn", "a", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
+    let settings: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, "a"), "--settings")).unwrap();
+    let env = settings["env"].as_object().expect("the session has no pnpm env");
+    let mut c = common::cmd("pnpm");
+    c.arg("install").current_dir(&app);
+    for (k, v) in env {
+        c.env(k, v.as_str().unwrap());
+    }
+    let o = c.output().unwrap();
+    assert!(o.status.success(), "{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    let find = |root: &Path| -> Vec<String> {
+        let o = common::cmd("find").arg(root).args(["-name", "launch.json"]).output().unwrap();
+        String::from_utf8_lossy(&o.stdout).lines().map(str::to_string).collect()
+    };
+    assert!(find(&app).is_empty(), "a package's .vscode landed inside the worktree: {:?}", find(&app));
+    let home = pnpm_home_of(&tmp, &l.wt);
+    assert!(!find(&home).is_empty(), "the package files are not in the session's home: {home:?}");
+}
+
+/// E-WSANDBOX close, review round 2 (important): `reclaim_pnpm` runs after git has already removed the
+/// worktree, so its failure must never turn a completed removal into a reported failure. The worker can
+/// leave its own allowWrite home unemptiable; the warning names what is left for the owner, and a later
+/// attempt finishes it.
+#[test]
+fn a_failed_pnpm_reclaim_does_not_report_a_failed_worktree_removal() {
+    let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
+    let (ok, out) = l.run_env(&["worktree", "add", "wu/E-X/w1"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
+    let wt = PathBuf::from(field(&out, "path="));
+    let home = pnpm_home_of(&tmp, &wt);
+    std::fs::create_dir_all(home.join("store")).unwrap();
+    std::fs::write(home.join("store/x"), "x").unwrap();
+    let mode = |p: &Path, m: u32| std::fs::set_permissions(p, std::os::unix::fs::PermissionsExt::from_mode(m)).unwrap();
+    // the worker's own trick: it cannot remove through the parent it does not control
+    mode(&tmp, 0o500);
+    let (ok, out) = l.run_env(&["worktree", "remove", "wu/E-X/w1"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    mode(&tmp, 0o700);
+    assert!(ok, "a completed removal was reported as a failure: {out}");
+    assert!(out.contains("REMOVED path="), "the REMOVED line is missing: {out}");
+    assert!(out.contains("could not reclaim"), "the reclaim failure is not named: {out}");
+    assert!(home.is_dir(), "the home is gone though the reclaim could not run");
+    std::fs::remove_dir_all(&home).unwrap();
+}
+
+/// E-WSANDBOX.W3 (security, independent review round 2): the launcher must never write through a
+/// worker-planted symlinked `app` - it creates node_modules with the owner's rights, so a link to
+/// another worktree's app would poison that worktree's package tree. `app` must be a real directory
+/// inside the worktree, and the refusal comes before anything is created.
+#[test]
+fn launcher_refuses_a_symlinked_app_before_linking_node_modules() {
+    let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let other_app = elsewhere.path().join("app");
+    std::fs::create_dir(&other_app).unwrap();
+    std::os::unix::fs::symlink(&other_app, l.wt.join("app")).unwrap();
+    let (ok, out) = l.run_env(&["spawn", "a", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(!ok && out.contains("not a real directory"), "the launcher accepted a symlinked app: {out}");
+    assert!(!other_app.join("node_modules").exists(), "the launcher wrote node_modules through the symlinked app");
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
+    assert!(!pnpm_home_of(&tmp, &l.wt).exists(), "the launcher created the pnpm home before refusing");
+}
+
+/// E-WSANDBOX close, review round 1 finding 1: one pnpm home per worktree. A shared home was an
+/// allowWrite root for every worker, so a worker in one worktree could overwrite another's package
+/// tree or store, and that other worktree's granted `pnpm test` then ran the poisoned code.
+#[test]
+fn each_worktree_gets_its_own_pnpm_home_and_no_shared_root() {
+    let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
+    std::fs::create_dir_all(l.wt.join("app")).unwrap();
+    std::fs::create_dir_all(l.wt2.join("app")).unwrap();
+    let mut homes = Vec::new();
+    for (name, wt) in [("a", &l.wt), ("b", &l.wt2)] {
+        let (ok, out) = l.run_env(&["spawn", name, wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
+        assert!(ok, "{out}");
+        let settings: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, name), "--settings")).unwrap();
+        let home = pnpm_home_of(&tmp, wt);
+        let hs = home.to_str().unwrap();
+        assert_eq!(settings["env"]["PNPM_HOME"], hs, "{name}: its session does not get its own home");
+        let allow = settings["sandbox"]["filesystem"]["allowWrite"].as_array().unwrap();
+        assert!(allow.iter().any(|v| v.as_str() == Some(hs)), "{name}: its own home is not writable: {allow:?}");
+        let other = if name == "a" { pnpm_home_of(&tmp, &l.wt2) } else { pnpm_home_of(&tmp, &l.wt) };
+        assert!(!allow.iter().any(|v| v.as_str() == Some(other.to_str().unwrap())), "{name}: the other worktree's home is writable: {allow:?}");
+        assert!(!allow.iter().any(|v| v.as_str() == Some(tmp.join("keel-worker-pnpm").to_str().unwrap())), "{name}: a shared pnpm root is writable: {allow:?}");
+        assert!(home.is_dir(), "{name}: the launcher did not create its home");
+        homes.push(home);
+    }
+    assert_ne!(homes[0], homes[1], "two worktrees share one pnpm home");
+}
+
+/// E-WSANDBOX close, review round 1 finding 3: the home is named from the worktree path, so removing
+/// the worktree through the launcher reclaims it - and the old shared layout's `modules-<cksum>` with
+/// it - instead of leaving a full package tree under the temp folder for every retired worktree.
+#[test]
+fn removing_a_worktree_reclaims_its_pnpm_home() {
+    let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
+    let (ok, out) = l.run_env(&["worktree", "add", "wu/E-X/w1"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
+    let wt = PathBuf::from(field(&out, "path="));
+    let home = pnpm_home_of(&tmp, &wt);
+    let cksum = home.file_name().unwrap().to_str().unwrap().rsplit_once('-').unwrap().1.to_string();
+    let legacy = tmp.join("keel-worker-pnpm").join(format!("modules-{cksum}"));
+    let keep = pnpm_home_of(&tmp, &l.wt2);
+    for h in [&home, &legacy, &keep] {
+        std::fs::create_dir_all(h.join("store")).unwrap();
+        std::fs::write(h.join("store/x"), "x").unwrap();
+    }
+    let (ok, out) = l.run_env(&["worktree", "remove", "wu/E-X/w1"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
+    assert!(!home.exists(), "the removed worktree's pnpm home is still there: {home:?}");
+    assert!(!legacy.exists(), "the old shared layout's modules dir is still there: {legacy:?}");
+    assert!(keep.is_dir(), "another worktree's pnpm home was removed: {keep:?}");
+}
+
+/// E-WSANDBOX close, review round 1 finding 2: no absolute modules dir in the session env - it is what
+/// redirected a granted package command run outside `app/` into the app's tree, printing success with no
+/// node_modules in the target - and the launcher clears the old link so pnpm writes a real node_modules
+/// of its own, which Node and Vite resolve through.
+#[test]
+fn launcher_sets_no_modules_dir_and_clears_the_old_node_modules_link() {
+    let l = launcher();
+    let t = tempfile::tempdir().unwrap();
+    let tmp = std::fs::canonicalize(t.path()).unwrap();
+    let app = l.wt.join("app");
+    std::fs::create_dir_all(&app).unwrap();
+    std::os::unix::fs::symlink(tmp.join("old-tree"), app.join("node_modules")).unwrap();
+    let (ok, out) = l.run_env(&["spawn", "a", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"], &[("TMPDIR", t.path().to_str().unwrap())]);
+    assert!(ok, "{out}");
+    let settings: serde_json::Value = serde_json::from_str(&option(&worker_argv(&l.state, "a"), "--settings")).unwrap();
+    assert_eq!(settings["env"].get("pnpm_config_modules_dir"), None, "a global modules dir is still set: {settings}");
+    let link = std::fs::symlink_metadata(app.join("node_modules")).map(|m| m.file_type().is_symlink()).unwrap_or(false);
+    assert!(!link, "the old app/node_modules link is still there, so pnpm cannot install through it");
 }
 
 /// Backlog R33 (DEC-37): a commondir file in the main git dir would send
@@ -4322,7 +4833,14 @@ fn a_commondir_file_in_the_main_git_dir_stops_the_launcher() {
     let elsewhere = l.main.parent().unwrap().join("elsewhere");
     std::fs::create_dir_all(&elsewhere).unwrap();
     let wt = l.wt.to_str().unwrap();
-    let modes = [vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"], vec!["stop", "a"], vec!["worktree", "add", "epic/E"], vec!["watchdog", "start", "r"]];
+    // E-WSANDBOX.W7 review round 1: prune too, before its git worktree prune
+    let modes = [
+        vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"],
+        vec!["stop", "a"],
+        vec!["worktree", "add", "epic/E"],
+        vec!["watchdog", "start", "r"],
+        vec!["prune"],
+    ];
     // R33: config.worktree too (a url.insteadOf or core.askPass there runs code)
     for f in ["commondir", "config.worktree"] {
         let p = l.main.join(".git").join(f);
@@ -4352,7 +4870,14 @@ fn every_worktree_admin_dir_is_checked_on_every_run() {
     git(&l.main, &["worktree", "add", "-q", later.to_str().unwrap(), "-b", "later"]);
     let admin = l.main.join(".git/worktrees/later");
     let wt = l.wt.to_str().unwrap();
-    let modes = [vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"], vec!["stop", "a"], vec!["worktree", "add", "epic/E"], vec!["watchdog", "start", "r"]];
+    // E-WSANDBOX.W7 review round 1: prune too, before its git worktree prune
+    let modes = [
+        vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"],
+        vec!["stop", "a"],
+        vec!["worktree", "add", "epic/E"],
+        vec!["watchdog", "start", "r"],
+        vec!["prune"],
+    ];
     let unlinked = "worktree admin dir";
     for (what, file, body) in [
         ("commondir", "commondir", "/tmp/evil.git\n".to_string()),
@@ -4755,7 +5280,8 @@ fn worktree_branches_follow_the_committed_branch_policy() {
 /// E-ROUTER3.W5: the router's rule-bearing text says what the launcher at this tip prints and holds no
 /// retired mechanism. Every outcome word the launcher prints as `<WORD> name=` or `<WORD> path=` is in
 /// worker-ops, with the UNLISTED respawn instruction, the stop refusal by state and the deny list as
-/// intent; no current text names `wait`, `resume`, `.router/out` or a router that never messages
+/// intent; no current text names `wait`, `.router/out`, a router that never messages or (E-WSANDBOX.W5)
+/// a worker that is never revived
 /// (lessons.md is the dated record of what was, so it is not read); router.md's body names the two
 /// fleet tools; project-router states the committed sign-off tiers.
 #[test]
@@ -4771,12 +5297,15 @@ fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
     }
     for (said, why) in [
         ("before any respawn", "UNLISTED's instruction to check ListAgents"),
-        ("the owner decides", "stop's refusal of a worker that is neither busy nor idle"),
+        ("the owner decides", "stop's refusal of a worker still busy"),
+        ("state=<state>", "stop of a dead worker, naming its state (E-WSANDBOX.W7 C9)"),
+        ("PRUNED worktrees=", "prune's outcome line (E-WSANDBOX.W7 C10)"),
         ("intent", "the deny list as intent, the sandbox as the bound"),
     ] {
         assert!(ops.contains(said), "worker-ops omits {why}");
     }
-    assert!(launcher.contains("check ListAgents before any respawn") && launcher.contains(": the owner decides (claude stop $id)"));
+    assert!(launcher.contains("check ListAgents before any respawn") && launcher.contains("; the owner decides (claude stop $id)"));
+    assert!(launcher.contains("state=${status:-unknown}"), "stop no longer names a dead worker's state");
 
     let mut current = Vec::new();
     for dir in ["skills/keel-router", ".claude/skills/keel-router"] {
@@ -4795,7 +5324,7 @@ fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
     current.extend([".claude/skills/project-router/SKILL.md".to_string(), ".claude/agents/router.md".to_string()]);
     for f in &current {
         let body = read(f);
-        for retired in ["router-worker.sh wait", "router-worker.sh resume", "<launcher> wait", "<launcher> resume", ".router/out", "never message"] {
+        for retired in ["router-worker.sh wait", "<launcher> wait", ".router/out", "never message", "never revived", "has no resume", "No resume"] {
             assert!(!body.contains(retired), "{f} names the retired {retired:?}");
         }
     }
@@ -4805,19 +5334,892 @@ fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
     for t in ["SendMessage", "ListAgents"] {
         assert!(body.contains(&format!("`{t}`")), "router.md's posture omits {t}");
     }
-    // E-APPLIST.W1: the router's three update-log verbs, in the words the guard admits
-    for shape in ["scripts/router-app.sh", "start <name>", "stage <wu> <stage> [<tip>]", "del question/<id>", "del wu/<wu>/stage"] {
-        assert!(body.contains(shape), "router.md's Bash posture omits {shape:?}");
+    // E-APPLIST.W1: the router's three update-log verbs, in the words the guard admits, and never set or
+    // alert. E-WSANDBOX.W7 G2 (owner, 2026-11-28): router.md lists no shapes and points to the guard and
+    // UC-ROUTE-6, so the words are pinned in UC-ROUTE-6.
+    let uc = read("docs/use-cases/router.yaml").split_whitespace().collect::<Vec<_>>().join(" ");
+    for shape in [
+        "`scripts/router-app.sh start <router-name>`",
+        "stage <wu> plan-in-work|plan-to-read|plan-approved|building|in-review [<tip>]",
+        "`del question/<id>`",
+        "never `set` or `alert`",
+    ] {
+        assert!(uc.contains(shape), "UC-ROUTE-6 omits the update-log shape {shape:?}");
     }
-    // and the two verbs it never runs are named as the watchdog's and the sender's (review round 1 nit)
-    let flat = body.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(
-        flat.contains("its `set` and `alert` carry free JSON and are the watchdog's and the sender's, never the router's"),
-        "router.md does not give set and alert to the watchdog and the sender"
-    );
 
     let policy: toml::Value = read(".keel/config.toml").parse().unwrap();
     let tiers: Vec<String> = policy["mr"]["tiers"].as_array().unwrap().iter().map(|t| format!("{t}")).collect();
     let tiers = format!("tiers = [{}]", tiers.join(", "));
     assert!(read(".claude/skills/project-router/SKILL.md").contains(&tiers), "project-router does not state {tiers}");
+}
+
+// E-WSANDBOX.W7: the abilities and fixes the owner picked on 2026-11-28 (the W7 plan pair, details.candidates
+// C1, C5, C6, C9, C10, C11 and details.gaps G1, G2, G4).
+
+/// C1: the router reads more of git in plain words - git grep (at any ref), git ls-tree, git worktree list
+/// and git branch --list - and never git grep's pager option, which runs a command.
+#[test]
+fn router_guard_admits_the_read_only_git_searches() {
+    for ok in [
+        "git grep -n word main -- src",
+        "git grep -n -i -e notes -e refspec main -- scripts/router-gh.sh",
+        "git grep -c W6 origin/epic/E-DOCSPLIT -- docs/work",
+        "git ls-tree --name-only main docs/backlog/",
+        "git ls-tree -r HEAD",
+        "git worktree list",
+        "git worktree list --porcelain",
+        "git branch --list main",
+        "git branch --list main epic/E-X",
+    ] {
+        assert_eq!(bash(ok), None, "guard denied {ok:?}");
+    }
+    for no in [
+        "git grep -O vim x",
+        "git grep -nO vim x",
+        "git grep -Ovim x",
+        "git grep --open-files-in-pager=vim x",
+        "git grep --open-files-in-pager vim x",
+        "git grep --open x",
+        "git grep --o x",
+        "git grep --output=x y",
+        "git worktree add x",
+        "git worktree prune",
+        "git worktree list x",
+        "git branch --list -D main",
+        "git branch --list main -d",
+        "git ls-tree main; rm -r y",
+        "git grep x | sh",
+    ] {
+        assert!(bash(no).is_some(), "guard allowed {no:?}");
+    }
+}
+
+/// C1, C10 and G1: every permissions.allow line of .claude/settings.json is a shape the guard admits, shown on
+/// one example each, and the list holds exactly these lines: router-watch.sh by its five kinds (G1), the
+/// read-only git searches (C1) and the launcher's prune (C10).
+#[test]
+fn settings_allow_only_shapes_the_guard_admits() {
+    let examples: Vec<(&str, &str)> = vec![
+        ("Bash(gh pr list *)", "gh pr list --state open"),
+        ("Bash(gh pr status *)", "gh pr status --json state"),
+        ("Bash(gh pr view *)", "gh pr view 12"),
+        ("Bash(git branch --all -v)", "git branch --all -v"),
+        ("Bash(git branch --all)", "git branch --all"),
+        ("Bash(git branch --list *)", "git branch --list main"),
+        ("Bash(git branch -a -v)", "git branch -a -v"),
+        ("Bash(git branch -a)", "git branch -a"),
+        ("Bash(git branch -av)", "git branch -av"),
+        ("Bash(git branch -v)", "git branch -v"),
+        ("Bash(git branch -va)", "git branch -va"),
+        ("Bash(git branch -vv)", "git branch -vv"),
+        ("Bash(git diff *)", "git diff main"),
+        ("Bash(git grep *)", "git grep -n word main -- src"),
+        ("Bash(git log *)", "git log --oneline -5"),
+        ("Bash(git ls-tree *)", "git ls-tree --name-only main docs"),
+        ("Bash(git show *)", "git show HEAD"),
+        ("Bash(git status *)", "git status --short"),
+        ("Bash(git worktree list --porcelain)", "git worktree list --porcelain"),
+        ("Bash(git worktree list)", "git worktree list"),
+        ("Bash(ps -ef)", "ps -ef"),
+        ("Bash(ps aux)", "ps aux"),
+        ("Bash(scripts/notify-owner.py --check)", "scripts/notify-owner.py --check"),
+        ("Bash(scripts/notify-owner.py --dry-run)", "scripts/notify-owner.py --dry-run"),
+        ("Bash(scripts/notify-owner.py --send)", "scripts/notify-owner.py --send"),
+        ("Bash(scripts/router-app.sh del *)", "scripts/router-app.sh del question/q1"),
+        ("Bash(scripts/router-app.sh stage *)", "scripts/router-app.sh stage E-X.W1 building"),
+        ("Bash(scripts/router-app.sh start *)", "scripts/router-app.sh start r1"),
+        ("Bash(scripts/router-inbox.sh consume *)", "scripts/router-inbox.sh consume abc"),
+        ("Bash(scripts/router-inbox.sh init)", "scripts/router-inbox.sh init"),
+        ("Bash(scripts/router-inbox.sh status)", "scripts/router-inbox.sh status"),
+        ("Bash(scripts/router-inbox.sh watch *)", "scripts/router-inbox.sh watch 60"),
+        ("Bash(scripts/router-watch.sh commit *)", "scripts/router-watch.sh commit abc1234"),
+        ("Bash(scripts/router-watch.sh merged *)", "scripts/router-watch.sh merged wu/E-X/w1-a epic/E-X"),
+        ("Bash(scripts/router-watch.sh pushed *)", "scripts/router-watch.sh pushed epic/E-X"),
+        ("Bash(scripts/router-watch.sh signed *)", "scripts/router-watch.sh signed abc1234"),
+        ("Bash(scripts/router-watch.sh tagged *)", "scripts/router-watch.sh tagged v1.0.0"),
+        ("Bash(scripts/router-worker.sh prune)", "scripts/router-worker.sh prune"),
+        ("Bash(scripts/router-worker.sh resume *)", "scripts/router-worker.sh resume w1"),
+        ("Bash(scripts/router-worker.sh status)", "scripts/router-worker.sh status"),
+        ("Bash(scripts/router-worker.sh status *)", "scripts/router-worker.sh status w1"),
+        ("Bash(scripts/router-worker.sh spawn *)", "scripts/router-worker.sh spawn w1 /Users/o/Keel-x .router/briefs/w1.md opus"),
+        ("Bash(scripts/router-worker.sh stop *)", "scripts/router-worker.sh stop w1"),
+        ("Bash(scripts/router-worker.sh watchdog start *)", "scripts/router-worker.sh watchdog start r1"),
+        ("Bash(scripts/router-worker.sh watchdog stop *)", "scripts/router-worker.sh watchdog stop r1"),
+        ("Bash(scripts/router-worker.sh worktree add *)", "scripts/router-worker.sh worktree add epic/E-X"),
+        ("Bash(scripts/router-worker.sh worktree remove *)", "scripts/router-worker.sh worktree remove wu/E-X/w1-a"),
+    ];
+    let mut allow: Vec<String> = settings()["permissions"]["allow"].as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_string()).collect();
+    allow.sort();
+    let mut want: Vec<String> = examples.iter().map(|(a, _)| a.to_string()).collect();
+    want.sort();
+    assert_eq!(allow, want, "permissions.allow differs from the shapes the guard admits");
+    for (line, ex) in &examples {
+        let inner = line.strip_prefix("Bash(").unwrap().strip_suffix(')').unwrap();
+        match inner.strip_suffix(" *") {
+            Some(prefix) => assert!(ex.starts_with(&format!("{prefix} ")), "{line}: example {ex:?}"),
+            None => assert_eq!(&inner, ex, "{line}"),
+        }
+        assert_eq!(bash(ex), None, "{line}: the guard refuses its example {ex:?}");
+    }
+}
+
+/// C10: the guard admits the launcher's prune, bare.
+#[test]
+fn router_guard_admits_prune_bare() {
+    assert_eq!(bash("scripts/router-worker.sh prune"), None);
+    for no in ["scripts/router-worker.sh prune x", "scripts/router-worker.sh prune --all", "scripts/router-worker.sh prunex"] {
+        assert!(bash(no).is_some(), "guard allowed {no:?}");
+    }
+}
+
+/// G2: the router agent file binds the tools and points to the guard and UC-ROUTE-6 for the shapes,
+/// instead of a hand list that drifts (it had dropped router-inbox.sh).
+#[test]
+fn router_agent_file_points_to_the_guard_instead_of_listing_shapes() {
+    let md = std::fs::read_to_string(root().join(".claude/agents/router.md")).unwrap();
+    let body = md.splitn(3, "---").nth(2).unwrap();
+    assert!(body.contains("scripts/router-guard.jq") && body.contains("UC-ROUTE-6"), "{body}");
+    for listed in ["router-app.sh start", "notify-owner.py --check", "worktree add|remove", "watchdog start|stop", "router-watch.sh"] {
+        assert!(!body.contains(listed), "router.md still lists {listed:?}");
+    }
+}
+
+/// G4: on DSH the router makes worktrees itself (owner, 2026-11-28); project-router no longer says the
+/// preset denies it.
+#[test]
+fn project_router_lets_the_router_make_worktrees_on_dsh() {
+    let s = std::fs::read_to_string(root().join(".claude/skills/project-router/SKILL.md")).unwrap();
+    assert!(!s.contains("preset denies"), "project-router still says the DSH preset denies worktrees");
+}
+
+/// The watchdog's own row and a transcript whose first record is `age_h` hours old, under `home`.
+fn watchdog_row(l: &Launcher, home: &Path, age_h: u64) -> serde_json::Value {
+    let s = sid(90);
+    let dir = home.join(".claude/projects/-w");
+    std::fs::create_dir_all(&dir).unwrap();
+    let start = chrono_like(std::time::SystemTime::now() - Duration::from_secs(age_h * 3600));
+    let first = serde_json::json!({"type": "user", "timestamp": start, "message": {"role": "user", "content": "start"}}).to_string();
+    let next =
+        serde_json::json!({"type": "assistant", "timestamp": chrono_like(std::time::SystemTime::now()), "message": {"role": "assistant", "content": []}})
+            .to_string();
+    std::fs::write(dir.join(format!("{s}.jsonl")), format!("{first}\n{next}\n")).unwrap();
+    serde_json::json!({"id": "wd00", "sessionId": s, "name": "watchdog-r1", "cwd": l.main, "kind": "background", "status": "busy"})
+}
+
+/// An ISO 8601 UTC timestamp with milliseconds, as Claude Code writes them (civil-from-days, no clock tool).
+fn chrono_like(t: std::time::SystemTime) -> String {
+    let secs = t.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+    let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.000Z", rem / 3600, rem % 3600 / 60, rem % 60)
+}
+
+/// C6: the watchdog's recurring schedule ends after 7 days (backlog R29); from day 6 its facts tell the
+/// router to restart it, read from its own transcript's first record.
+#[test]
+fn watchdog_facts_warn_a_day_before_the_schedule_ends() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    let warn = "Schedule ends in under a day: restart the watchdog (watchdog stop r1, then watchdog start r1).";
+    for (age_h, warned) in [(1, false), (5 * 24, false), (6 * 24 + 1, true), (7 * 24 - 1, true)] {
+        let mut rows = vec![router_row(&l)];
+        rows.push(watchdog_row(&l, h, age_h));
+        l.set_sessions(&rows);
+        let out = facts(&l, h);
+        assert!(out.starts_with("Report to r1.\n"), "{out}");
+        assert_eq!(out.contains(warn), warned, "age {age_h}h: {out}");
+    }
+}
+
+/// A WU worktree of the launcher fixture: `wu/E-X/<slug>` cut off epic/E-X by the launcher, with one commit.
+fn wu_worktree(l: &Launcher, slug: &str) -> PathBuf {
+    let (ok, out) = l.run(&["worktree", "add", &format!("wu/E-X/{slug}")]);
+    assert!(ok, "{out}");
+    let p = PathBuf::from(field(&out, "path="));
+    std::fs::write(p.join(format!("{slug}.txt")), "x\n").unwrap();
+    git(&p, &["add", "."]);
+    git(&p, &["commit", "-qm", slug]);
+    p
+}
+
+/// C11 (owner, 2026-11-28: "Watch dog should watch the dead / obsolete worktrees / workers and report to
+/// the router to close"): after the worker blocks the facts carry a Close block - a worker still on a
+/// branch merged into its base, a merged worktree with no worker, a worktree whose directory is gone -
+/// each with the command that closes it; an unmerged or fresh worktree is not named.
+#[test]
+fn watchdog_facts_name_what_the_router_should_close() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    let busy = wu_worktree(&l, "busy");
+    let idle = wu_worktree(&l, "idle");
+    let open = wu_worktree(&l, "open");
+    let gone = wu_worktree(&l, "gone");
+    let (ok, out) = l.run(&["worktree", "add", "wu/E-X/fresh"]);
+    assert!(ok, "{out}");
+    for b in ["busy", "idle"] {
+        git(&l.main, &["checkout", "-q", "epic/E-X"]);
+        git(&l.main, &["merge", "-q", "--no-ff", "-m", b, &format!("wu/E-X/{b}")]);
+        git(&l.main, &["checkout", "-q", "main"]);
+    }
+    std::fs::remove_dir_all(&gone).unwrap();
+    let mut rows = l.sessions();
+    let mut w = worker_row(&l, h, "e-x-busy", &sid(11), serde_json::json!({"status": "busy"}), Some(1), &[]);
+    w["cwd"] = busy.to_str().unwrap().into();
+    rows.push(w);
+    let mut w = worker_row(&l, h, "e-x-open", &sid(12), serde_json::json!({"status": "busy"}), Some(1), &[]);
+    w["cwd"] = open.to_str().unwrap().into();
+    rows.push(w);
+    l.set_sessions(&rows);
+    let out = facts(&l, h);
+    let mut close: Vec<&str> = out.lines().skip_while(|l| *l != "Close:").skip(1).collect();
+    close.sort();
+    let mut want: Vec<String> = vec![
+        "wu/E-X/busy: merged into epic/E-X, worker e-x-busy still runs - stop e-x-busy".to_string(),
+        "wu/E-X/idle: merged into epic/E-X, no worker - worktree remove wu/E-X/idle".to_string(),
+        format!("{}: directory gone - prune", gone.display()),
+    ];
+    want.sort();
+    assert_eq!(close, want.iter().map(String::as_str).collect::<Vec<_>>(), "{out}");
+    assert!(!out.contains("wu/E-X/open:") && !out.contains("wu/E-X/fresh:"), "{out}");
+    assert!(idle.exists());
+    // nothing to close: no Close block at all
+    let l2 = watchdog_launcher();
+    assert!(!facts(&l2, h).contains("Close:"));
+}
+
+/// C10 (owner, 2026-11-28; Q3 ruled: leftovers only): prune clears what dead workers and removed worktrees
+/// leave - git's record of a worktree whose directory is gone, the brief copies of sessions no longer
+/// listed, and launch locks older than 10 minutes - and keeps a live worker's brief, a fresh lock, every
+/// worktree directory and every branch.
+#[test]
+fn prune_clears_only_the_leftovers_of_gone_workers_and_worktrees() {
+    let l = launcher();
+    let brief = ".router/briefs/b.md";
+    assert!(l.run(&["spawn", "gone", l.wt.to_str().unwrap(), brief, "opus"]).0);
+    assert!(l.run(&["spawn", "live", l.wt2.to_str().unwrap(), brief, "opus"]).0);
+    let rows: Vec<serde_json::Value> = l.sessions().into_iter().filter(|r| r["name"] != "gone").collect();
+    l.set_sessions(&rows);
+    assert_eq!((brief_copies(&l.wt).len(), brief_copies(&l.wt2).len()), (1, 1));
+    git(&l.main, &["worktree", "add", "-q", "../wt3", "-b", "w3"]);
+    let wt3 = l.main.parent().unwrap().join("wt3");
+    std::fs::remove_dir_all(&wt3).unwrap();
+    let runs = l.main.join(".router/runs");
+    let (old, fresh) = (runs.join(".lock-old"), runs.join(".lock-fresh"));
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::create_dir_all(&fresh).unwrap();
+    std::fs::File::open(&old).unwrap().set_modified(std::time::SystemTime::now() - Duration::from_secs(11 * 60)).unwrap();
+
+    let (ok, out) = l.run(&["prune"]);
+    assert!(ok, "{out}");
+    assert_eq!(out, "PRUNED worktrees=1 briefs=1 locks=1\n");
+    assert!(brief_copies(&l.wt).is_empty() && brief_copies(&l.wt2).len() == 1, "{out}");
+    assert!(!old.exists() && fresh.exists());
+    let listed = String::from_utf8(git(&l.main, &["worktree", "list", "--porcelain"]).stdout).unwrap();
+    assert!(!listed.contains("wt3") && listed.contains(l.wt.to_str().unwrap()), "{listed}");
+    assert!(git(&l.main, &["show-ref", "--verify", "-q", "refs/heads/w3"]).status.success(), "prune deleted a branch");
+    assert!(calls(&l.state).iter().all(|(_, c)| c[0] != "stop" && c[0] != "rm"), "prune stopped a session");
+
+    let (ok, out) = l.run(&["prune"]);
+    assert!(ok && out == "PRUNED worktrees=0 briefs=0 locks=0\n", "{out}");
+    let (ok, out) = l.run(&["prune", "x"]);
+    assert!(!ok && out.contains("prune takes no argument"), "{out}");
+}
+
+// ---- E-WSANDBOX.W5: resume a stopped worker by name, read the fleet's context and cache, one reuse rule ----
+
+/// The transcript Claude Code keeps for session `sid` of a worker run in `wt` (the project dir is the
+/// path with every character but a letter or a digit made `-`), under the launcher's HOME.
+fn transcript_path(l: &Launcher, wt: &Path, sid: &str) -> PathBuf {
+    let slug: String = wt.to_str().unwrap().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+    l.state.join("home/.claude/projects").join(slug).join(format!("{sid}.jsonl"))
+}
+
+fn write_transcript(l: &Launcher, wt: &Path, sid: &str, lines: &[String]) {
+    let t = transcript_path(l, wt, sid);
+    std::fs::create_dir_all(t.parent().unwrap()).unwrap();
+    std::fs::write(t, lines.join("\n") + "\n").unwrap();
+}
+
+/// One assistant record as a transcript holds it: its usage (input, cache write labelled by its
+/// lifetime, cache read) and its timestamp.
+fn usage(ts: &str, input: u64, write: u64, read: u64, ttl: &str, sidechain: bool) -> String {
+    let (h, m) = if ttl == "1h" { (write, 0) } else { (0, write) };
+    serde_json::json!({"type": "assistant", "isSidechain": sidechain, "timestamp": ts, "message": {"role": "assistant",
+        "content": [{"type": "text", "text": "ok"}],
+        "usage": {"input_tokens": input, "cache_creation_input_tokens": write, "cache_read_input_tokens": read, "output_tokens": 7,
+            "cache_creation": {"ephemeral_1h_input_tokens": h, "ephemeral_5m_input_tokens": m}}}})
+    .to_string()
+}
+
+fn user_line(ts: &str) -> String {
+    serde_json::json!({"type": "user", "isSidechain": false, "timestamp": ts, "message": {"role": "user", "content": "go"}}).to_string()
+}
+
+/// The argv of the latest background session started under `name`.
+fn bg_argv(state: &Path, name: &str) -> Vec<String> {
+    calls(state)
+        .into_iter()
+        .rfind(|(_, a)| a[0] == "--bg" && a.windows(2).any(|w| w[0] == "-n" && w[1] == name))
+        .unwrap_or_else(|| panic!("no session started for {name}"))
+        .1
+}
+
+/// Spawn `name` in `wt` with `extra`, stop it, and leave it a transcript: its session id and spawn argv.
+fn spawn_and_stop(l: &Launcher, name: &str, wt: &Path, extra: &[&str]) -> (String, Vec<String>) {
+    let mut args = vec!["spawn", name, wt.to_str().unwrap(), ".router/briefs/b.md", "opus"];
+    args.extend(extra);
+    let (ok, out) = l.run(&args);
+    assert!(ok, "{out}");
+    let sid = field(&out, "session=").to_string();
+    let argv = bg_argv(&l.state, name);
+    l.stop(name);
+    write_transcript(l, wt, &sid, &[user_line("2027-01-15T07:00:00Z"), usage("2027-01-15T07:00:05Z", 3, 30000, 0, "1h", false)]);
+    (sid, argv)
+}
+
+/// The run dirs recorded under exactly `name` whose mode is `mode`.
+fn runs_of(l: &Launcher, name: &str, mode: &str) -> Vec<PathBuf> {
+    let re = regex::Regex::new(&format!(r"^{}-[0-9]{{14}}-[0-9]+-{mode}$", regex::escape(name))).unwrap();
+    std::fs::read_dir(l.main.join(".router/runs"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| re.is_match(p.file_name().unwrap().to_str().unwrap()))
+        .collect()
+}
+
+/// The main checkout's committed config with `edit` applied to its text, as the launcher's new HEAD.
+fn commit_edited_config(l: &Launcher, edit: impl Fn(String) -> String) -> String {
+    let before = std::fs::read_to_string(l.main.join(".keel/config.toml")).unwrap();
+    l.commit_config(Some(&edit(before.clone())));
+    before
+}
+
+/// E-WSANDBOX.W5 (owner request 2026-11-26): `resume <name>` brings back the last stopped session of
+/// that name with the argv a spawn of it builds now - the one flag builder - plus `--resume <its id>`
+/// before the mode, and a fixed resume prompt last. A review run comes back with its review grant (the
+/// owner's comment 2026-11-28: not resuming a reviewer is an instruction, not a check). The resume has
+/// a run dir of its own holding the session, and stop cleans its brief copy as it cleans a spawn's.
+#[test]
+fn resume_rebuilds_the_spawn_argv_and_adds_only_the_recorded_session() {
+    let l = launcher();
+    for (name, extra) in [("r1", vec![]), ("r2", vec!["--role", "planner"]), ("r3", vec!["--permission-mode", "plan"]), ("r4", vec!["--review"])] {
+        let (sid, spawned) = spawn_and_stop(&l, name, &l.wt, &extra);
+        let (ok, out) = l.run(&["resume", name]);
+        assert!(ok && out.starts_with(&format!("RESUMED name={name} ")), "{out}");
+        assert_eq!(field(&out, "session="), sid, "{out}");
+        assert_eq!(field(&out, "worktree="), l.wt.to_str().unwrap());
+        let resumed = bg_argv(&l.state, name);
+        let i = resumed.iter().position(|x| x == "--resume").unwrap_or_else(|| panic!("{name}: no --resume in {resumed:?}"));
+        assert_eq!(resumed[i + 1], sid);
+        assert_eq!(resumed[resumed.len() - 3], "--permission-mode", "{name}: the prompt must follow the mode: {resumed:?}");
+        let mut rebuilt = resumed.clone();
+        rebuilt.drain(i..i + 2);
+        assert_eq!(rebuilt[..rebuilt.len() - 1], spawned[..spawned.len() - 1], "{name}: a resume rebuilds the spawn's flags");
+        let prompt = resumed.last().unwrap();
+        assert!(prompt.starts_with("You are resumed by the launcher after a stop. Read "), "{prompt}");
+        assert!(prompt.contains(&format!("git rev-parse --show-toplevel must print {}", l.wt.to_str().unwrap())), "{prompt}");
+        let copy = field(&out, "brief=");
+        assert!(copy.starts_with(l.wt.to_str().unwrap()) && prompt.contains(copy), "{out}");
+        assert_eq!(std::fs::read_to_string(copy).unwrap(), "do the thing\n");
+        let dirs = runs_of(&l, name, "resume");
+        assert_eq!(dirs.len(), 1, "{name}: {dirs:?}");
+        assert_eq!(std::fs::read_to_string(dirs[0].join("session")).unwrap().trim(), sid);
+        assert_eq!(std::fs::read_to_string(dirs[0].join("model")).unwrap().trim(), "opus");
+        assert_eq!(std::fs::read_to_string(runs_of(&l, name, "spawn")[0].join("model")).unwrap().trim(), "opus");
+        assert_eq!(l.starts(name), 2, "{name}");
+        l.stop(name);
+    }
+    assert!(brief_copies(&l.wt).is_empty(), "stop left a resumed worker's brief copy: {:?}", brief_copies(&l.wt));
+    // a second resume takes the newest run, the resume's own
+    let (ok, out) = l.run(&["resume", "r1"]);
+    assert!(ok && out.starts_with("RESUMED name=r1 "), "{out}");
+    assert_eq!(runs_of(&l, "r1", "resume").len(), 2);
+}
+
+/// E-WSANDBOX.W5: every refusal comes before any start - the shape, no run of exactly that name (w5
+/// never takes w5-fix's), a live session, no transcript, a changed brief snapshot, an effort or mode
+/// the committed policy no longer admits, a worktree off the run's branch, and no persona.
+#[test]
+fn resume_refuses_what_it_cannot_rebuild_before_any_start() {
+    let l = launcher();
+    let refused = |args: &[&str], why: &str| {
+        let before = calls(&l.state).iter().filter(|(_, a)| a[0] == "--bg").count();
+        let (ok, out) = l.run(args);
+        assert!(!ok && out.contains(why), "{args:?}: expected {why:?} in {out}");
+        assert_eq!(calls(&l.state).iter().filter(|(_, a)| a[0] == "--bg").count(), before, "{args:?} started a session");
+    };
+    refused(&["resume"], "resume <name>");
+    refused(&["resume", "r1", "x"], "resume <name>");
+    refused(&["resume", "R1"], "bad name");
+    refused(&["resume", "watchdog-r"], "reserved for the watchdog");
+    refused(&["resume", "r1"], "no stopped run of r1");
+
+    assert!(l.run(&["spawn", "p-fix", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
+    l.stop("p-fix");
+    refused(&["resume", "p"], "no stopped run of p");
+
+    assert!(l.run(&["spawn", "r1", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
+    refused(&["resume", "r1"], "worker r1 is still running");
+    l.stop("r1");
+    refused(&["resume", "r1"], "no transcript");
+
+    spawn_and_stop(&l, "b1", &l.wt, &[]);
+    let snap = runs_of(&l, "b1", "spawn")[0].clone();
+    std::fs::set_permissions(&snap, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(snap.join("brief.md"), std::os::unix::fs::PermissionsExt::from_mode(0o644)).unwrap();
+    std::fs::write(snap.join("brief.md"), "do another thing\n").unwrap();
+    refused(&["resume", "b1"], "no longer matches its sha256");
+
+    spawn_and_stop(&l, "e1", &l.wt, &[]);
+    let kept = commit_edited_config(&l, |c| {
+        c.replace("worker_efforts = [\"low\", \"high\"]", "worker_efforts = [\"high\"]")
+            .replace("worker_default_effort = \"low\"", "worker_default_effort = \"high\"")
+    });
+    refused(&["resume", "e1"], "effort must be one of: high ([router] worker_efforts in .keel/config.toml): spawn a fresh worker");
+    l.commit_config(Some(&kept));
+
+    spawn_and_stop(&l, "m1", &l.wt, &[]);
+    let kept = commit_edited_config(&l, |c| c.replace("worker_permission_mode = \"auto\"", "worker_permission_mode = \"plan\""));
+    refused(
+        &["resume", "m1"],
+        "permission mode auto is wider than the policy's plan ([router] worker_permission_mode in .keel/config.toml): spawn a fresh worker",
+    );
+    l.commit_config(Some(&kept));
+
+    spawn_and_stop(&l, "g1", &l.wt2, &[]);
+    git(&l.wt2, &["checkout", "-q", "-b", "other"]);
+    refused(&["resume", "g1"], "on other, not the run's w2");
+    git(&l.wt2, &["checkout", "-q", "w2"]);
+
+    spawn_and_stop(&l, "q1", &l.wt2, &[]);
+    std::fs::remove_file(l.wt2.join(".claude/agents/worker.md")).unwrap();
+    refused(&["resume", "q1"], "no worker persona");
+    git(&l.wt2, &["checkout", "-q", "--", ".claude/agents/worker.md"]);
+    let (ok, out) = l.run(&["resume", "q1"]);
+    assert!(ok && out.starts_with("RESUMED name=q1 "), "{out}");
+}
+
+/// E-WSANDBOX close, review round 1 finding 4: a transcript the launcher cannot read is named
+/// usage=unreadable, never usage=none (the word for a worker before its first real answer), so the
+/// reuse rule refuses to judge that worker instead of taking it for a fresh, empty one.
+#[test]
+fn status_names_a_transcript_it_cannot_read() {
+    let l = launcher();
+    let (ok, out) = l.run(&["spawn", "a", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+    assert!(ok, "{out}");
+    let sid = field(&out, "session=").to_string();
+    write_transcript(&l, &l.wt, &sid, &[usage("2027-01-15T07:00:00Z", 1, 1000, 0, "5m", false)]);
+    let path = transcript_path(&l, &l.wt, &sid);
+    std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o000)).unwrap();
+    let (ok, out) = l.run_env(&["status", "a"], &[("ROUTER_NOW", "1800000000")]);
+    let _ = std::fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o644));
+    assert!(ok, "{out}");
+    assert!(out.contains("usage=unreadable"), "an unreadable transcript was not named: {out}");
+}
+
+/// E-WSANDBOX.W5 (owner rulings 2026-11-26, rule 4): `status` reads each worker's context and cache
+/// state from its transcript's assistant usage records and timestamps alone, newest run first: context
+/// is the last record's input + cache write + cache read, the peak the largest, idle the minutes since
+/// the last record, the lifetime that of the newest cache write (1h or 5m), warm while idle is under
+/// it, and whether the context fits the ceiling for that state. A sidechain record is not the
+/// worker's context. The clock is ROUTER_NOW (2027-01-15T08:00:00Z here).
+#[test]
+fn status_reads_context_and_cache_from_usage_records_at_a_fixed_clock() {
+    let l = launcher();
+    let now = [("ROUTER_NOW", "1800000000")];
+    let spawn = |name: &str| {
+        let (ok, out) = l.run(&["spawn", name, l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+        assert!(ok, "{out}");
+        field(&out, "session=").to_string()
+    };
+    let a = spawn("a");
+    write_transcript(
+        &l,
+        &l.wt,
+        &a,
+        &[
+            user_line("2027-01-15T06:29:00Z"),
+            usage("2027-01-15T06:30:00.250Z", 3, 20000, 0, "1h", false),
+            usage("2027-01-15T07:00:00Z", 1, 900000, 0, "5m", true),
+            usage("2027-01-15T07:30:00Z", 2, 1000, 150000, "1h", false),
+            user_line("2027-01-15T07:31:00Z"),
+        ],
+    );
+    let b = spawn("b");
+    l.stop("b");
+    write_transcript(&l, &l.wt, &b, &[usage("2027-01-15T07:10:00Z", 5, 260000, 0, "5m", false), usage("2027-01-15T07:50:00Z", 0, 0, 250000, "5m", false)]);
+    let c = spawn("c");
+    l.stop("c");
+    let d = spawn("d");
+    write_transcript(&l, &l.wt, &d, &[user_line("2027-01-15T07:59:00Z")]);
+
+    let want = [
+        format!("STATUS name=d state=idle session={d} usage=none"),
+        format!("STATUS name=c state=stopped session={c} transcript=none"),
+        format!("STATUS name=b state=stopped session={b} context=250000 peak=260005 idle=10m cache=cold ttl=5m cold-max=200000 warm-max=400000 fits=no"),
+        format!("STATUS name=a state=idle session={a} context=151002 peak=151002 idle=30m cache=warm ttl=1h cold-max=200000 warm-max=400000 fits=yes"),
+    ];
+    // newest run first, by the run dir's second; these four may share one, so the lines are compared as a set
+    let (ok, out) = l.run_env(&["status"], &now);
+    assert!(ok, "{out}");
+    let mut got: Vec<&str> = out.lines().collect();
+    got.sort();
+    let mut sorted: Vec<&str> = want.iter().map(String::as_str).collect();
+    sorted.sort();
+    assert_eq!(got, sorted, "{out}");
+    // status is read-only: it starts, stops and removes nothing
+    assert!(calls(&l.state).iter().rev().take_while(|(_, a)| a[0] != "--bg" && a[0] != "stop").all(|(_, a)| a[0] == "agents"));
+    let (ok, out) = l.run_env(&["status", "a"], &now);
+    assert!(ok, "{out}");
+    assert_eq!(out.lines().collect::<Vec<_>>(), [want[3].as_str()]);
+    // a 1h write still warm at 59 minutes, cold at 60
+    for (clock, cache) in [("1800001740", "cache=warm"), ("1800001800", "cache=cold")] {
+        let (ok, out) = l.run_env(&["status", "a"], &[("ROUTER_NOW", clock)]);
+        assert!(ok && out.contains(cache), "{clock}: {out}");
+    }
+    let (ok, out) = l.run_env(&["status", "x"], &now);
+    assert!(!ok && out.contains("no recorded run of x"), "{out}");
+    for args in [vec!["status", "a", "b"], vec!["status", "A"]] {
+        assert!(!l.run_env(&args, &now).0, "{args:?}");
+    }
+    let (ok, out) = l.run_env(&["status"], &[("ROUTER_NOW", "soon")]);
+    assert!(!ok && out.contains("ROUTER_NOW"), "{out}");
+    // status needs the ceilings; spawn does not
+    commit_edited_config(&l, |c| c.lines().filter(|x| !x.starts_with("reuse_max_context_")).collect::<Vec<_>>().join("\n") + "\n");
+    let (ok, out) = l.run_env(&["status"], &now);
+    assert!(!ok && out.contains("reuse_max_context_cold"), "{out}");
+    assert!(l.run(&["spawn", "e", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
+}
+
+/// E-WSANDBOX.W5 (open question 2, default): the two reuse ceilings are `[router]` keys of digits,
+/// given together, the warm one not below the cold one; anything else refuses the whole policy, as the
+/// reader does for every other key.
+#[test]
+fn the_reuse_ceilings_are_two_digit_keys_given_together_warm_not_below_cold() {
+    let l = launcher();
+    let spawn = |name: &str| l.run(&["spawn", name, l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+    let base = std::fs::read_to_string(l.main.join(".keel/config.toml")).unwrap();
+    assert!(base.contains("reuse_max_context_cold = 200000\nreuse_max_context_warm = 400000\n"), "the fixture lacks the ceilings");
+    let without = base.replace("reuse_max_context_cold = 200000\nreuse_max_context_warm = 400000\n", "");
+    l.commit_config(Some(&without));
+    let (ok, out) = spawn("s0");
+    assert!(ok, "spawn needs no ceilings: {out}");
+    for (i, bad) in [
+        "reuse_max_context_cold = 200000\nreuse_max_context_cold = 200000\nreuse_max_context_warm = 400000\n",
+        "reuse_max_context_cold = \"200000\"\nreuse_max_context_warm = 400000\n",
+        "reuse_max_context_cold = 0\nreuse_max_context_warm = 400000\n",
+        "reuse_max_context_cold = 0200000\nreuse_max_context_warm = 400000\n",
+        "reuse_max_context_cold = 200000\nreuse_max_context_warm = 100000\n",
+        "reuse_max_context_cold = 200000\n",
+        "reuse_max_context_warm = 400000\n",
+        "reuse_max_context_cold = 2e5\nreuse_max_context_warm = 400000\n",
+    ]
+    .iter()
+    .enumerate()
+    {
+        l.commit_config(Some(&base.replace("reuse_max_context_cold = 200000\nreuse_max_context_warm = 400000\n", bad)));
+        let (ok, out) = spawn(&format!("s{}", i + 1));
+        assert!(!ok && out.contains("no worker policy"), "{bad:?}: {out}");
+    }
+    l.commit_config(Some(&base.replace("reuse_max_context_warm = 400000", "reuse_max_context_warm = 200000")));
+    assert!(spawn("s9").0, "warm equal to cold is admitted");
+}
+
+/// E-WSANDBOX.W5: the router may resume a worker and read status by name, in plain words, and nothing
+/// wider: no session id, path, second name, option, quote or separator.
+#[test]
+fn router_guard_admits_resume_and_status_by_name_alone() {
+    for ok in [
+        "scripts/router-worker.sh resume w1",
+        "scripts/router-worker.sh resume e-wsandbox-w5-build",
+        "scripts/router-worker.sh status",
+        "scripts/router-worker.sh status w1",
+    ] {
+        assert_eq!(bash(ok), None, "guard denied {ok:?}");
+    }
+    for no in [
+        "scripts/router-worker.sh resume",
+        "scripts/router-worker.sh resume w1 0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b",
+        "scripts/router-worker.sh resume ../w1",
+        "scripts/router-worker.sh resume W1",
+        "scripts/router-worker.sh resume -w1",
+        "scripts/router-worker.sh resume w1 --effort high",
+        "scripts/router-worker.sh resume \"w1\"",
+        "scripts/router-worker.sh resume w1; kill 1",
+        "scripts/router-worker.sh status w1 w2",
+        "scripts/router-worker.sh status --all",
+        "scripts/router-worker.sh status /tmp/x",
+        "scripts/router-worker.sh statusx",
+        "ROUTER_NOW=1 scripts/router-worker.sh status",
+    ] {
+        assert!(bash(no).is_some(), "guard allowed {no:?}");
+    }
+}
+
+/// E-WSANDBOX.W5 (owner rulings 2026-11-26 and the plan's rulings of 2026-11-28): the reuse rules are
+/// stated once, in the keel-router skill, by the ceiling keys and never their numbers; a fix goes to
+/// its author under the ceiling and fresh past it unless the owner says otherwise; not resuming a
+/// reviewer is an instruction; the old 'fresh worker' fix row is gone; project-router and router.md
+/// name the two new shapes; worker-ops names what status prints.
+#[test]
+fn the_reuse_rules_are_stated_once_by_their_keys() {
+    let read = |p: &str| std::fs::read_to_string(root().join(p)).unwrap();
+    for f in ["SKILL.md", "references/worker-ops.md", "references/checklists.md"] {
+        assert_eq!(read(&format!("skills/keel-router/{f}")), read(&format!(".claude/skills/keel-router/{f}")), "the two keel-router copies of {f} differ");
+    }
+    let skill = read("skills/keel-router/SKILL.md");
+    let flat = skill.split_whitespace().collect::<Vec<_>>().join(" ");
+    for said in [
+        "reuse_max_context_cold",
+        "reuse_max_context_warm",
+        "<launcher> resume <name>",
+        "<launcher> status",
+        "do not resume a reviewer",
+        "unless the owner says otherwise",
+    ] {
+        assert!(flat.contains(said), "keel-router SKILL.md does not state {said:?}");
+    }
+    assert!(!flat.contains("fix round (fresh worker, new tip, re-gate)"), "the review table still sends every fix fresh");
+    let numbers = regex::Regex::new(r"\b(200000|400000|200,000|400,000|200k|400k)\b").unwrap();
+    for doc in [
+        "skills/keel-router/SKILL.md",
+        "skills/keel-router/references/worker-ops.md",
+        "skills/keel-router/references/checklists.md",
+        ".claude/skills/project-router/SKILL.md",
+    ] {
+        let text = read(doc);
+        assert!(!numbers.is_match(&text), "{doc} writes a ceiling instead of its key: {:?}", numbers.find(&text));
+    }
+    assert!(read("skills/keel-router/references/checklists.md").contains("reuse rule"), "checklists do not point at the reuse rule");
+    let ops = read("skills/keel-router/references/worker-ops.md");
+    for said in ["STATUS name=", "RESUMED name=", "fits="] {
+        assert!(ops.contains(said), "worker-ops does not name {said:?}");
+    }
+    let project_router = read(".claude/skills/project-router/SKILL.md");
+    for said in ["scripts/router-worker.sh resume <name>", "scripts/router-worker.sh status"] {
+        assert!(project_router.contains(said), "project-router does not name {said:?}");
+    }
+    // E-WSANDBOX.W7 G2 (owner, 2026-11-28): router.md lists no shapes and points to the guard and UC-ROUTE-6,
+    // so resume and status are pinned in UC-ROUTE-6
+    let uc = read("docs/use-cases/router.yaml").split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(uc.contains("`resume <name>`") && uc.contains("`status [<name>]`"), "UC-ROUTE-6 omits resume or status");
+}
+
+/// E-WSANDBOX.W5 review round 1 (blocker): Claude Code writes a synthetic assistant record for an API
+/// error (model `<synthetic>`, `isApiErrorMessage`, all-zero usage); it is not the worker's context, so
+/// status reads the last real record.
+#[test]
+fn status_skips_synthetic_api_error_records() {
+    let l = launcher();
+    let now = [("ROUTER_NOW", "1800000000")];
+    let (ok, out) = l.run(&["spawn", "f", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+    assert!(ok, "{out}");
+    let f = field(&out, "session=").to_string();
+    let synthetic = |ts: &str| {
+        serde_json::json!({"type": "assistant", "isSidechain": false, "isApiErrorMessage": true, "timestamp": ts,
+            "message": {"model": "<synthetic>", "role": "assistant", "content": [{"type": "text", "text": "API Error: 429 rate_limit"}],
+                "usage": {"input_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 0}}})
+        .to_string()
+    };
+    write_transcript(&l, &l.wt, &f, &[usage("2027-01-15T07:30:00Z", 2, 1000, 180000, "1h", false), synthetic("2027-01-15T07:58:00Z")]);
+    let (ok, out) = l.run_env(&["status", "f"], &now);
+    assert!(ok, "{out}");
+    assert_eq!(
+        out.trim_end(),
+        format!("STATUS name=f state=idle session={f} context=181002 peak=181002 idle=30m cache=warm ttl=1h cold-max=200000 warm-max=400000 fits=yes")
+    );
+    write_transcript(&l, &l.wt, &f, &[synthetic("2027-01-15T07:58:00Z")]);
+    let (ok, out) = l.run_env(&["status", "f"], &now);
+    assert!(ok && out.trim_end().ends_with(&format!("session={f} usage=none")), "{out}");
+}
+
+/// E-WSANDBOX.W5 review round 1: resume and status find a session's transcript by its id in any project
+/// dir, as the watchdog does (no re-encoding of the worktree path); and a run dir missing one of its files is refused by that file's
+/// name, before any start (each record is read on its own line, so set -e stops on the first missing).
+#[test]
+fn resume_finds_the_transcript_by_session_id_and_names_a_missing_run_file() {
+    let l = launcher();
+    assert!(l.run(&["spawn", "s1", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
+    let sid = field(&l.run(&["status", "s1"]).1, "session=").to_string();
+    l.stop("s1");
+    let dir = l.state.join("home/.claude/projects/-p");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(format!("{sid}.jsonl")), usage("2027-01-15T07:00:05Z", 3, 30000, 0, "1h", false) + "\n").unwrap();
+    let (ok, out) = l.run_env(&["status", "s1"], &[("ROUTER_NOW", "1800000000")]);
+    assert!(ok && out.contains(&format!("session={sid} context=30003 ")), "status reads the transcript in any project dir: {out}");
+    let (ok, out) = l.run(&["resume", "s1"]);
+    assert!(ok && out.starts_with("RESUMED name=s1 "), "{out}");
+    l.stop("s1");
+
+    let before = l.starts("s1");
+    let run = runs_of(&l, "s1", "resume")[0].clone();
+    std::fs::set_permissions(&run, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    std::fs::remove_file(run.join("effort")).unwrap();
+    let (ok, out) = l.run(&["resume", "s1"]);
+    assert!(!ok && out.contains("lacks its effort file"), "{out}");
+    assert_eq!(l.starts("s1"), before);
+}
+
+/// E-WSANDBOX.W5 review round 1: the guard's resume and status shapes repeat the launcher's one name
+/// rule (valid_name); this ties the two, so a change to either fails here.
+#[test]
+fn the_guards_worker_name_is_the_launchers_name_rule() {
+    let launcher = std::fs::read_to_string(root().join("scripts/router-worker.sh")).unwrap();
+    let guard = std::fs::read_to_string(root().join("scripts/router-guard.jq")).unwrap();
+    let rule = regex::Regex::new(r"(?m)^name_ok\(\) \{ expr .\$1. : '\^(.+)\$' >/dev/null; \}$").unwrap();
+    let rule = rule.captures(&launcher).expect("the launcher's name_ok rule")[1].replace(r"\{", "{").replace(r"\}", "}");
+    for shape in ["resume ", "status( "] {
+        let at = guard.find(&format!("scripts/router-worker\\\\.sh {shape}")).unwrap_or_else(|| panic!("no {shape} shape in the guard"));
+        let tail = &guard[at + "scripts/router-worker\\\\.sh ".len() + shape.len()..];
+        assert!(tail.starts_with(&rule), "the guard's {shape:?} name is not the launcher's rule {rule:?}: {}", &tail[..60]);
+    }
+}
+
+/// E-WSANDBOX.W5 independent review round 1: no text sends an unlisted or stopped worker straight to a
+/// fresh one past "Reuse or fresh" (the WAKE step, the retire rule, lesson C13); rule 4 names every
+/// refusal; worker-ops documents status's state word, the skipped synthetic record, usage=unreadable,
+/// and resume's limits (a run with no session, a crashed worker still listed: R56).
+#[test]
+fn an_unlisted_or_stopped_worker_goes_through_reuse_or_fresh() {
+    let read = |p: &str| std::fs::read_to_string(root().join(p)).unwrap();
+    let flat = |p: &str| read(p).split_whitespace().collect::<Vec<_>>().join(" ");
+    let ops = flat("skills/keel-router/references/worker-ops.md");
+    assert!(ops.contains("not listed unasked → SKILL.md \"Reuse or fresh\""), "worker-ops' WAKE step bypasses the reuse rule");
+    for said in ["usage=unreadable", "synthetic API-error record", "a blocked one such as `waiting`", "records none", "R56"] {
+        assert!(ops.contains(said), "worker-ops does not document {said:?}");
+    }
+    let skill = flat("skills/keel-router/SKILL.md");
+    assert!(!skill.contains("Never stop uncommitted work; hand it to a fresh worker"), "SKILL.md's retire rule bypasses the reuse rule");
+    assert!(skill.contains("comes back by \"Reuse or fresh\""), "SKILL.md's retire rule does not point at the reuse rule");
+    assert!(skill.contains("unlinked or without the worker persona, a model, effort or mode"), "rule 4 omits a refusal");
+    let lessons = flat("skills/keel-router/references/lessons.md");
+    assert!(!lessons.contains("spawns a fresh one for an unlisted one"), "lesson C13 bypasses the reuse rule");
+    assert!(lessons.contains("\"Reuse or fresh\""), "lesson C13 does not point at the reuse rule");
+}
+
+// ---- E-WSANDBOX.W7 review round 1 (cr FAIL: 2 blockers, 2 importants; independent review HIGH) ----
+
+/// Blocker :370: only the branch's own --no-ff merge into its base counts as merged (DEC-45). A fresh
+/// branch cut at the epic tip T is a parent of a sibling's back-merge X(sib, T), which lies on T..epic
+/// once the epic merges the sibling as Y(T, X); it is not merged, and its live worker is never told to stop.
+#[test]
+fn watchdog_close_ignores_a_fresh_branch_a_sibling_back_merged() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    let sib = wu_worktree(&l, "sib");
+    wu_worktree(&l, "done");
+    let into_epic = |b: &str| {
+        git(&l.main, &["checkout", "-q", "epic/E-X"]);
+        git(&l.main, &["merge", "-q", "--no-ff", "-m", b, &format!("wu/E-X/{b}")]);
+        git(&l.main, &["checkout", "-q", "main"]);
+    };
+    into_epic("done");
+    let (ok, out) = l.run(&["worktree", "add", "wu/E-X/fresh"]);
+    assert!(ok, "{out}");
+    let fresh = PathBuf::from(field(&out, "path="));
+    git(&sib, &["merge", "-q", "--no-ff", "-m", "back-merge the epic", "epic/E-X"]);
+    into_epic("sib");
+    let mut rows = l.sessions();
+    let mut w = worker_row(&l, h, "e-x-fresh", &sid(21), serde_json::json!({"status": "busy"}), Some(1), &[]);
+    w["cwd"] = fresh.to_str().unwrap().into();
+    rows.push(w);
+    l.set_sessions(&rows);
+    let out = facts(&l, h);
+    let mut close: Vec<&str> = out.lines().skip_while(|l| *l != "Close:").skip(1).collect();
+    close.sort();
+    assert_eq!(
+        close,
+        [
+            "wu/E-X/done: merged into epic/E-X, no worker - worktree remove wu/E-X/done",
+            "wu/E-X/sib: merged into epic/E-X, no worker - worktree remove wu/E-X/sib"
+        ],
+        "{out}"
+    );
+    assert!(!out.contains("wu/E-X/fresh:") && !out.contains("stop e-x-fresh"), "a fresh branch read as merged: {out}");
+}
+
+/// Blocker :646: prune reads the run dirs once. With every run dir's session gone it costs one pass, not
+/// a walk of every run dir per session (about D squared forks: minutes on a real router's 563 run dirs).
+#[test]
+fn prune_reads_the_run_dirs_once() {
+    let l = launcher();
+    let runs = l.main.join(".router/runs");
+    let n = 120;
+    for i in 0..n {
+        let r = runs.join(format!("w{i}-20261128000000-{i}-spawn"));
+        std::fs::create_dir_all(&r).unwrap();
+        let copy = l.wt.join(format!(".router-brief.a{i:05}"));
+        std::fs::create_dir_all(&copy).unwrap();
+        std::fs::write(r.join("session"), format!("{}\n", sid(1000 + i))).unwrap();
+        std::fs::write(r.join("name"), format!("w{i}\n")).unwrap();
+        std::fs::write(r.join("worktree"), format!("{}\n", l.wt.display())).unwrap();
+        std::fs::write(r.join("brief-copy"), format!("{}\n", copy.display())).unwrap();
+    }
+    let t0 = Instant::now();
+    let (ok, out) = l.run(&["prune"]);
+    let took = t0.elapsed();
+    assert!(ok && out == format!("PRUNED worktrees=0 briefs={n} locks=0\n"), "{out}");
+    assert!(brief_copies(&l.wt).is_empty());
+    assert!(took < Duration::from_secs(15), "prune took {took:?} over {n} run dirs");
+}
+
+/// Important :649: a session list prune cannot read (not an array, a banner before it) stops prune before
+/// it cleans anything, as every other mode stops (nolist); it never reads as "no session listed".
+#[test]
+fn prune_stops_on_a_session_list_it_cannot_read() {
+    let l = launcher();
+    assert!(l.run(&["spawn", "live", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
+    let rows = std::fs::read_to_string(l.state.join("sessions.json")).unwrap();
+    for bad in ["{\"error\": \"supervisor down\"}".to_string(), format!("Claude Code is updating\n{rows}")] {
+        std::fs::write(l.state.join("sessions.json"), &bad).unwrap();
+        let (ok, out) = l.run(&["prune"]);
+        assert!(!ok && out.contains("cannot list sessions"), "{bad}: {out}");
+        assert_eq!(brief_copies(&l.wt).len(), 1, "{bad}: prune deleted a live worker's brief");
+    }
+}
+
+/// Important :642: prune globs the run dirs before it reads the session list, so a worker that starts and
+/// seals its run dir right after the list was read is not taken for a gone one.
+#[test]
+fn prune_never_takes_a_worker_started_after_its_list_for_a_gone_one() {
+    let l = launcher();
+    let r = l.main.join(".router/runs/late-20261128000000-1-spawn");
+    let copy = l.wt.join(".router-brief.late01");
+    let s = sid(77);
+    let script = format!(
+        "mkdir -p '{r}' '{copy}'\nprintf '%s\\n' '{s}' > '{r}/session'\nprintf '%s\\n' late > '{r}/name'\nprintf '%s\\n' '{wt}' > '{r}/worktree'\nprintf '%s\\n' '{copy}' > '{r}/brief-copy'\njq --arg s '{s}' --arg c '{wt}' '. + [{{id: \"late0\", sessionId: $s, name: \"late\", cwd: $c, kind: \"background\", status: \"busy\"}}]' \"$STUB_STATE/sessions.json\" > \"$STUB_STATE/s.tmp\" && mv \"$STUB_STATE/s.tmp\" \"$STUB_STATE/sessions.json\"\n",
+        r = r.display(),
+        copy = copy.display(),
+        wt = l.wt.display()
+    );
+    std::fs::write(l.state.join("after-agents"), script).unwrap();
+    let (ok, out) = l.run(&["prune"]);
+    assert!(ok, "{out}");
+    assert!(!l.state.join("after-agents").exists(), "the stub never listed sessions");
+    assert!(r.join("session").exists() && copy.is_dir(), "prune deleted the brief of a worker that started after its list: {out}");
+}
+
+/// Independent review HIGH: a worker listed only as `state: working` is busy (as the watchdog reads it),
+/// so stop gives it the busy wait and then leaves it to the owner (Q2, owner 2026-11-28); C9 stops only a
+/// dead worker.
+#[test]
+fn stop_holds_a_worker_listed_only_as_working() {
+    let l = launcher();
+    let wt = l.wt.to_str().unwrap();
+    l.set_sessions(&[serde_json::json!({"id": "w0", "sessionId": "w0-x", "name": "w", "cwd": wt, "kind": "background", "state": "working"})]);
+    let path = l.fast_path();
+    let (ok, out) = l.run_env(&["stop", "w"], &[("PATH", &path)]);
+    assert!(!ok && out.contains("worker w is still busy: stopping it would cut its turn; the owner decides (claude stop w0)"), "{out}");
+    assert!(calls(&l.state).iter().all(|(_, c)| c[0] == "agents"), "stop closed a working worker");
 }

@@ -3,8 +3,9 @@
 title: "Backlog: DeepSeek Harness"
 letter: D
 about: >-
-  Host plugins deferred at E-DSH's close: the doc gate, the router guard, and the worker plugin's cold resume. All three
-  live in the desktop-dsh project, never in a Keel project. Each row names the source it was deferred from. The
+  Host plugins deferred at E-DSH's close: the doc gate, the router guard, the worker plugin's cold resume, and from
+  the E-WSANDBOX close the Auto Review preset's worker gate. All four live in the desktop-dsh project, never in a
+  Keel project. Each row names the source it was deferred from. The
   contracts are use-cases/dsh.html and the DSH use cases it points at; the why is DEC-54 and DEC-55. Distilled from
   E-DSH (plan, W2 and W3 results, close); D2 from E-RGUARD (W1 result, close).
 open:
@@ -63,6 +64,11 @@ open:
       - >-
         5. When the plugin lands, the checklists are deleted or demoted to a pointer: two guards for one rule is how
         they drift.
+      - >-
+        6. The start-of-session load gate (E-WSANDBOX close, owner ruling 2026-11-28): the plugin refuses every gate
+        action until the session has loaded `keel-workflow`, `keel-code-review` and the rest of the router's rule
+        set, and names what is missing. One list, written once in the rules; the rule side is backlog e-router-v2
+        R58.
 
   - id: D3
     title: "The worker plugin's cold resume"
@@ -76,4 +82,17 @@ open:
       workspace root, its transcript and its instructions intact, so a crashed worker's round does not start over.
     source: "E-DSH plan non-goals; E-DSH.W3 result."
     taken-by: "unowned"
+  - id: D4
+    title: "The Auto Review preset must gate delegated workers too"
+    status: open
+    problem: >-
+      `dsh-auto-review`'s `active()` gates only the root session. A delegated worker (a subagent, `delegationDepth
+      > 0`) runs with the host pinning `permission/preset: danger-full-access`, which turns the preset's gate off
+      for it, so the contract "a medium call runs, a high-risk call is denied, a denial is final" (DEC-56) does not
+      reach a worker. The `dsh-worker-workspace` README claims the opposite.
+    proposal: >-
+      `active()` also gates a delegated worker (`delegationDepth > 0`), or the worker plugin applies the preset to
+      the session it starts; correct the README's false claim; tests for both. In the desktop-dsh project.
+    source: "E-WSANDBOX close (owner ruling 2026-11-28): the host pins the preset on a delegated session."
+    taken-by: "unowned: the desktop-dsh project"
 closed: []

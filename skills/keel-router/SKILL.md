@@ -26,9 +26,12 @@ otherwise (briefs, 2026-11-08, below).
 
 - **Tools**: read (`Read`, `Grep`, `Glob`), `Write` for worker briefs and the
   owner message body only, the
-  project's worker launcher, and a Bash **whitelist** only: `git status|log|diff|show …`,
-  `git branch -v|-vv|-a|-av|-va|-a -v|--all|--all -v`, `gh pr view|list|status …`,
-  `ps aux` / `ps -ef`, and the launcher's `spawn` / `stop`, `worktree add|remove`
+  project's worker launcher, and a Bash **whitelist** only: `git status|log|diff|show|grep|ls-tree …`
+  (never `git grep -O`, which runs a pager command), `git worktree list`,
+  `git branch -v|-vv|-a|-av|-va|-a -v|--all|--all -v`, `git branch --list <names>`,
+  `gh pr view|list|status …`,
+  `ps aux` / `ps -ef`, and the launcher's `spawn` / `stop` / `prune`, `resume <name>`,
+  `status [<name>]`, `worktree add|remove`
   and `watchdog start|stop` shapes, and, where the project ships them, its
   owner-push sender (`scripts/notify-owner.py --check|--send|--dry-run`), its
   owner-action watch (`scripts/router-watch.sh <kind> <args>`), its report
@@ -46,6 +49,9 @@ otherwise (briefs, 2026-11-08, below).
   checkout, with full tools: spawning one hands back everything the whitelist
   takes away (lessons K10). An enforced router dispatches every worker, checker
   and watcher as a background session, through the launcher.
+- **A red doc is a worker's task.** Where the project's turn-end doc check
+  holds the router, it says so once per turn end: send the worker that owns the
+  doc to fix it, and end your turn; never edit a doc yourself.
 - Everything else — `keel verify-dod`, `keel check`, `git notes …`, `gh run …`,
   `curl` against an htmldoc server, `lsof`, watch loops, a `git worktree` the
   launcher does not make — is **delegated to a worker** that reports the raw output.
@@ -259,12 +265,20 @@ then for short one-shot read-only checks, reviews and watches. On DSH neither
 mode applies: a worker is a host session in a worktree, dispatched by the table
 below. Say which mode you used and why when it is not the standard.
 
+A worker's environment is ruled (E-WSANDBOX, owner 2026-11-26; DEC-37 and DEC-46 take the
+Amended rows at the epic's close): local ports on any address (it binds every interface and
+reaches every local listener), packages by pnpm or cargo with pnpm's store outside its
+worktree, every site decided per call by the auto reviewer (no pinned list, no lock), and a
+throwaway repo only through `scripts/router-scratch.sh` (`new`, then `init <dir>`) - never a
+hand-rolled `mktemp`/`git init`/`keel init` line. Name the helper in a brief whose task needs
+a scratch repo.
+
 | | In-session subagent | Background session (`claude --bg`), long-running |
 |---|---|---|
 | spawn | `Agent` (`name`, explicit `model`) | `<launcher> spawn …` (project-router names it) |
 | reach | `SendMessage` to its name (resumes it after it finished) | `SendMessage` to its name, busy or idle: a steer or the next task |
 | report | its `SubagentHandback`, delivered to you | its `SendMessage` to you, delivered as a new turn |
-| survives | this router session only | router session ending or compacting (a supervisor runs it); NOT a stop or a machine reboot: a stopped worker is never revived, spawn a fresh one with a new brief |
+| survives | this router session only | router session ending or compacting (a supervisor runs it); NOT a stop or a machine reboot: a stopped worker comes back by `<launcher> resume <name>` when the reuse rule below says so, else spawn a fresh one with a new brief |
 
 ### Transport by host (checked 2026-11-14)
 
@@ -275,11 +289,12 @@ in another skill.
 | Mechanism | Claude Code | DSH |
 |---|---|---|
 | Dispatch | `<launcher> spawn <name> <worktree> <brief> <model>` (standard); `Agent` with a name and an explicit model only where the posture is not enforced | `worker_spawn` with the worktree as its workspace and the brief as its prompt; the name is its handle |
+| Effort | the project policy's level for the role - a worker `low`, a planner `high` - mapped by the launcher's `--role worker\|planner` to `--effort` | the same level in `worker_spawn`'s `effort`, always given for a worker `low` and a planner `high`: omitting it takes the route's `high` |
 | Follow-up | `SendMessage` to its name: a steer while busy, the next task while idle | `worker_send` queues one turn, which runs after its current one |
 | Report | its `SendMessage` to you (a subagent: its `SubagentHandback`), one self-contained report | its final transcript message, read with `worker_output` at every wake and before every ask; where the project ships an inbox script (`<inbox>`), also a short post: `sh <inbox> post <name> REPORT "<summary>"` prints `POSTED id=…`, your armed `<inbox> watch` prints it and `<inbox> consume <id>` acks it |
 | Fleet list | `ListAgents` (a subagent: the session's roster); the launcher's CLI behind it | `worker_list` |
-| Status | the `ListAgents` row says busy or idle; the watchdog reports `DONE` or `STUCK` | `worker_status`: running, idle, ready or stopped |
-| Stop | `<launcher> stop <name>` (a subagent: `TaskStop`) | `worker_stop`, idempotent; a stopped worker is never revived |
+| Status | the `ListAgents` row says busy or idle; the watchdog reports `DONE` or `STUCK`; `<launcher> status [<name>]` reads each worker's context and cache | `worker_status`: running, idle, ready or stopped |
+| Stop | `<launcher> stop <name>` (a subagent: `TaskStop`); `<launcher> resume <name>` brings it back with every flag rebuilt | `worker_stop`, idempotent; DSH has no launcher resume, so a stopped worker there is replaced by a fresh one |
 | Permission preset | the launcher's committed mode, never wider (`acceptEdits` default, `plan` for a read-only checker) | Always Auto Review, fixed: a medium call (an add, a commit, minting a request) runs, a high-risk call is denied, and there is no approval path; a worker in a linked git worktree runs `danger-full-access`, one in a plain directory `workspace-write` |
 
 - **A DSH subagent is not a worker.** A subagent inherits the router's
@@ -309,10 +324,33 @@ in another skill.
   in the brief in full.
 - **One live session per WU.** A worker stays alive between tasks (owner
   ruling 2026-11-11). A follow-up round of its own work (fix round, notes step,
-  close) goes to its live session as a `SendMessage`. Start a fresh worker only
-  when the earlier context must not carry over (an independent check, a review,
-  a new WU) or is gone; the launcher has no resume (a plain `claude --bg
-  --resume` drops every launch flag: persona, sandbox, settings).
+  close) goes to its session as a `SendMessage`, after `<launcher> resume
+  <name>` if it was stopped. Start a fresh worker when the earlier context must
+  not carry over (an independent check, a review, a new WU), when it is gone, or
+  when the reuse rule says so.
+- **Reuse or fresh** (owner rulings 2026-11-26 and 2026-11-28). Read
+  `<launcher> status [<name>]` first: it prints the worker's context now, its
+  peak, its idle minutes, whether its cache is warm or cold, the two ceilings
+  and `fits=yes|no`. Then:
+  1. Reuse the worker (live, or stopped and resumed) when the task is its own
+     WU's or a follow-up of its last task and its context is under
+     `reuse_max_context_cold` with a cold cache or `reuse_max_context_warm` with
+     a warm one (`[router]` in the project config; the numbers live there only).
+     Re-reading files costs more round trips than re-caching an old context, so
+     reuse is the default under the ceiling.
+  2. A fix is not forced fresh: offer it to its author by rule 1. The author may
+     answer "take it fresh" in its report; then spawn fresh. Past a ceiling the
+     fix goes fresh unless the owner says otherwise: the owner watches the
+     sessions and an ad-hoc instruction of theirs decides any reuse or fresh
+     choice. The author never keeps a fix past a ceiling on its own.
+  3. A review, an independent check and a new WU are fresh workers; do not
+     resume a reviewer (an instruction, not a launcher check: a resumed review
+     run gets its review grant back).
+  4. `<launcher> resume <name>` refuses what it cannot rebuild (a live session
+     of the name, no transcript, a changed brief snapshot, a worktree off the
+     run's branch, unlinked or without the worker persona, a model, effort or
+     mode the policy no longer admits): spawn fresh then, with a brief that
+     says what the last worker left.
 - **Tasks** (skill keel-workflow §1). When a piece of a WU waits on anything
   outside its worker's hands, split it off: `<launcher> worktree add
   wu/<E>/<wu>_<task>` (cut off its WU branch) and a worker in it. When the task
@@ -333,7 +371,13 @@ in another skill.
   travels as a `SendMessage`: an answer, a clarification, a stop or the next
   task of the same WU; its text is recorded in the worker's transcript only.
 - **Spawn every worker and review subagent with the model and effort from
-  the project's policy (project-router); the effort may be its default**.
+  the project's policy (project-router names the keys). The effort follows the
+  role: a worker `low`, a planner `high`, where a planner's deliverable is a
+  plan or a design while a review, build, fix or check is a worker's. Every
+  host is told explicitly: `spawn --role` (or `--effort`), or `worker_spawn`'s
+  `effort`, never omitted: on DSH an omitted `effort` takes the route's `high`,
+  on Claude Code an omitted role takes the launcher's policy default, the
+  worker's level.**
   Never let one inherit your session's model or effort (an `Agent` subagent
   takes only the model).
 - Brief (you write it, on every host): worktree/branch/tip, rulings, what to
@@ -355,8 +399,9 @@ in another skill.
 - Retire with `<launcher> stop <name>` only when idle AND clean (its WU merged,
   or no longer needed); the launcher refuses a busy worker. Once the `merged`
   watch fired and the worker is stopped, `<launcher> worktree remove <branch>`
-  (it takes only a clean, merged worktree with no session in it; the branch stays). Never stop uncommitted work; hand it to a
-  fresh worker told to keep and check it. Tell workers not to
+  (it takes only a clean, merged worktree with no session in it; the branch stays). Never stop uncommitted work. A worker
+  gone with uncommitted work comes back by "Reuse or fresh": resumed when
+  `status` says it fits, else a fresh worker told to keep and check it. Tell workers not to
   talk to the owner directly. To ask a peer, use a one-shot idle notification;
   never poll.
 - Every try-it helper is run once before handing over and lives at a stable path.
@@ -428,7 +473,7 @@ file. After a round:
 |---|---|
 | only lows | fix or record as follow-ups; done |
 | mediums, no blocker/high | before `fix_importants_from` and `fix_blockers_from`: fix round, then the next round (or the owner picks "sign and record"); from either on: fix round, done, no new round |
-| a blocker/high | from `fix_blockers_from` on: fix round, done, no new round; the owner reads the fix at sign-off. Before it (or with it unset), before `max_rounds`: fix round (fresh worker, new tip, re-gate), then the next round; in round `max_rounds`: stop, hold the sign-off and give the owner the open findings to decide |
+| a blocker/high | from `fix_blockers_from` on: fix round, done, no new round; the owner reads the fix at sign-off. Before it (or with it unset), before `max_rounds`: fix round (its author by the reuse rule, else a fresh worker; new tip, re-gate), then the next round; in round `max_rounds`: stop, hold the sign-off and give the owner the open findings to decide |
 
 Each prompt lists the earlier rounds' findings: fixed, recorded or refuted
 (`references/messages.md`). A finding counts as a repeat only when it is surely

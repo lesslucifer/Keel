@@ -519,11 +519,25 @@ exit 2
 "#
 );
 
+// The turn-end hook holds a red doc. A router never edits a doc (E-WSANDBOX.W7 C5, owner 2026-11-28): it is
+// told once per turn end to send the worker that owns the doc, and its turn ends once the hook already
+// held it (stop_hook_active). It is known by agent_type, else by its transcript's agentSetting.
 const DOC_STOP: &str = concat!(
     "#!/bin/sh\ncommand -v keel >/dev/null 2>&1 || exit 0\n",
     keel_guard!("exit 0"),
     r#"
 out=$(keel verify-doc 2>&1) && exit 0
+in=$(cat 2>/dev/null) || in=
+who=$(printf '%s' "$in" | jq -r '.agent_type // empty' 2>/dev/null) || who=
+if [ -z "$who" ]; then
+  t=$(printf '%s' "$in" | jq -r '.transcript_path // empty' 2>/dev/null) || t=
+  [ -z "$t" ] || [ ! -f "$t" ] || who=$(head -n 20 "$t" | jq -r 'select(.agentSetting) | .agentSetting' 2>/dev/null | head -n 1)
+fi
+if [ "$who" = router ]; then
+  [ "$(printf '%s' "$in" | jq -r '.stop_hook_active == true' 2>/dev/null)" != true ] || exit 0
+  printf 'A doc is red: send the worker that owns it to fix it; you never edit a doc.\n%s\n' "$out" >&2
+  exit 2
+fi
 printf 'A doc is red - fix it before ending the turn:\n%s\n' "$out" >&2
 exit 2
 "#
@@ -1084,6 +1098,70 @@ mod tests {
     fn the_marker_and_install_page_are_the_texts_keel_prints_and_links() {
         assert_eq!(KEEL_MARK, "Keel: merge-gate workflow CLI");
         assert_eq!(INSTALL_PAGE, "https://github.com/lesslucifer/Keel/blob/main/docs/install.html");
+    }
+
+    /// E-WSANDBOX.W7 C5: DOC_STOP tells a router of a red doc once (it sends a worker) and holds every
+    /// other session every time, as before.
+    #[test]
+    fn doc_stop_tells_the_router_once_and_holds_every_other_session() {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::TempDir::new().unwrap();
+        let bin = d.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let red = d.path().join("red");
+        let keel = format!(
+            "#!/bin/sh\n[ \"$1\" = --version ] && {{ echo '{KEEL_MARK} 0.1.0'; exit 0; }}\n[ -e '{}' ] || exit 0\necho 'docs/a.html: red'; exit 1\n",
+            red.display()
+        );
+        std::fs::write(bin.join("keel"), keel).unwrap();
+        std::fs::set_permissions(bin.join("keel"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+        let tr = |who: &str| {
+            let f = d.path().join(format!("{who}.jsonl"));
+            std::fs::write(&f, format!("{{\"type\":\"user\",\"agentSetting\":\"{who}\"}}\n")).unwrap();
+            f
+        };
+        let (rt, wt) = (tr("router"), tr("worker"));
+        let run = |input: &str| {
+            let mut c = no_git_env(Command::new("sh"), false)
+                .args(["-c", DOC_STOP])
+                .env("PATH", &path)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            c.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+            let o = c.wait_with_output().unwrap();
+            (o.status.code(), String::from_utf8_lossy(&o.stderr).to_string())
+        };
+        let ev = |agent: Option<&str>, active: bool, t: &Path| {
+            let mut e = serde_json::json!({"hook_event_name": "Stop", "stop_hook_active": active, "transcript_path": t});
+            if let Some(a) = agent {
+                e["agent_type"] = a.into();
+            }
+            e.to_string()
+        };
+        std::fs::write(&red, "").unwrap();
+        let told = "send the worker that owns it to fix it";
+        for who in [Some("router"), None] {
+            let (code, err) = run(&ev(who, false, &rt));
+            assert_eq!(code, Some(2), "{who:?}: {err}");
+            assert!(err.contains(told) && err.contains("docs/a.html: red"), "{who:?}: {err}");
+            assert_eq!(run(&ev(who, true, &rt)).0, Some(0), "{who:?}: held a second time");
+        }
+        for (who, t) in [(Some("worker"), &wt), (None, &wt), (Some("worker"), &rt)] {
+            for active in [false, true] {
+                let (code, err) = run(&ev(who, active, t));
+                assert_eq!(code, Some(2), "{who:?} active={active}");
+                assert!(err.contains("A doc is red - fix it") && !err.contains(told), "{who:?}: {err}");
+            }
+        }
+        assert_eq!(run("").0, Some(2), "no input: held as before");
+        std::fs::remove_file(&red).unwrap();
+        assert_eq!(run(&ev(Some("router"), false, &rt)).0, Some(0));
+        assert_eq!(run(&ev(Some("worker"), false, &wt)).0, Some(0));
     }
 
     #[test]

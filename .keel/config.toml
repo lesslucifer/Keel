@@ -11,7 +11,7 @@ code_paths = ["src/", "tests/", "app/", "scripts/"]
 
 # Commits touching these need a Reviewed-By trailer (`keel mr commit`).
 # A trailing / is a prefix; otherwise a glob (* and ? within a segment, ** across).
-rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json", "scripts/router-guard.jq", "scripts/router-inbox.sh", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", "scripts/router-app.sh", "scripts/notify-owner.py", ".claude/agents/"]
+rule_bearing = ["AGENTS.md", "docs/*.html", "skills/", "templates/", ".keel/", ".claude/skills/", ".claude/settings.json", "scripts/router-guard.jq", "scripts/router-inbox.sh", "scripts/router-scratch.sh", "scripts/router-worker.sh", "scripts/router-file-guard.sh", "scripts/router-watch.sh", "scripts/router-app.sh", "scripts/notify-owner.py", ".claude/agents/"]
 
 [check]
 lint = "cargo fmt --check && cargo clippy --all-targets -- -D warnings"
@@ -58,7 +58,10 @@ fix_blockers_from = 1
 
 [router]   # read by scripts/router-worker.sh, not by the CLI (DEC-39)
 worker_model = "opus"
-worker_efforts = ["medium", "high"]
-worker_default_effort = "medium"
+worker_efforts = ["low", "high"]
+worker_default_effort = "low"
+planner_effort = "high"
 worker_permission_mode = "auto"
 watchdog_model = "haiku"
+reuse_max_context_cold = 200000
+reuse_max_context_warm = 400000

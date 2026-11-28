@@ -358,6 +358,7 @@ open:
       The owner's replan of E-APPLIST, 2026-11-20 (DEC-77).
     taken-by: "no epic yet"
 
+
 closed:
   - id: A3
     title: "E-APPLIST · Alerts and your list"
@@ -389,3 +390,6 @@ closed:
       Mac); the records back to before GitHub, no new decision (the owner's ruling of 2026-11-19); the epic test
       `tests/suite/ghrevert_e2e.rs`. The github tier is read until E-DOCSPLIT is on main (A2 removes it); part 5 is
       E-DOCSPLIT's merge of main (E-DOCSPLIT.W7). Result: the E-GHREVERT epic result (archived).
+  - id: A12
+    title: "Five node app tests time out on a fresh fake script's first exec"
+    closed: "fixed by E-WSANDBOX's close (9ecb9d35): the five timeouts widened, the git-hang bound to 15 s once the host's first-exec scan showed 3 s short; the node suite green 447 of 447 in the runs after, and the Rust watcher now pre-warms its scripts (R59, the same cost)"

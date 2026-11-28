@@ -51,7 +51,7 @@ test('a fake git that exits non-zero is reported with its code and stderr, not t
 test('a git that hangs is killed at the timeout with its whole process group, and reported so', async (t) => {
   const dir = tempDir(t, 'run');
   const git = program(path.join(dir, 'git'), `#!/bin/sh\necho $$ > ${dir}/pid\n${HANG}\n`);
-  const r = await run(git, 'toplevel', { project: dir }, { path: ['/usr/bin', '/bin'], timeoutMs: 300 });
+  const r = await run(git, 'toplevel', { project: dir }, { path: ['/usr/bin', '/bin'], timeoutMs: 15_000 });
   assert.deepEqual([r.timedOut, r.code], [true, null]);
   assert.ok(groupGone(Number(readFileSync(path.join(dir, 'pid'), 'utf8'))), 'the hung git or its child is still running');
 });
@@ -61,7 +61,7 @@ test('a program that exits while a descendant that left its process group still 
   const pidFile = path.join(dir, 'holder');
   endHolder(t, pidFile);
   const fake = program(path.join(dir, 'fake'), `#!/bin/sh\necho answer\n${holder(pidFile, true)}\nexit 0\n`);
-  const r = await bounded(6_000, 'capture', capture(fake, [], { PATH: '/usr/bin:/bin' }, 2_000));
+  const r = await bounded(15_000, 'capture', capture(fake, [], { PATH: '/usr/bin:/bin' }, 5_000));
   assert.deepEqual([r.code, r.timedOut, r.startError, r.stdout], [0, false, null, 'answer\n']);
 });
 
@@ -71,12 +71,12 @@ test('a program that exits 0 while its own background job holds its output is an
   endHolder(t, pidFile);
   const fake = program(path.join(dir, 'fake'), `#!/bin/sh\necho answer\n${holder(pidFile, false)}\nexit 0\n`);
   const start = Date.now();
-  const r = await capture(fake, [], { PATH: '/usr/bin:/bin' }, 1_500);
+  const r = await capture(fake, [], { PATH: '/usr/bin:/bin' }, 5_000);
   assert.deepEqual([r.code, r.timedOut, r.startError, r.stdout], [0, false, null, 'answer\n']);
   assert.ok(await within(3_000, () => existsSync(pidFile) && readFileSync(pidFile, 'utf8').trim() !== ''), 'the background job never started');
   const pid = Number(readFileSync(pidFile, 'utf8'));
   // Past the timeout the program had: its group is never killed after it exited by itself.
-  await new Promise((resolve) => setTimeout(resolve, Math.max(0, start + 2_000 - Date.now())));
+  await new Promise((resolve) => setTimeout(resolve, Math.max(0, start + 6_000 - Date.now())));
   assert.ok(alive(pid), 'the background job was killed after the program had exited by itself');
 });
 
@@ -124,12 +124,12 @@ test('a job the program left that writes without stopping is read only up to a b
 test('a program that exits while the event loop is blocked past its timeout is answered from its exit, not killed and reported timed out', async (t) => {
   const dir = tempDir(t, 'run');
   const fake = program(path.join(dir, 'fake'), '#!/bin/sh\n/bin/sleep 0.05\necho quick\n');
-  const p = capture(fake, [], { PATH: '/usr/bin:/bin' }, 150);
+  const p = capture(fake, [], { PATH: '/usr/bin:/bin' }, 5_000);
   // Block the loop inside an I/O callback: the program exits meanwhile, and on the next turn the
   // timer comes due before the poll that reads that exit.
   await new Promise<void>((resolve) =>
     readFile('/dev/null', () => {
-      const until = Date.now() + 500;
+      const until = Date.now() + 10_000;
       while (Date.now() < until) {
         // blocked
       }
