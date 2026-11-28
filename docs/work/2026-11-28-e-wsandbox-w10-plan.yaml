@@ -160,6 +160,6 @@ details:
     DEC-46 point 9 and UC-ROUTE-5: the worker's pnpm env arrives through --settings (a --bg session gets no caller
     env); the project-router Workers section; the q1-q3 answers as Amended rows of DEC-37/DEC-46.
   open-questions:
-    - "q1 (finding 2): pipe-to-shell under auto? Default (b): deny bare sh, bash, zsh."
-    - "q2 (finding 3): pnpm on the grant? Default (a) with (c)."
-    - "q3 (finding 4): a background router's writes? Default (a): the router stays interactive."
+    - "q1 (finding 2): pipe-to-shell under auto? RULED (owner, 2026-11-28): (b) - deny bare Bash(sh), Bash(bash), Bash(zsh) in the worker's --disallowedTools."
+    - "q2 (finding 3): pnpm on the grant? RULED (owner, 2026-11-28): (a) with (c) - grant the pnpm shapes; the re-run's probe 3 runs the split forms."
+    - "q3 (finding 4): a background router's writes? RULED (owner, 2026-11-28): (a) - the router stays an interactive session (project-router says so); the probe router writes nothing."
