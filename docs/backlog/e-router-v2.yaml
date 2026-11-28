@@ -197,18 +197,6 @@ open:
     source: >-
       W8 point 16. Deferred by E-ROUTER3.W8 (owner, 2026-11-11; DEC-46).
     taken-by: "unowned: the next router epic (not yet proposed)"
-  - id: R23
-    title: "Reviving a stopped worker"
-    status: open
-    problem: >-
-      Probe P5: `claude --bg -n <name> --resume <sid>` with spawn's full flag set keeps the sandbox, the persona,
-      the name, no MCP server and the earlier conversation (a plain `--bg --resume` drops every flag, so W8 deleted
-      `resume`).
-    proposal: >-
-      A revival design would start from that argv.
-    source: >-
-      W8 probe P5. Deferred by E-ROUTER3.W8 (owner, 2026-11-11; DEC-46).
-    taken-by: "unowned: the next router epic (not yet proposed)"
   - id: R24
     title: "A launch killed mid-way leaves its lock"
     status: open
@@ -595,19 +583,6 @@ open:
       - >-
         W2, a per-worker jq that failed would drop that worker's row, and the write step would then delete its line;
         no input is known to make it fail. Fix: a guard that marks the tick unreadable instead.
-  - id: R53
-    title: "A long-lived builder session costs more on follow-ups than a fresh worker"
-    status: "open: a router-skill note, rule-bearing"
-    problem: >-
-      After a fix round, a builder session that is kept for follow-ups grows to 300 - 420k tokens of context, and each
-      follow-up re-reads all of it. Measured on E-CRLEVEL's w1-build: 128 turns and 35.9M cache-read tokens; its
-      follow-ups wrote 125k and read 23.9M, where a fresh fix worker would have read about 3M.
-    proposal: >-
-      A note in the keel-router skill: reuse a live session for a short follow-up while its context is under about
-      130k; past about 300k, retire it and spawn a fresh worker with a full brief. A rule-bearing change: the owner's
-      `keel mr commit`.
-    source: "E-CRLEVEL close (2026-11-26): the router's measurement of the w1-build session."
-    taken-by: "unowned: the next router epic"
   - id: R54
     title: "The review's code hash reads the signing checkout, not the merge target"
     status: "open: a gate fix, code"
@@ -620,6 +595,19 @@ open:
       `code_binds` reads the target's committed config, as `review::policy` already does, or the cr note records the
       pathspec and the policy commit it hashed, so the sign-off and the hook agree on what "the code" is.
     source: "Found while signing E-WSANDBOX.W2 (owner's sign-off, 2026-11-26); recorded by the E-WSANDBOX.W9 worker."
+    taken-by: "unowned: the next router epic"
+  - id: R55
+    title: "stop gives up when claude rm refuses right after claude stop"
+    status: "open: a launcher hardening, rule-bearing"
+    problem: >-
+      In the owner's resume probe (2026-11-28) a `claude rm` run right after `claude stop` refused: "A Claude Code lock
+      on the worktree names a process that is still running". The lock was on a Claude-managed worktree the session
+      had entered itself; a launcher worker runs in a launcher-made git worktree, but if `rm` ever refuses, `stop`
+      dies after the stop and its brief-copy cleanup does not run.
+    proposal: >-
+      `stop` retries `claude rm` a few times, 0.5 s apart, and runs its cleanup whatever `rm` returns, naming a
+      refusal that outlasts the retries.
+    source: "E-WSANDBOX.W5 (the owner's resume probe, 2026-11-28; analysed by the W5 worker)."
     taken-by: "unowned: the next router epic"
 closed:
   - id: R1
@@ -667,6 +655,9 @@ closed:
   - id: R19
     title: "Lesson from the 2026-11-10 GIT_DIR leak (R-e)"
     closed: "done by E-ROUTER3.W5 (keel-router lessons K12) and E-ROUTER3.W8 (launcher side)"
+  - id: R23
+    title: "Reviving a stopped worker"
+    closed: "done by E-WSANDBOX.W5: `scripts/router-worker.sh resume <name>` rebuilds spawn's whole flag set from the committed policy; the owner's probe (2026-11-28) kept the history and the session id across stop and rm (DEC-44, DEC-46)"
   - id: R30
     title: "A full cargo test run inside a worker's sandbox"
     closed: "done: the full suite runs in a worker's sandbox (E-TESTOPT, E-LOOPBIND, E-GHFLOW.W1 - W3)"
@@ -685,3 +676,6 @@ closed:
   - id: R49
     title: "notify_owner's ten tests bind a loopback port, which a worker's sandbox refuses"
     closed: "done by E-LOOPBIND (the ten tests carry #[ignore])"
+  - id: R53
+    title: "A long-lived builder session costs more on follow-ups than a fresh worker"
+    closed: "done by E-WSANDBOX.W5: the owner's reuse rule (cold and warm ceilings in [router], read with the launcher's status) replaces the proposed 130k / 300k note (DEC-43)"
