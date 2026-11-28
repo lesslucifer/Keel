@@ -1998,7 +1998,8 @@ fn stop_stops_then_removes_this_repositorys_idle_worker_by_id() {
     assert!(l.sessions().iter().all(|r| r["name"] != "a") && l.sessions().iter().any(|r| r["name"] == "b"));
 
     // review r2: Claude Code lists a blocked session (rate-limited, or waiting on its user) with a
-    // state and no status: it is refused at once by that state, as a worker waiting on a prompt is
+    // state and no status. E-WSANDBOX.W7 C9 (owner, 2026-11-28): such a dead worker is stopped and
+    // removed at once, without the busy wait, and its STOPPED line names the state; busy stays the owner's
     let mut more = rows.clone();
     more.push(serde_json::json!({"id": "f0", "sessionId": "f0-x", "name": "f", "cwd": wt, "kind": "background", "state": "blocked"}));
     more.push(serde_json::json!({"id": "g0", "sessionId": "g0-x", "name": "g", "cwd": wt, "kind": "background", "status": "waiting", "waitingFor": "permission prompt", "state": "blocked"}));
@@ -2006,8 +2007,14 @@ fn stop_stops_then_removes_this_repositorys_idle_worker_by_id() {
     for (name, state, id) in [("f", "blocked", "f0"), ("g", "waiting", "g0")] {
         let n0 = calls(&l.state).len();
         let (ok, out) = l.run_env(&["stop", name], &[("PATH", &path)]);
-        assert!(!ok && out.contains(&format!("worker {name} is {state}: the owner decides (claude stop {id})")), "{name}: {out}");
-        assert_eq!(calls(&l.state).len() - n0, 1, "{name}: stop waited on a session that is not busy");
+        assert!(ok && out.starts_with(&format!("STOPPED name={name} id={id} session={id}-x state={state}")), "{name}: {out}");
+        let new: Vec<Vec<String>> = calls(&l.state)[n0..].iter().map(|(_, c)| c.clone()).collect();
+        assert_eq!(new.iter().filter(|c| c[0] == "agents").count(), 1, "{name}: stop waited on a session that is not busy");
+        assert_eq!(
+            new.iter().filter(|c| c[0] != "agents").cloned().collect::<Vec<_>>(),
+            [vec!["stop".to_string(), id.into()], vec!["rm".to_string(), id.into()]],
+            "{name}"
+        );
     }
     // E-ROUTER3.W5 (W8 result): a finished review worker listed idle with state blocked is stopped
     more.push(serde_json::json!({"id": "h0", "sessionId": "h0-x", "name": "h", "cwd": wt, "kind": "background", "status": "idle", "state": "blocked"}));
@@ -5061,4 +5068,354 @@ fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
     let tiers: Vec<String> = policy["mr"]["tiers"].as_array().unwrap().iter().map(|t| format!("{t}")).collect();
     let tiers = format!("tiers = [{}]", tiers.join(", "));
     assert!(read(".claude/skills/project-router/SKILL.md").contains(&tiers), "project-router does not state {tiers}");
+}
+
+// E-WSANDBOX.W7: the abilities and fixes the owner picked on 2026-11-28 (the W7 plan pair, details.candidates
+// C1, C5, C6, C9, C10, C11 and details.gaps G1, G2, G4).
+
+/// C1: the router reads more of git in plain words - git grep (at any ref), git ls-tree, git worktree list
+/// and git branch --list - and never git grep's pager option, which runs a command.
+#[test]
+fn router_guard_admits_the_read_only_git_searches() {
+    for ok in [
+        "git grep -n word main -- src",
+        "git grep -n -i -e notes -e refspec main -- scripts/router-gh.sh",
+        "git grep -c W6 origin/epic/E-DOCSPLIT -- docs/work",
+        "git ls-tree --name-only main docs/backlog/",
+        "git ls-tree -r HEAD",
+        "git worktree list",
+        "git worktree list --porcelain",
+        "git branch --list main",
+        "git branch --list main epic/E-X",
+    ] {
+        assert_eq!(bash(ok), None, "guard denied {ok:?}");
+    }
+    for no in [
+        "git grep -O vim x",
+        "git grep -nO vim x",
+        "git grep -Ovim x",
+        "git grep --open-files-in-pager=vim x",
+        "git grep --open-files-in-pager vim x",
+        "git grep --open x",
+        "git grep --o x",
+        "git grep --output=x y",
+        "git worktree add x",
+        "git worktree prune",
+        "git worktree list x",
+        "git branch --list -D main",
+        "git branch --list main -d",
+        "git ls-tree main; rm -r y",
+        "git grep x | sh",
+    ] {
+        assert!(bash(no).is_some(), "guard allowed {no:?}");
+    }
+}
+
+/// C1, C10 and G1: every permissions.allow line of .claude/settings.json is a shape the guard admits, shown on
+/// one example each, and the list holds exactly these lines: router-watch.sh by its five kinds (G1), the
+/// read-only git searches (C1) and the launcher's prune (C10).
+#[test]
+fn settings_allow_only_shapes_the_guard_admits() {
+    let examples: Vec<(&str, &str)> = vec![
+        ("Bash(gh pr list *)", "gh pr list --state open"),
+        ("Bash(gh pr status *)", "gh pr status --json state"),
+        ("Bash(gh pr view *)", "gh pr view 12"),
+        ("Bash(git branch --all -v)", "git branch --all -v"),
+        ("Bash(git branch --all)", "git branch --all"),
+        ("Bash(git branch --list *)", "git branch --list main"),
+        ("Bash(git branch -a -v)", "git branch -a -v"),
+        ("Bash(git branch -a)", "git branch -a"),
+        ("Bash(git branch -av)", "git branch -av"),
+        ("Bash(git branch -v)", "git branch -v"),
+        ("Bash(git branch -va)", "git branch -va"),
+        ("Bash(git branch -vv)", "git branch -vv"),
+        ("Bash(git diff *)", "git diff main"),
+        ("Bash(git grep *)", "git grep -n word main -- src"),
+        ("Bash(git log *)", "git log --oneline -5"),
+        ("Bash(git ls-tree *)", "git ls-tree --name-only main docs"),
+        ("Bash(git show *)", "git show HEAD"),
+        ("Bash(git status *)", "git status --short"),
+        ("Bash(git worktree list --porcelain)", "git worktree list --porcelain"),
+        ("Bash(git worktree list)", "git worktree list"),
+        ("Bash(ps -ef)", "ps -ef"),
+        ("Bash(ps aux)", "ps aux"),
+        ("Bash(scripts/notify-owner.py --check)", "scripts/notify-owner.py --check"),
+        ("Bash(scripts/notify-owner.py --dry-run)", "scripts/notify-owner.py --dry-run"),
+        ("Bash(scripts/notify-owner.py --send)", "scripts/notify-owner.py --send"),
+        ("Bash(scripts/router-app.sh del *)", "scripts/router-app.sh del question/q1"),
+        ("Bash(scripts/router-app.sh stage *)", "scripts/router-app.sh stage E-X.W1 building"),
+        ("Bash(scripts/router-app.sh start *)", "scripts/router-app.sh start r1"),
+        ("Bash(scripts/router-inbox.sh consume *)", "scripts/router-inbox.sh consume abc"),
+        ("Bash(scripts/router-inbox.sh init)", "scripts/router-inbox.sh init"),
+        ("Bash(scripts/router-inbox.sh status)", "scripts/router-inbox.sh status"),
+        ("Bash(scripts/router-inbox.sh watch *)", "scripts/router-inbox.sh watch 60"),
+        ("Bash(scripts/router-watch.sh commit *)", "scripts/router-watch.sh commit abc1234"),
+        ("Bash(scripts/router-watch.sh merged *)", "scripts/router-watch.sh merged wu/E-X/w1-a epic/E-X"),
+        ("Bash(scripts/router-watch.sh pushed *)", "scripts/router-watch.sh pushed epic/E-X"),
+        ("Bash(scripts/router-watch.sh signed *)", "scripts/router-watch.sh signed abc1234"),
+        ("Bash(scripts/router-watch.sh tagged *)", "scripts/router-watch.sh tagged v1.0.0"),
+        ("Bash(scripts/router-worker.sh prune)", "scripts/router-worker.sh prune"),
+        ("Bash(scripts/router-worker.sh spawn *)", "scripts/router-worker.sh spawn w1 /Users/o/Keel-x .router/briefs/w1.md opus"),
+        ("Bash(scripts/router-worker.sh stop *)", "scripts/router-worker.sh stop w1"),
+        ("Bash(scripts/router-worker.sh watchdog start *)", "scripts/router-worker.sh watchdog start r1"),
+        ("Bash(scripts/router-worker.sh watchdog stop *)", "scripts/router-worker.sh watchdog stop r1"),
+        ("Bash(scripts/router-worker.sh worktree add *)", "scripts/router-worker.sh worktree add epic/E-X"),
+        ("Bash(scripts/router-worker.sh worktree remove *)", "scripts/router-worker.sh worktree remove wu/E-X/w1-a"),
+    ];
+    let mut allow: Vec<String> = settings()["permissions"]["allow"].as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_string()).collect();
+    allow.sort();
+    let mut want: Vec<String> = examples.iter().map(|(a, _)| a.to_string()).collect();
+    want.sort();
+    assert_eq!(allow, want, "permissions.allow differs from the shapes the guard admits");
+    for (line, ex) in &examples {
+        let inner = line.strip_prefix("Bash(").unwrap().strip_suffix(')').unwrap();
+        match inner.strip_suffix(" *") {
+            Some(prefix) => assert!(ex.starts_with(&format!("{prefix} ")), "{line}: example {ex:?}"),
+            None => assert_eq!(&inner, ex, "{line}"),
+        }
+        assert_eq!(bash(ex), None, "{line}: the guard refuses its example {ex:?}");
+    }
+}
+
+/// C10: the guard admits the launcher's prune, bare.
+#[test]
+fn router_guard_admits_prune_bare() {
+    assert_eq!(bash("scripts/router-worker.sh prune"), None);
+    for no in ["scripts/router-worker.sh prune x", "scripts/router-worker.sh prune --all", "scripts/router-worker.sh prunex"] {
+        assert!(bash(no).is_some(), "guard allowed {no:?}");
+    }
+}
+
+/// G2: the router agent file binds the tools and points to the guard and UC-ROUTE-6 for the shapes,
+/// instead of a hand list that drifts (it had dropped router-inbox.sh).
+#[test]
+fn router_agent_file_points_to_the_guard_instead_of_listing_shapes() {
+    let md = std::fs::read_to_string(root().join(".claude/agents/router.md")).unwrap();
+    let body = md.splitn(3, "---").nth(2).unwrap();
+    assert!(body.contains("scripts/router-guard.jq") && body.contains("UC-ROUTE-6"), "{body}");
+    for listed in ["router-app.sh start", "notify-owner.py --check", "worktree add|remove", "watchdog start|stop", "router-watch.sh"] {
+        assert!(!body.contains(listed), "router.md still lists {listed:?}");
+    }
+}
+
+/// G4: on DSH the router makes worktrees itself (owner, 2026-11-28); project-router no longer says the
+/// preset denies it.
+#[test]
+fn project_router_lets_the_router_make_worktrees_on_dsh() {
+    let s = std::fs::read_to_string(root().join(".claude/skills/project-router/SKILL.md")).unwrap();
+    assert!(!s.contains("preset denies"), "project-router still says the DSH preset denies worktrees");
+}
+
+/// Run the project's Stop hook command as Claude Code runs it, in `dir`, on `event`; (exit code, stderr).
+fn stop_hook(dir: &Path, event: &serde_json::Value) -> (Option<i32>, String) {
+    let stop = settings()["hooks"]["Stop"].as_array().unwrap().clone();
+    assert_eq!(stop.len(), 1, "one Stop group");
+    let cmd = stop[0]["hooks"][0]["command"].as_str().unwrap().to_string();
+    let mut p = common::cmd("/bin/sh")
+        .args(["-c", &cmd])
+        .current_dir(dir)
+        .env("CLAUDE_PROJECT_DIR", dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(&mut p.stdin.take().unwrap(), event.to_string().as_bytes()).unwrap();
+    let o = p.wait_with_output().unwrap();
+    (o.status.code(), String::from_utf8_lossy(&o.stderr).to_string())
+}
+
+/// C5 (owner, 2026-11-28: "The router shouldn't fix doc, if it finds problems, it tells the worker to
+/// fix"): the Stop hook tells the router of a red doc once per turn end - with the sentence that sends a
+/// worker - and lets its turn end while the turn already continues for that hook (stop_hook_active); a
+/// worker is refused every time, as today. The router is known by agent_type, else by its transcript's
+/// agentSetting.
+#[test]
+fn stop_hook_tells_the_router_once_and_holds_every_worker() {
+    let d = TempDir::new().unwrap();
+    let repo = d.path().canonicalize().unwrap();
+    git(&repo, &["init", "-q", "-b", "main"]);
+    let hooks = repo.join(".git/keel-hooks");
+    std::fs::create_dir_all(&hooks).unwrap();
+    let red = |is_red: bool| {
+        let body = if is_red {
+            "#!/bin/sh\nprintf 'A doc is red - fix it before ending the turn:\\ndocs/x.html: red\\n' >&2\nexit 2\n"
+        } else {
+            "#!/bin/sh\nexit 0\n"
+        };
+        std::fs::write(hooks.join("verify-doc-stop"), body).unwrap();
+    };
+    let transcript = repo.join("t.jsonl");
+    std::fs::write(&transcript, "{\"type\":\"user\",\"agentSetting\":\"router\",\"message\":{}}\n").unwrap();
+    let wtranscript = repo.join("w.jsonl");
+    std::fs::write(&wtranscript, "{\"type\":\"user\",\"agentSetting\":\"worker\",\"message\":{}}\n").unwrap();
+    let ev = |agent: Option<&str>, active: bool, t: &Path| {
+        let mut e = serde_json::json!({"session_id": "s", "transcript_path": t, "cwd": repo, "hook_event_name": "Stop", "stop_hook_active": active, "last_assistant_message": "done"});
+        if let Some(a) = agent {
+            e["agent_type"] = a.into();
+        }
+        e
+    };
+    red(true);
+    for (who, router_t) in [(Some("router"), &transcript), (None, &transcript)] {
+        let (code, err) = stop_hook(&repo, &ev(who, false, router_t));
+        assert_eq!(code, Some(2), "{who:?}: the router was not told: {err}");
+        assert!(err.contains("send the worker that owns it to fix it") && err.contains("docs/x.html: red"), "{who:?}: {err}");
+        let (code, err) = stop_hook(&repo, &ev(who, true, router_t));
+        assert_eq!(code, Some(0), "{who:?}: the router was held a second time: {err}");
+    }
+    for (who, t) in [(Some("worker"), &wtranscript), (None, &wtranscript)] {
+        for active in [false, true] {
+            let (code, err) = stop_hook(&repo, &ev(who, active, t));
+            assert_eq!(code, Some(2), "{who:?} active={active}: a worker ended its turn on a red doc");
+            assert!(err.contains("A doc is red") && !err.contains("send the worker"), "{who:?}: {err}");
+        }
+    }
+    red(false);
+    for (who, t) in [(Some("router"), &transcript), (Some("worker"), &wtranscript)] {
+        assert_eq!(stop_hook(&repo, &ev(who, false, t)).0, Some(0), "{who:?}: a green checkout held the turn");
+    }
+}
+
+/// The watchdog's own row and a transcript whose first record is `age_h` hours old, under `home`.
+fn watchdog_row(l: &Launcher, home: &Path, age_h: u64) -> serde_json::Value {
+    let s = sid(90);
+    let dir = home.join(".claude/projects/-w");
+    std::fs::create_dir_all(&dir).unwrap();
+    let start = chrono_like(std::time::SystemTime::now() - Duration::from_secs(age_h * 3600));
+    let first = serde_json::json!({"type": "user", "timestamp": start, "message": {"role": "user", "content": "start"}}).to_string();
+    let next =
+        serde_json::json!({"type": "assistant", "timestamp": chrono_like(std::time::SystemTime::now()), "message": {"role": "assistant", "content": []}})
+            .to_string();
+    std::fs::write(dir.join(format!("{s}.jsonl")), format!("{first}\n{next}\n")).unwrap();
+    serde_json::json!({"id": "wd00", "sessionId": s, "name": "watchdog-r1", "cwd": l.main, "kind": "background", "status": "busy"})
+}
+
+/// An ISO 8601 UTC timestamp with milliseconds, as Claude Code writes them.
+fn chrono_like(t: std::time::SystemTime) -> String {
+    let secs = t.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let o = Command::new("date").args(["-u", "-r", &secs.to_string(), "+%Y-%m-%dT%H:%M:%S.000Z"]).output().unwrap();
+    let s = String::from_utf8(o.stdout).unwrap().trim().to_string();
+    if !s.is_empty() {
+        return s;
+    }
+    let o = Command::new("date").args(["-u", "-d", &format!("@{secs}"), "+%Y-%m-%dT%H:%M:%S.000Z"]).output().unwrap();
+    String::from_utf8(o.stdout).unwrap().trim().to_string()
+}
+
+/// C6: the watchdog's recurring schedule ends after 7 days (backlog R29); from day 6 its facts tell the
+/// router to restart it, read from its own transcript's first record.
+#[test]
+fn watchdog_facts_warn_a_day_before_the_schedule_ends() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    let warn = "Schedule ends in under a day: restart the watchdog (watchdog stop r1, then watchdog start r1).";
+    for (age_h, warned) in [(1, false), (5 * 24, false), (6 * 24 + 1, true), (7 * 24 - 1, true)] {
+        let mut rows = vec![router_row(&l)];
+        rows.push(watchdog_row(&l, h, age_h));
+        l.set_sessions(&rows);
+        let out = facts(&l, h);
+        assert!(out.starts_with("Report to r1.\n"), "{out}");
+        assert_eq!(out.contains(warn), warned, "age {age_h}h: {out}");
+    }
+}
+
+/// A WU worktree of the launcher fixture: `wu/E-X/<slug>` cut off epic/E-X by the launcher, with one commit.
+fn wu_worktree(l: &Launcher, slug: &str) -> PathBuf {
+    let (ok, out) = l.run(&["worktree", "add", &format!("wu/E-X/{slug}")]);
+    assert!(ok, "{out}");
+    let p = PathBuf::from(field(&out, "path="));
+    std::fs::write(p.join(format!("{slug}.txt")), "x\n").unwrap();
+    git(&p, &["add", "."]);
+    git(&p, &["commit", "-qm", slug]);
+    p
+}
+
+/// C11 (owner, 2026-11-28: "Watch dog should watch the dead / obsolete worktrees / workers and report to
+/// the router to close"): after the worker blocks the facts carry a Close block - a worker still on a
+/// branch merged into its base, a merged worktree with no worker, a worktree whose directory is gone -
+/// each with the command that closes it; an unmerged or fresh worktree is not named.
+#[test]
+fn watchdog_facts_name_what_the_router_should_close() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    let busy = wu_worktree(&l, "busy");
+    let idle = wu_worktree(&l, "idle");
+    let open = wu_worktree(&l, "open");
+    let gone = wu_worktree(&l, "gone");
+    let (ok, out) = l.run(&["worktree", "add", "wu/E-X/fresh"]);
+    assert!(ok, "{out}");
+    for b in ["busy", "idle"] {
+        git(&l.main, &["checkout", "-q", "epic/E-X"]);
+        git(&l.main, &["merge", "-q", "--no-ff", "-m", b, &format!("wu/E-X/{b}")]);
+        git(&l.main, &["checkout", "-q", "main"]);
+    }
+    std::fs::remove_dir_all(&gone).unwrap();
+    let mut rows = l.sessions();
+    let mut w = worker_row(&l, h, "e-x-busy", &sid(11), serde_json::json!({"status": "busy"}), Some(1), &[]);
+    w["cwd"] = busy.to_str().unwrap().into();
+    rows.push(w);
+    let mut w = worker_row(&l, h, "e-x-open", &sid(12), serde_json::json!({"status": "busy"}), Some(1), &[]);
+    w["cwd"] = open.to_str().unwrap().into();
+    rows.push(w);
+    l.set_sessions(&rows);
+    let out = facts(&l, h);
+    let close: Vec<&str> = out.lines().skip_while(|l| *l != "Close:").skip(1).collect();
+    assert_eq!(
+        close,
+        [
+            "wu/E-X/busy: merged into epic/E-X, worker e-x-busy still runs - stop e-x-busy".to_string(),
+            "wu/E-X/idle: merged into epic/E-X, no worker - worktree remove wu/E-X/idle".to_string(),
+            format!("{}: directory gone - prune", gone.display()),
+        ]
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>(),
+        "{out}"
+    );
+    assert!(!out.contains("wu/E-X/open:") && !out.contains("wu/E-X/fresh:"), "{out}");
+    assert!(idle.exists());
+    // nothing to close: no Close block at all
+    let l2 = watchdog_launcher();
+    assert!(!facts(&l2, h).contains("Close:"));
+}
+
+/// C10 (owner, 2026-11-28; Q3 ruled: leftovers only): prune clears what dead workers and removed worktrees
+/// leave - git's record of a worktree whose directory is gone, the brief copies of sessions no longer
+/// listed, and launch locks older than 10 minutes - and keeps a live worker's brief, a fresh lock, every
+/// worktree directory and every branch.
+#[test]
+fn prune_clears_only_the_leftovers_of_gone_workers_and_worktrees() {
+    let l = launcher();
+    let brief = ".router/briefs/b.md";
+    assert!(l.run(&["spawn", "gone", l.wt.to_str().unwrap(), brief, "opus"]).0);
+    assert!(l.run(&["spawn", "live", l.wt2.to_str().unwrap(), brief, "opus"]).0);
+    let rows: Vec<serde_json::Value> = l.sessions().into_iter().filter(|r| r["name"] != "gone").collect();
+    l.set_sessions(&rows);
+    assert_eq!((brief_copies(&l.wt).len(), brief_copies(&l.wt2).len()), (1, 1));
+    git(&l.main, &["worktree", "add", "-q", "../wt3", "-b", "w3"]);
+    let wt3 = l.main.parent().unwrap().join("wt3");
+    std::fs::remove_dir_all(&wt3).unwrap();
+    let runs = l.main.join(".router/runs");
+    let (old, fresh) = (runs.join(".lock-old"), runs.join(".lock-fresh"));
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::create_dir_all(&fresh).unwrap();
+    std::fs::File::open(&old).unwrap().set_modified(std::time::SystemTime::now() - Duration::from_secs(11 * 60)).unwrap();
+
+    let (ok, out) = l.run(&["prune"]);
+    assert!(ok, "{out}");
+    assert_eq!(out, "PRUNED worktrees=1 briefs=1 locks=1\n");
+    assert!(brief_copies(&l.wt).is_empty() && brief_copies(&l.wt2).len() == 1, "{out}");
+    assert!(!old.exists() && fresh.exists());
+    let listed = String::from_utf8(git(&l.main, &["worktree", "list", "--porcelain"]).stdout).unwrap();
+    assert!(!listed.contains("wt3") && listed.contains(l.wt.to_str().unwrap()), "{listed}");
+    assert!(git(&l.main, &["show-ref", "--verify", "-q", "refs/heads/w3"]).status.success(), "prune deleted a branch");
+    assert!(calls(&l.state).iter().all(|(_, c)| c[0] != "stop" && c[0] != "rm"), "prune stopped a session");
+
+    let (ok, out) = l.run(&["prune"]);
+    assert!(ok && out == "PRUNED worktrees=0 briefs=0 locks=0\n", "{out}");
+    let (ok, out) = l.run(&["prune", "x"]);
+    assert!(!ok && out.contains("prune takes no argument"), "{out}");
 }
