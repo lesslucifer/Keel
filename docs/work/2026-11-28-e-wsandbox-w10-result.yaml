@@ -1,0 +1,55 @@
+artifact: wu-result
+status: ready
+id: E-WSANDBOX.W10
+epic: E-WSANDBOX
+title: "E-WSANDBOX.W10 result: the e2e fixes are built; the live proof waits for the re-run"
+date: "2026-11-28"
+page: 2026-11-28-e-wsandbox-w10-result.html
+outcome: >-
+  Delivered against the requirement, except its live part, which is owed to the epic e2e re-run. The launcher now
+  hands a worker its pnpm settings (PNPM_HOME, pnpm_config_modules_dir, pnpm_config_store_dir = <home>/store) in
+  the --settings env object and creates and checks the modules dir before any start; the export is gone. The owner's
+  rulings (RULED, owner, 2026-11-28, the plan's defaults) are built: q1 (b) bare Bash(sh), Bash(bash), Bash(zsh)
+  denied; q2 (a)+(c) pnpm install, add, run and test on the grant, and probe 3 split; q3 (a) the router stays an
+  interactive session, stated in project-router, and the probe router writes nothing. The e2e harness reports raw
+  output only, writes one evidence file a worker judges, and counts the red-doc messages in hook records only. The
+  rule-bearing files landed as the owner's one commit 98c5d7b1 (Reviewed-By vuluu).
+deviations:
+  - "The q2 grant uses the launcher's Bash(c) and Bash(c *) pairs, so it also admits a bare pnpm add (an error) and pnpm run (lists the scripts); the plan listed pnpm add * and pnpm run * only. Harmless, and it keeps one grant shape."
+  - "Probe 3c keeps env -u pnpm_config_modules_dir before pnpm add, as its own Bash call: without it the scratch install would land in the app's modules dir. The split separates the cd (3b) from it, which still finds the part that prompts."
+  - "The modules-dir refusal is tested for a planted symlink and a planted file, not for a directory another user owns (not hermetic); the -O check is in the code beside the other two."
+  - "The plan page's decision table still shows the defaults; the plan's data file records them RULED."
+  - "Added a test the plan did not list: project_router_states_the_w10_launcher_and_the_interactive_router, so the skill change has a check. It was red until the owner's commit applied the patch."
+  - "The two e2e pages (runbook, owner steps) each changed by one sentence for the new report path and evidence file; htmldoc snapshots were taken first."
+evidence:
+  - "Root cause (a), from the code at 990e57f8: router-worker.sh:809 created only the pnpm home, :815 named the modules dir, :863 linked app/node_modules at it, and no line created it. Fixed: the launcher mkdirs it, or refuses one that is not a real directory this user owns."
+  - "Root cause (b), strong evidence, live proof owed: claude --bg hands the session to the Claude Code daemon; this worker's own job record (~/.claude/jobs/8d9c7ef4/state.json, read first-hand) shows backend daemon and providerEnv with one forwarded variable. The 2026-11-28 run fits: pnpm used the default app/node_modules and the store fell back to the worktree and the sandbox temp. W3's test passed only because its stub claude inherited the export as a direct child. Fixed: the three variables travel in --settings env. The live check is probe 2's printenv in the e2e re-run; if it shows them and the install still fails, (b) is refuted."
+  - "Red first at 537ed4f4 (launcher unchanged): launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree ('the worker's session does not get PNPM_HOME through --settings: \"\"'), launcher_refuses_a_modules_dir_that_is_not_a_real_directory ('the launcher accepted a planted modules dir: RUNNING name=m0 ...'), launcher_starts_a_worker_as_a_background_session_with_the_grant_and_a_validated_mode and worker_sandbox_writes_only_its_worktree_the_git_dir_and_cargos_cache (allow list) - 4 of 4 FAILED. At 237bda21 with the launcher staged: 490 passed, 1 failed (the project-router text test, which needed the patch)."
+  - "Green on the owner commit 98c5d7b1: keel check 'check skipped - tree unchanged since last green'; the three W10 tests run alone: 3 passed, 0 failed."
+  - "Tests (tests/suite/router.rs): stub_claude records the pnpm env from --settings only; launcher_puts_a_workers_pnpm_package_tree_outside_its_worktree extended (modules dir real, store under the home, the env object exact, a resume rebuilds it, an app-less worktree gets none); new launcher_refuses_a_modules_dir_that_is_not_a_real_directory; WORKER_GRANTS gains the four pnpm shapes, WORKER_SHELL_DENIES the three shells; new project_router_states_the_w10_launcher_and_the_interactive_router."
+  - "The finish step's new count, run on a fixture transcript: the prompt text inside a tool result and the assistant's own text are not counted; a Stop hook string and a hook attachment are (n=2, w=0)."
+  - "Commits: plan cd7564f4; rulings and the epic plan entry 5a431603; red tests 537ed4f4; e2e harness ac4a5ea4; text test 237bda21; owner keel mr commit 98c5d7b1 (scripts/router-worker.sh, .claude/skills/project-router/SKILL.md)."
+  - "No live run: the worker may not run claude or the launcher; the stub claude stands in for the daemon."
+distillation: >-
+  In this WU: the project-router skill's Workers paragraph and its Briefs row (owner commit 98c5d7b1) carry the pnpm
+  env through --settings, the modules dir, the pnpm grant, the bare-shell deny and the interactive router. DEC-37
+  (grant and deny), DEC-46 point 9 (the worker's environment) and UC-ROUTE-5 take their rows at the E-WSANDBOX epic
+  close, with W3's and W4's rulings they amend, per the epic plan's distillation-plan. The plan and this result are
+  T3 and archive at epic close.
+follow-ups:
+  - "The live proof of cause (b), probe 2's printenv and install, the split probe 3 and the fixed red-doc count: the E-WSANDBOX epic e2e re-run (owner's prepare, start, finish), judged by a worker from ~/keel-wsandbox-e2e-evidence.txt."
+  - "DEC-37, DEC-46 point 9 and UC-ROUTE-5 rows for W10's rulings: E-WSANDBOX epic close distillation."
+  - "If probe 3's split forms show which part prompted (the cd outside the worktree or the env wrapper): a launcher grant or a brief rule, in the E-WSANDBOX close or backlog e-router-v2."
+details:
+  rulings: "q1 (b), q2 (a)+(c), q3 (a) - RULED (owner, 2026-11-28), relayed by router keel-57; the plan yaml's details.open-questions records them."
+  changed-outside-code-paths:
+    - "docs/work/2026-11-24-e-wsandbox-plan.yaml"
+    - "docs/work/2026-11-28-e-wsandbox-w10-plan.html"
+    - "docs/work/2026-11-28-e-wsandbox-w10-plan.yaml"
+    - "docs/work/2026-11-28-e-wsandbox-w10-result.html"
+    - "docs/work/2026-11-28-e-wsandbox-w10-result.yaml"
+    - "docs/work/2026-11-28-e-wsandbox-e2e-setup.sh"
+    - "docs/work/2026-11-28-e-wsandbox-e2e-probe-router.md"
+    - "docs/work/2026-11-28-e-wsandbox-e2e-runbook.html"
+    - "docs/work/2026-11-28-e-wsandbox-e2e-owner-steps.html"
+    - ".claude/skills/project-router/SKILL.md (owner commit)"

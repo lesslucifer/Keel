@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b0a98cd9f34851f0dfb2e68">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-WSANDBOX.W10 result: the e2e fixes</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-WSANDBOX.W10 result: the e2e fixes are built</h1>
+      <p>The fixes and your three answers are built. The live proof comes from the e2e re-run.</p>
+      <div class="meta">2026-11-28 · Keel</div>
+    </div>
+  </header>
+  <main>
+    <h2 id="happened">What happened</h2>
+    <p>The worker's package install failed for two reasons. Both are fixed:</p>
+    <ol>
+      <li>The launcher linked the app's package folder at a folder it never made. It now makes that folder, and refuses one that is not a real folder you own.</li>
+      <li>The launcher passed pnpm its settings through its own environment. A background session never gets that environment, so the worker's shell never saw them. The settings now travel inside the session's own settings, which it does get.</li>
+    </ol>
+    <p>Your answers are built as ruled:</p>
+    <ul>
+      <li>A pipe into a bare shell is refused.</li>
+      <li>pnpm install, add, run and test need no prompt.</li>
+      <li>The router stays an interactive session.</li>
+    </ul>
+    <p>You signed the rule changes in one commit. The e2e script now gives no verdicts, writes one evidence file for a worker to judge, and counts the red-doc messages correctly.</p>
+
+    <h2 id="checks">The plan's checks</h2>
+    <table data-c="checks">
+      <tr><th>Check</th><th>Met?</th></tr>
+      <tr><td>Probe 2's install succeeds; its shell shows the three settings</td><td>Not yet: the e2e re-run</td></tr>
+      <tr><td>Probe 9's git status is empty</td><td>Not yet: the e2e re-run</td></tr>
+      <tr><td>Probes 3 and 5 match your answers</td><td>Not yet: the e2e re-run (the refusal and the grant are in place and tested)</td></tr>
+      <tr><td>The finish step prints PASS for the red-doc check</td><td>Not yet: the e2e re-run (the new count passed on a sample record set)</td></tr>
+      <tr><td>The worker's table quotes the raw line behind each verdict</td><td>Not yet: the judging worker after the re-run</td></tr>
+    </table>
+
+    <h2 id="example">The main case, run</h2>
+    <p>A worker cannot start real sessions, so the launcher ran against a stand-in that sees only what a real background session sees:</p>
+    <ol>
+      <li>Before the fix: spawn a worker in an app worktree. The stand-in sees no pnpm settings. A planted package folder is accepted. Both tests fail.</li>
+      <li>After the fix: the same spawn hands over the three settings, under the worker's private pnpm folder. The package folder exists. A planted one is refused before any start.</li>
+      <li>A resume hands over the same settings. A worktree without the app gets none.</li>
+      <li>On your commit: all tests pass.</li>
+    </ol>
+
+    <h2 id="differences">Differences from the plan</h2>
+    <ul>
+      <li>The pnpm grant also allows a bare <code>pnpm add</code> and <code>pnpm run</code>. Both are harmless.</li>
+      <li>Probe 3 keeps one guard on its pnpm line, so the test package stays out of the app.</li>
+      <li>A package folder owned by another user is checked in the code, not in a test.</li>
+      <li>One added test checks that the skill states the change.</li>
+      <li>Two e2e pages changed by one sentence each.</li>
+    </ul>
+
+    <h2 id="left">What is left, and who takes it</h2>
+    <ul>
+      <li>The live proof, which means the probe 2, 3, 5 and 9 checks and the red-doc PASS: the epic e2e re-run, with your three usual commands.</li>
+      <li>The decision and use-case rows for these rulings: the epic close.</li>
+    </ul>
+  </main>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
