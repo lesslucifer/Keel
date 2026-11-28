@@ -13,16 +13,19 @@ files:
     file: e-router-v2.yaml
     scope: >-
       Router work deferred at the E-ROUTER close and since: the launcher, the worker environment and sandbox, the
-      watchdog, the report channel, the shared git dir; rows for the next router epic.
-    next-free: R58
+      watchdog, the report channel, the shared git dir; rows for the next router epic, the rule-set load gate and
+      the parallel test isolation (R58, R59), the e2e re-run (R60), and the T1 pages' and skills' remaining
+      wording (R61).
+    next-free: R62
   - letter: A
     file: local-app.yaml
     scope: >-
       From the E-LOCALTOOL close: back to before GitHub (A1, done by E-GHREVERT), keel fixes (A2, done by
       E-KEELFIX), the app's three build epics (A3 - A5, A3 done by E-APPLIST), in order. From the E-KEELFIX close: the
       plan-WU flow review (A6), the push hook's rules (A7, accepted), the dispatch guard (A8), the roster lock-out (A9),
-      small follow-ups (A10). From the E-APPLIST close: the app's open ends (A11).
-    next-free: A12
+      small follow-ups (A10). From the E-APPLIST close: the app's open ends (A11). From the E-WSANDBOX close: five
+      node tests' timeouts on this Mac (A12).
+    next-free: A13
   - letter: L
     file: local-app.yaml
     scope: >-
@@ -34,8 +37,8 @@ files:
     file: dsh.yaml
     scope: >-
       DeepSeek Harness host plugins, each in its own repo in the desktop-dsh project: the doc gate, the router guard,
-      the worker plugin's cold resume.
-    next-free: D4
+      the worker plugin's cold resume, and the Auto Review preset's worker gate (D4).
+    next-free: D5
 # The ranked open work. Owner ruling 2026-11-10: the proposed epics are proposals, not commitments; the owner
 # orders them. Ranks 1 - 2 drafted by E-LOCALTOOL.W5, after E-GHREVERT, E-KEELFIX and E-APPLIST (its first three,
 # closed). Rank 3 holds the four proposed epics, unordered among themselves.
@@ -71,9 +74,10 @@ order:
     epic: the next router epic
     status: not yet proposed; the owner orders it
     rows: >-
-      R5's live part, R6 row 4's note, R7's open rows, R14 (DEC-48 item 4), R20 - R22, R24 - R29, R31, R32, R34 -
-      R42, R44 - R48, R51, R52, R54 - R57 (R23 and R53 done by E-WSANDBOX.W5). R40, the live check of `auto`, is owed at the first spawn after E-WMODE's merge; R47's L3 is
-      wanted soon.
+      R5's live part, R6 row 4's note, R7's open rows, R14 (DEC-48 item 4), R21, R22, R24 - R28, R31, R32, R34 -
+      R39, R41, R44 - R48, R51, R52, R54 - R61 (R23 and R53 done by E-WSANDBOX.W5; R40 ran in W1 and R42 is ruled
+      out at the E-WSANDBOX close). R20 and R29 close with the owner's post-merge install (epic plan
+      details.close-steps-w7); R47's L3 is wanted soon.
   - rank: none
     epic: E-CRLEVEL · a review schedule per level
     status: "closed: [review.wu] and [review.epic] over [review], per key, and fix_blockers_from; the level read from the review's target; Keel's WU review runs one round and fixes its blockers under a fix-PASS"
@@ -86,6 +90,14 @@ order:
     epic: E-APPLIST · alerts and your list
     status: "closed: the router's update log and the watchdog's lines, the app's alert at your desk and your list with Open and Mark sent; W4 dropped (DEC-76)"
     rows: local-app A3 done; A11 added (the app's open ends); e-router-v2 R52 to the next router epic; e-seed-v2 B29 done by E-APPLIST.W14 (owner ruling 2026-11-23); e-seed-v2 B30 - B32 added (W14's review nits) and B33 (the code-review skill's stale hash sentence) to E-GATEFIX
+  - rank: none
+    epic: E-WSANDBOX · what a worker may do, and when it is reused
+    status: "closed 2026-11-28 with its e2e layer waived: local ports, packages and sites as ruled, the 14 ignored tests deleted, worker resume and reuse, one effort policy by role, and the router's and the watchdog's bounds; the e2e re-run is R60"
+    rows: >-
+      W1's findings closed R40 and R42; W2, W3 and W4 took R49's tests; W5 closed R23 and R53; W7 built R20 and
+      R29 (they close with the owner's install); R54 - R57 added during the epic; R58 (the rule-set load gate), R59
+      (the watch family's parallel flake) and R60 (the e2e re-run) added at its close, with R61 (the T1 pages' and
+      skills' rule-bearing wording); local-app A12 added; dsh D2 refreshed and D4 added
   - rank: none
     epic: E-KEELFIX · keel fixes
     status: "closed: the commit level reads the committed rules, a gate run or help writes nothing unless asked, the github tier removed; W4 dropped by the owner's ruling of 2026-11-20"
@@ -109,11 +121,11 @@ order:
   - rank: none
     epic: the desktop-dsh project, not a Keel epic
     status: open
-    rows: D1, D2, D3
+    rows: D1, D2, D3, D4
   - rank: none
     epic: stays in the backlog, unowned
     status: open
     rows: >-
       B24 (an owner pick: A, B, C or E, then an epic), B25, B26 and B27; B21 (accepted limits); B19 (owed by the
-      owner's reinstall); B7's open rows; B2's unbuilt follow-ups, only if asked; local-app A8, A9, A10, A11 (A4 or
-      A5 may take any item).
+      owner's reinstall); B7's open rows; B2's unbuilt follow-ups, only if asked; local-app A8, A9, A10, A11, A12
+      (A4 or A5 may take any item).

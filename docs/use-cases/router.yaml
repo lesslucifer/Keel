@@ -100,10 +100,13 @@ areas:
           worktree, a worktree without `.claude/agents/worker.md` (naming the fix) or on a detached HEAD, a name `claude
           agents --json` already lists, and a name whose launch holds `.router/runs/.lock-<name>`; it starts the worker
           with `--setting-sources project,local`, `--strict-mcp-config` and Claude Code's Bash sandbox in `--settings`
-          (writes: the worktree but its `.git` link and settings files, the git dir but its config and hooks, and in
-          `~/.cargo` only the cache cargo writes, never its `env`, `config`, `credentials` or `bin`; five hosts, widened
-          by a permission decision (the owner's answer to a `sandbox request` prompt under `acceptEdits`, a per-call
-          review under `auto`) or by the worktree's own local settings (DEC-37)), with no inherited `GIT_*`; a
+          (writes: the worktree but its `.git` link and settings files, the git dir but its config and hooks, the
+          worker's pnpm home, and in `~/.cargo` only the cache cargo writes, never its `env`, `config`, `credentials`
+          or `bin`; six hosts as a base, `registry.npmjs.org` included for installs, with no pinned-list-only and no
+          `strictAllowlist`: the auto reviewer decides each site, an accepted cost that a site it allows can receive
+          what the worker read; a worktree's own `settings.local.json` widens neither the hosts nor the ports
+          (E-WSANDBOX.W4, W1); local ports are open, so the worker serves and connects on any port and address and
+          reaches every local listener (E-WSANDBOX.W2)), with no inherited `GIT_*`; a
           `PreToolUse` hook, the worker file guard `scripts/router-file-guard.sh`, lets the file tools edit only the
           worktree (never its `.git` or its two settings files) and read neither `~/.ssh` nor `~/.claude/channels`,
           judged on the resolved path; the shell writes only the parts of `~/.cargo` cargo writes, never the worktree's
@@ -114,7 +117,12 @@ areas:
           inside the worktree, and a path holding a quote, a backslash or a newline (DEC-37); `--review` starts the
           review worker, the only one granted the `cr` note and denied every edit tool, `git add` and `git commit`; it
           copies the brief into the worker's worktree and prints its sha256 and the session's id; a start the CLI
-          refuses is `DEAD` with the CLI's text. `resume <name>` (E-WSANDBOX.W5) brings back the newest run of that
+          refuses is `DEAD` with the CLI's text. Since E-WSANDBOX.W3 and W10 it also gives the worker pnpm's home,
+          content store and modules dir under the temp folder with the worktree's `app/node_modules` linked at them,
+          so the package tree - a package's denied path included - stays outside the worktree, and it grants
+          `pnpm install|add|run|test`; `pnpm make` stays the owner's. Scratch goes through
+          `scripts/router-scratch.sh new|init` under `$TMPDIR`, on the grant; bare `sh`, `bash` and `zsh` are denied
+          (a pipe into a shell), best effort. `resume <name>` (E-WSANDBOX.W5) brings back the newest run of that
           name: its session id, worktree, branch, effort, mode and review grant come from the run dir, every check and
           flag of `spawn` runs again from the committed policy, plus `--resume <id>` and a resume prompt, and it prints
           `RESUMED`; it refuses a live session of the name, no transcript, a changed brief snapshot, a worktree off the

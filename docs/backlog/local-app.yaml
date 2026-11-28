@@ -251,6 +251,17 @@ open:
         answer), or have keel refuse an id or page past a small cap. Source: E-APPLIST.W13 review round 1, refuted
         candidate (cr note on 57f1586). Taken by: this row.
 
+  - id: A12
+    title: "Five node app tests time out on a fresh fake script's first exec"
+    status: "open: a test-only fix; keel check is red on this Mac without it"
+    problem: >-
+      Five `node --test` cases fail in `keel check` on this macOS host: a freshly written fake script's first exec
+      costs 160 - 1300 ms, more than the tests allow - `app/test/login-path.test.ts:39` and
+      `app/test/run.test.ts:54, 64, 74, 127`. The fix was not applied.
+    proposal: >-
+      Widen those five timeouts, or pre-warm each fake script in `program()` before the test's clock starts.
+    source: "E-WSANDBOX close (owner ruling 2026-11-28); observed in keel check at the epic tip."
+    taken-by: "unowned: the next app work, with L6"
   - id: L1
     title: "Message the router from the app"
     status: later
@@ -357,6 +368,7 @@ open:
     source: >-
       The owner's replan of E-APPLIST, 2026-11-20 (DEC-77).
     taken-by: "no epic yet"
+
 
 closed:
   - id: A3

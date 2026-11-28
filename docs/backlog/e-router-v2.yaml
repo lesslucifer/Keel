@@ -6,7 +6,7 @@ about: >-
   Router work deferred at E-ROUTER's close: open launcher issues, gate coverage of the router's security files,
   the epic e2e, and the accepted worker risk. Each row names the source it was deferred from. E-ROUTER's plan is
   archived out of git; `git show 9787799:docs/work/2026-11-07-router-plan.html` recovers it. Why things are as they
-  are: decisions/router.html (DEC-42 - DEC-48 shaped the router as it is now). Rows R1 - R57.
+  are: decisions/router.html (DEC-42 - DEC-48 shaped the router as it is now). Rows R1 - R61.
 open:
   - id: R5
     title: "Epic e2e for the router"
@@ -164,7 +164,7 @@ open:
     taken-by: "unowned: the next router epic (not yet proposed)"
   - id: R20
     title: "The router loops on a red doc it cannot fix"
-    status: open
+    status: "built by E-WSANDBOX.W7 (C5); closes after the owner installs the new keel and re-runs keel hooks install in the router checkout (epic plan details.close-steps-w7)"
     problem: >-
       The project's `Stop` hook (`verify-doc-stop`) refuses every turn end while a doc in the checkout is red;
       workers keep it (they must leave their docs green), but a router cannot edit docs.
@@ -173,7 +173,7 @@ open:
     source: >-
       W9 follow-up; W8 point 11. Deferred by E-ROUTER3.W8 (owner, 2026-11-11; the W8 plan's open points and probes,
       DEC-46).
-    taken-by: "E-WSANDBOX.W7 C5 (the turn-end hook tells the router once; it sends a worker); closed when W7 merges"
+    taken-by: "E-WSANDBOX.W7 C5 (the turn-end hook tells the router once; it sends a worker); the owner's post-merge install closes it"
   - id: R21
     title: "`gh` for a sandboxed worker"
     status: open
@@ -260,14 +260,14 @@ open:
     taken-by: "unowned: the next router epic (not yet proposed)"
   - id: R29
     title: "The watchdog's schedule expires"
-    status: open
+    status: "built by E-WSANDBOX.W7 (C6); closes when the epic lands on main and the router checkout's launcher carries it"
     problem: >-
       The watchdog's `CronCreate` recurring job ends after 7 days; the keel-router skill tells the router to restart
       a watchdog whose reports stop. Nothing is built for it.
     source: >-
       E-ROUTER3.W9 result. Found at the E-ROUTER3 close: follow-ups the E-ROUTER3 WU results named that no WU
       absorbed.
-    taken-by: "E-WSANDBOX.W7 C6 (the facts warn from day 6); closed when W7 merges"
+    taken-by: "E-WSANDBOX.W7 C6 (the facts warn from day 6); the epic's merge to main makes it live"
   - id: R31
     title: "The worker file guard misses Unicode case-fold variants"
     status: "open: severity high; owner-waived in E-WMODE.W1 (review round 3, 2026-11-12)"
@@ -362,25 +362,6 @@ open:
       further rounds, no code change, signed with these findings recorded (DEC-37, "Review round 3"). Owner-waived;
       fix in a later router epic.
     taken-by: "unowned: a later router epic"
-  - id: R40
-    title: "The live check of `auto`"
-    status: "owed at the first spawn after E-WMODE's merge"
-    problem: >-
-      Nothing before the merge ran `claude --bg --permission-mode auto`, the guard hook from `--settings` under
-      `--bg`, or cargo under the narrowed `~/.cargo` `allowWrite`.
-    proposal: >-
-      The router's first spawn from a checkout whose HEAD carries E-WMODE checks it: expect
-      `RUNNING ... permission-mode=auto`, not `DEAD` with the CLI's text. Then the worker, in order: one `Edit` and
-      one `Write` in the router checkout, both refused at once with `worker file guard: ... outside the worktree`; a
-      `Read` under `~/.ssh`, refused; one `Edit` in its own worktree, allowed; one `git commit` and one
-      `keel notes write`, both succeed; one `cargo build`, succeeds; a read outside its worktree with no prompt row
-      in `claude agents --json`. Also note whether a plan-mode or auto-memory write is denied. A `DEAD` spawn, a
-      guard that does not fire, or a failed commit or build is fixed by an owner `keel mr commit`:
-      `worker_permission_mode = "acceptEdits"`, or a launcher change. The result goes to DEC-37 as an Amended row.
-    source: >-
-      E-WMODE plan open point 9, W1 result. Found at the E-WMODE close (epic closed 2026-11-12; why: DEC-37's E-WMODE
-      row): follow-ups the E-WMODE.W1 result named that no WU absorbed.
-    taken-by: "the router's first spawn after E-WMODE's merge (owner commits any fix)"
   - id: R41
     title: "What remains after the worker file guard"
     status: "accepted residual (DEC-37, 'What remains')"
@@ -398,17 +379,6 @@ open:
       the auto reviewer decides each site, and `WebFetch` stays with that reviewer - recorded here, not denied.
     source: >-
       E-WMODE plan open point 7, W1 review round 2 (M4). Found at the E-WMODE close (epic closed 2026-11-12).
-    taken-by: "unowned"
-  - id: R42
-    title: "An `acceptEdits` worker reached a host outside the five"
-    status: "unverified"
-    problem: >-
-      The E-CRCAP planner ran `npm install` from `registry.npmjs.org` and was not stopped. Candidate causes, none
-      verified: the owner answered a `sandbox request` prompt; that worktree's `settings.local.json` added the host
-      or a `WebFetch(domain:...)` allow; the session was not started by this launcher. The router or the owner can
-      tell from that session's transcript and worktree.
-    source: >-
-      E-WMODE.W1 result, review round 1 (L3). Found at the E-WMODE close (epic closed 2026-11-12).
     taken-by: "unowned"
   - id: R44
     title: "`ListAgents` once omitted an idle worker"
@@ -634,6 +604,70 @@ open:
       guard's change and its tests.
     source: "E-WSANDBOX epic plan, open question (owner comment 2026-11-26; kept open with its default 2026-11-28)."
     taken-by: "unowned: the next router epic"
+  - id: R58
+    title: "The router loads its rule set before any gate action"
+    status: "open: the next epic's proper fix; rule-bearing"
+    problem: >-
+      The router must load `keel-workflow` and `keel-code-review` - and the rest of its rule set - before any gate
+      action, and today only the skill's checklists say so. Prose is not a gate: the E-RGUARD session quoted its
+      rules and still made 24 calls outside them, and a session that has not read the rules can stage a sign-off,
+      run a preflight or dispatch first.
+    proposal: >-
+      A start-of-session load gate rather than prose: the first gate action (a spawn, `keel preflight`,
+      `verify-dod`, `notes write`, a staged sign-off) is refused until each required skill is loaded in that session
+      and named. One list of required skills, written once in the rules, checked on both hosts - Claude Code by the
+      guard, DSH by the guard plugin (D2, item 6).
+    source: "Owner ruling 2026-11-28 at the E-WSANDBOX close."
+    taken-by: "unowned: the next epic"
+  - id: R59
+    title: "The router::watch* suite tests are not parallel-safe"
+    status: "open: a test-isolation fix; keel check is red on this Mac without it"
+    problem: >-
+      At the E-WSANDBOX tip `keel check` fails under parallel test threads: the `router::watch*` family and
+      `watcher_run_is_bounded_when_the_watch_outpolls_its_releases` time out at `tests/suite/router.rs:1859`
+      ("watch never reached poll 1"). Each passes alone, and all 23 `router::watch*` tests pass with
+      `--test-threads=1` (E-WSANDBOX.W10 result). `keel preflight`'s `0·tree` is red until it is fixed.
+    proposal: >-
+      One fixture per test (its own poll shim, clock and temp dirs), or a serial group for the watch family, and a
+      pin that runs the family in parallel.
+    source: "E-WSANDBOX.W10 result (the resumed fix session's gate block, 2026-11-28); owner ruling 2026-11-28 to defer the fix."
+    taken-by: "unowned: the next router epic"
+  - id: R60
+    title: "The epic e2e re-run on the next Claude quota"
+    status: "open: the E-WSANDBOX e2e layer is waived; this row runs it on Claude Code"
+    problem: >-
+      E-WSANDBOX's epic e2e did not run. The Claude weekly limit stopped the probe router ("You've hit your weekly
+      limit - resets 12am (Australia/Perth)"), and a DSH-run e2e cannot prove the epic: 10 of the 14 probes are
+      launcher-specific (the pnpm env through `--settings`, the file guard hook, stop and resume, status from
+      transcripts, `--role`/`--effort`, prune, the watchdog's `CronCreate`, C5's `Stop` hook, W10's live pnpm
+      proof), DSH has no launcher, no file guard and no resume, the host rejects a per-worker effort (W9's
+      recorded defect), and a live DSH spawn is the epic plan's non-goal. Named gaps: probe 2's pnpm env proof and
+      probe 5's shell-deny proof.
+    proposal: >-
+      Re-run the harness on the next Claude quota: the prepare, start and finish steps with a launcher-provisioned
+      probe router, judged by a worker from `~/keel-wsandbox-e2e-evidence.txt`. The harness is archived in
+      `docs/.archive/` (2026-11-28-e-wsandbox-e2e-*.html, .sh, .md and the evidence file); fix its independent
+      review round 2's findings first: the medium - `finish` waits the full 45 minutes when a started probe router
+      dies (`e2e-setup.sh:50-58`); the four lows - stale report matching; two unguarded steps at `:232` and
+      `:271`; the red-doc 14 -> 7 against the 16/2 line; the `ok: built` early-exit line at `:103-105`.
+    source: "E-WSANDBOX close (owner ruling 2026-11-28); the W10 result and the e2e harness; the epic plan's e2e-plan."
+    taken-by: "the next Claude quota (owner); a worker judges the run"
+  - id: R61
+    title: "The T1 pages' E-WSANDBOX facts and the router skills' wording"
+    status: "open: rule-bearing edits; each is the owner's keel mr commit"
+    problem: >-
+      The epic's distillation left three rule-bearing edits unlanded, because the close cannot make them: T1 pages
+      and skills are the owner's `keel mr commit`. (a) `docs/architecture.html`'s `[router]` keys row lacks the two
+      reuse ceilings (`200000`, `400000`; DEC-43). (b) `docs/local-app.html`'s "Three test loops and the seams" does
+      not say that a worker session runs all three loops itself - the install on the grant and local ports
+      (E-WSANDBOX.W2 - W4, W10) - so the owner-run install and port lanes look current when they are gone.
+      (c) `skills/keel-router/references/worker-ops.md`'s spawn recipe names no `--role` (both copies), and
+      E-WSANDBOX.W9's rule-file round left two wording nits.
+    proposal: >-
+      One owner `keel mr commit`: the architecture row's two keys, the local-app sentence, and the worker-ops spawn
+      recipe with the review's nits. Each edit is named above so it can be applied as written.
+    source: "E-WSANDBOX close (the epic plan's distillation-plan); E-WSANDBOX.W9's rule-file round; the close author may not commit a rule-bearing path."
+    taken-by: "unowned: the owner's next rule-bearing commit"
 closed:
   - id: R1
     title: "Worker persona missing in branches without it"
@@ -689,6 +723,12 @@ closed:
   - id: R33
     title: "The git dir's commondir is shell-writable"
     closed: "fixed by E-GHFLOW.W3, kept by E-GHREVERT (DEC-37, amended); R50 fixed too, what is left is R51"
+  - id: R40
+    title: "The live check of `auto`"
+    closed: "ran 2026-11-12 in the E-CRCAP probe (E-WSANDBOX.W1 finding g): permission-mode auto, a Write and an Edit outside the worktree refused by the file guard, `~/.ssh` and a brief Edit refused, an allowed Edit, a git commit and a keel notes write, a cargo build - reported to router keel-77"
+  - id: R42
+    title: "An `acceptEdits` worker reached a host outside the five"
+    closed: "the local-settings cause is ruled out (E-WSANDBOX.W1 finding e: the launcher's admin sandbox mandate drops project/local `allowedDomains` and `WebFetch(domain:)` entries); a per-call widening the auto reviewer allows is the ruled cost (owner q4, DEC-37, UC-ROUTE-5)"
   - id: R43
     title: "The full suite is red in a worker's sandbox for sandbox reasons"
     closed: "done by E-TESTOPT.W1 and W2 (DEC-59); one sandbox-only red left, R49"
@@ -700,7 +740,7 @@ closed:
       through a link (E-GHFLOW2.W6)
   - id: R49
     title: "notify_owner's ten tests bind a loopback port, which a worker's sandbox refuses"
-    closed: "done by E-LOOPBIND (the ten tests carry #[ignore])"
+    closed: "done by E-LOOPBIND (the ten tests carry #[ignore]); the 14 ignored tests deleted by E-WSANDBOX.W2 (owner q2)"
   - id: R53
     title: "A long-lived builder session costs more on follow-ups than a fresh worker"
     closed: "done by E-WSANDBOX.W5: the owner's reuse rule (cold and warm ceilings in [router], read with the launcher's status) replaces the proposed 130k / 300k note (DEC-43)"
