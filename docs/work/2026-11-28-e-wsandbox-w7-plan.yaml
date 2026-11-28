@@ -97,7 +97,7 @@ details:
       - {cannot: "Keep its schedule past 7 days: the recurring job ends and its reports stop (backlog R29)", where: "docs/backlog/e-router-v2.yaml:273-282; skills/keel-router/references/worker-ops.md:198"}
   candidates:
     - id: C1
-      ruling: "OWED: no comment on it. Default: add."
+      ruling: "RULED (owner, 2026-11-28, plan confirmed at d96d0c23 with the defaults): add."
       ability: "Router: more read-only git - git grep (at a ref), git ls-tree, git worktree list, git branch --list <name>"
       gives: "Search another branch or tip and list worktrees without a worker (14 denials on record)."
       exposes: "git grep -O / --open-files-in-pager runs a command, so those flags are refused; the rest reads the repo only, as git show already does."
@@ -121,7 +121,7 @@ details:
       build: "scripts/router-htmldoc.sh comments <24-hex id> (fixed URL, jq summary); rule_bearing entry in .keel/config.toml; guard shape; settings line."
       tests: "Stubbed curl: the fixed URL, an id refused unless 24 hex; guard admits only that shape."
     - id: C4
-      ruling: "OWED: no comment on it. Default: not built."
+      ruling: "RULED (owner, 2026-11-28, plan confirmed with the defaults): not built."
       ability: "Router: git in another worktree (git -C <path> log|status)"
       gives: "Read a worker's branch state directly."
       exposes: "git in a worktree whose .git a worker rewrote runs the worker's config, hooks or fsmonitor with the owner's rights (why the launcher checks linked_ok first)."
@@ -217,18 +217,22 @@ details:
       gap: "settings.json:32 allows Bash(scripts/router-watch.sh *); the guard admits five kinds only"
       effect: "None while the guard runs (the guard refuses the rest); the two lists disagree."
       recommend: "Fix: five allow lines, one per kind; test as C1's settings test."
+      ruling: "RULED (owner, 2026-11-28, plan confirmed with the defaults): fix."
     - id: G2
       gap: ".claude/agents/router.md:16-23 lists the router's shapes by hand and omits router-inbox.sh"
       effect: "A reader of the agent file sees an older list."
       recommend: "Fix: replace the list with a pointer to UC-ROUTE-6 and the guard."
+      ruling: "RULED (owner, 2026-11-28, plan confirmed with the defaults): fix."
     - id: G3
       gap: "The watchdog loads the router checkout's .claude/settings.local.json (router-worker.sh:374)"
       effect: "Hooks or permissions in that file reach the watchdog. Absent today; git-ignored; only the owner writes it (a worker's sandbox cannot write the router checkout)."
       recommend: "Leave, and record it in DEC-45."
+      ruling: "RULED (owner, 2026-11-28, plan confirmed with the defaults): leave, recorded in DEC-45."
     - id: G4
       gap: ".claude/skills/project-router/SKILL.md:18 and :41 say the DSH preset denies the launcher's worktree add|remove; the owner says the router on DSH can do it now (comment on C8, 2026-11-28)"
       effect: "A DSH router following the skill hands worktrees to a worker for nothing."
       recommend: "Fix the two rows to say the router makes worktrees on DSH too (rule-bearing, in the one owner commit)."
+      ruling: "RULED (owner, 2026-11-28, plan confirmed with the defaults): fix."
   sandbox-fork:
     question: "The epic's open question: do the router and the watchdog stay outside a sandbox?"
     default: "Yes. A sandbox bounds the Bash tool only: the watchdog has none and its facts hook runs outside any sandbox; the router's Bash runs only fixed scripts that need ~/.claude, the git dir and the network."
@@ -272,16 +276,12 @@ details:
     no-comment-owed: "C1 (default add), C4 (default not built), G1-G3 (defaults: fix, fix, leave), G4 (new, default fix)."
   open-questions:
     - q: "Q1 - The owed picks: C1, G1, G2, G3, G4?"
-      default: "My advice: add C1; fix G1, G2, G4; leave G3."
-      under-default: "Built with C9-C11 in the one owner commit; any the owner drops is left out with its tests."
+      ruling: "RULED (owner, 2026-11-28, plan confirmed at d96d0c23 with the defaults): add C1; fix G1, G2, G4; leave G3; C4 not built."
     - q: "Q2 - May the router stop a busy worker that has been quiet 15 minutes or more (the watchdog's STUCK)?"
-      default: "No: busy stays the owner's (claude stop <id>); stopping cuts a turn that may be mid-commit."
-      options: "(a) no - default; (b) yes, after the 30 s wait, only when the watchdog's quiet rule says STUCK."
-      under-default: "C9 admits every state but busy. Under (b): C9 also stops a busy worker whose transcript is 15 minutes quiet, with its own test."
+      ruling: "RULED (owner, 2026-11-28): no - busy stays the owner's (claude stop <id>). C9 admits every state but busy."
     - q: "Q3 - What does prune clean?"
-      default: "Only launcher-made leftovers and git's record of a missing worktree; merged worktrees are removed one by one with worktree remove, as the watchdog's Close lines say."
-      options: "(a) leftovers only - default; (b) prune also removes every merged, clean, session-free worktree (worktree remove's checks, in a loop)."
-      under-default: "C10 as in details.candidates. Under (b): prune runs remove's checks per worktree and prints REMOVED lines; one more test."
+      ruling: "RULED (owner, 2026-11-28): leftovers only - git's record of a missing worktree, brief copies of unlisted sessions, stale locks; merged worktrees are removed one by one with worktree remove."
+  confirmed: "Owner confirmed the plan at d96d0c23 on 2026-11-28 with the defaults. Build: C1, C5, C6, C9, C10, C11, G1, G2, G4. Not built: C2, C3, C4, C7, C8, G3."
   dropped-from-first-draft: "The first draft (5ebdcb6d) built two bounds tables as a new decision and pinned them with tests, adding no power. The owner rejected that direction on 2026-11-28; its facts are kept above (can-today, gaps), its deliverable is dropped."
   gates:
     - "keel verify-doc on every changed doc, keel check raw, by the worker."
