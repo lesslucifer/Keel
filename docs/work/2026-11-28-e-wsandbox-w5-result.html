@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en" data-htmldoc-id="6b0a72929f34851f0dfb2e28">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keel — E-WSANDBOX.W5 result: resume and reuse</title>
+</head>
+<body>
+  <header class="doc-hero">
+    <div class="inner">
+      <h1>E-WSANDBOX.W5 · Result: a stopped worker comes back, and the router can see when that is cheaper</h1>
+      <p>Built as planned, with design A, which your probe chose.</p>
+      <div class="meta">T3 · WU result · 2026-11-28 · Keel · its data file, 2026-11-28-e-wsandbox-w5-result.yaml, sits beside this page</div>
+    </div>
+  </header>
+  <main>
+
+<h2 id="happened">What happened</h2>
+<p data-c="happened">The launcher can now bring back a stopped worker by name, with every safety setting rebuilt from the committed rules. A new read-only command shows each worker's memory size, idle time and warm or cold cache. The two reuse limits are settings, and the router skills carry one reuse rule. Your probe showed a removed session keeps its history and id, so stopping works as before. Your commit carried the twelve rule files.</p>
+
+<h2 id="checks">How you'll know: met or not</h2>
+<table data-c="checks">
+  <thead><tr><th>Check</th><th>Met?</th></tr></thead>
+  <tbody>
+    <tr><td>A resumed worker's command line matches a new start's, plus its session</td><td>Met, for a plain, a planner, a read-only and a review worker</td></tr>
+    <tr><td>The status read matches a recorded history at a fixed clock</td><td>Met</td></tr>
+    <tr><td>No router text says "never revived"; the two fix rules agree</td><td>Met</td></tr>
+    <tr><td>Live: a resumed worker remembers a word and is still refused a write outside its worktree</td><td>Half: your probe proved the memory; the launcher's live run is the epic's last check</td></tr>
+  </tbody>
+</table>
+
+<h2 id="example">The main case, run for real</h2>
+<p>From your probe in the probe clone:</p>
+<ol data-c="example">
+  <li>A background worker was told "Remember the word heron" and answered "OK."</li>
+  <li>It was stopped, then removed. Its history file stayed on disk.</li>
+  <li>It was resumed by its session id and came back under the same id.</li>
+  <li>Asked "Which word were you asked to remember?", it answered "heron".</li>
+</ol>
+
+<h2 id="diff">Differences from the plan</h2>
+<ul data-c="diff">
+  <li>A new start and a resume share one code path, not a separate builder function. Same effect, an easier merge with W7.</li>
+  <li>The sandbox blocked my writes to six files under the hidden Claude folder, so you applied them from a patch. Your first apply worked; a second run of the same command errored only because the change was already there.</li>
+  <li>With the patch in, one of my tests was wrong, not the guard. I fixed the test.</li>
+  <li>The router agent file changed too: it lists the launcher's commands.</li>
+  <li>A very long worktree path would show no history in the status read.</li>
+</ul>
+
+<h2 id="left">What is left, and who takes it</h2>
+<ul data-c="left">
+  <li>The independent review of this unit: a fresh review worker, then your sign-off.</li>
+  <li>The live stop, resume and status run: the epic's last check, after W7.</li>
+  <li>Stop should retry the remove step when a lock refuses it (seen in your probe): backlog row R55, the next router epic.</li>
+</ul>
+
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    document.querySelectorAll('.diagram').forEach((d) => {
+      const pre = d.querySelector('pre.mermaid');
+      if (pre) d.dataset.mermaidSrc = pre.textContent;
+    });
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { darkMode: true, background: '#181b22' } });
+  </script>
+  <script type="module" src="https://htmldoc.wfomobile.com/htmldoc.js"></script>
+</body>
+</html>
