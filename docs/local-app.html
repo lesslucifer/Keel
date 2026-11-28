@@ -201,6 +201,7 @@ flowchart LR
     <tr><td>Playwright</td><td>The epic's flow on the unpackaged app, from a router line to the item on screen and out again</td><td>By hand, <code>pnpm e2e</code>: Vite's bundles, then the test (<a href="decisions/app.html#dec-75">DEC-75</a>)</td></tr>
   </tbody>
 </table>
+<p data-c="worker-loops">A worker session runs all three loops in its own worktree: the launcher gives it the install (pnpm's home, content store and package tree outside the worktree, <a href="install.html#app">install.html</a>) and local ports (E-WSANDBOX.W2 - W4, W10), so the owner-run install and port lanes are gone. Packaging the app (<code>pnpm make</code>) still needs a real <code>node_modules</code>: that stays yours.</p>
 <p data-c="seams">The epic test drives the unpackaged app through four <code>KEEL_APP_*</code> variables the packaged app ignores (<a href="decisions/app.html#dec-78">DEC-78</a>). What no test reaches, the real banner, <code>keel://</code>, Telegram's link and the packaged look, you check on one packaged build at the epic's close (<a href="decisions/app.html#dec-75">DEC-75</a>).</p>
 
 <h2 id="build">The build order</h2>

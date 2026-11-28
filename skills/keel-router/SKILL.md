@@ -374,8 +374,10 @@ in another skill.
   the project's policy (project-router names the keys). The effort follows the
   role: a worker `low`, a planner `high`, where a planner's deliverable is a
   plan or a design while a review, build, fix or check is a worker's. Every
-  host is told explicitly: `spawn --role`, or `worker_spawn`'s `effort`, never
-  omitted because omitting it takes the host's default.**
+  host is told explicitly: `spawn --role` (or `--effort`), or `worker_spawn`'s
+  `effort`, never omitted: on DSH an omitted `effort` takes the route's `high`,
+  on Claude Code an omitted role takes the launcher's policy default, the
+  worker's level.**
   Never let one inherit your session's model or effort (an `Agent` subagent
   takes only the model).
 - Brief (you write it, on every host): worktree/branch/tip, rulings, what to

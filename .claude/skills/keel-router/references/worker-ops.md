@@ -101,9 +101,13 @@ Claude Code trusts (pitfall 3); the target's branch carries the worker persona
   prompt, not authored substance (owner ruling 2026-11-08; SKILL.md
   "Substance comes from workers"). It is the only file you write. It names you,
   the router, as the one to report to.
-- **Spawn**: `<launcher> spawn <name> <worktree> .router/briefs/<name>.md <model> [--effort <level>] [--permission-mode <mode no wider than the committed one>] [--review]`
-  (`<name>` matches `[a-z0-9][a-z0-9-]{0,40}`; model and effort from the
-  project's model policy, project-router). The launcher refuses a name any live
+- **Spawn**: `<launcher> spawn <name> <worktree> .router/briefs/<name>.md <model> [--role worker|planner] [--effort <level>] [--permission-mode <mode no wider than the committed one>] [--review]`
+  (`<name>` matches `[a-z0-9][a-z0-9-]{0,40}`; model, role and effort from the
+  project's model policy, project-router). Pass `--role` every time (a worker
+  `low`, a planner `high`), or `--effort` to name a level instead; the two are
+  never given together, and the brackets are the grammar's, not licence to give
+  neither: an omitted role takes the launcher's policy default, the worker's
+  level. The launcher refuses a name any live
   session holds (SendMessage addresses by name) or whose launch is in progress,
   a worktree without the worker persona (naming the fix) and a detached one.
   `--review` starts a review worker: the only one granted the `cr` note, with no
