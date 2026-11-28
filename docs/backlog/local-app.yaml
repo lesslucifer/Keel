@@ -251,17 +251,6 @@ open:
         answer), or have keel refuse an id or page past a small cap. Source: E-APPLIST.W13 review round 1, refuted
         candidate (cr note on 57f1586). Taken by: this row.
 
-  - id: A12
-    title: "Five node app tests time out on a fresh fake script's first exec"
-    status: "open: a test-only fix; keel check is red on this Mac without it"
-    problem: >-
-      Five `node --test` cases fail in `keel check` on this macOS host: a freshly written fake script's first exec
-      costs 160 - 1300 ms, more than the tests allow - `app/test/login-path.test.ts:39` and
-      `app/test/run.test.ts:54, 64, 74, 127`. The fix was not applied.
-    proposal: >-
-      Widen those five timeouts, or pre-warm each fake script in `program()` before the test's clock starts.
-    source: "E-WSANDBOX close (owner ruling 2026-11-28); observed in keel check at the epic tip."
-    taken-by: "unowned: the next app work, with L6"
   - id: L1
     title: "Message the router from the app"
     status: later
@@ -401,3 +390,6 @@ closed:
       Mac); the records back to before GitHub, no new decision (the owner's ruling of 2026-11-19); the epic test
       `tests/suite/ghrevert_e2e.rs`. The github tier is read until E-DOCSPLIT is on main (A2 removes it); part 5 is
       E-DOCSPLIT's merge of main (E-DOCSPLIT.W7). Result: the E-GHREVERT epic result (archived).
+  - id: A12
+    title: "Five node app tests time out on a fresh fake script's first exec"
+    closed: "fixed by E-WSANDBOX's close (9ecb9d35): the five timeouts widened, the git-hang bound to 15 s once the host's first-exec scan showed 3 s short; the node suite green 447 of 447 in the runs after, and the Rust watcher now pre-warms its scripts (R59, the same cost)"

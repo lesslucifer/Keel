@@ -24,7 +24,7 @@ files:
       E-KEELFIX), the app's three build epics (A3 - A5, A3 done by E-APPLIST), in order. From the E-KEELFIX close: the
       plan-WU flow review (A6), the push hook's rules (A7, accepted), the dispatch guard (A8), the roster lock-out (A9),
       small follow-ups (A10). From the E-APPLIST close: the app's open ends (A11). From the E-WSANDBOX close: five
-      node tests' timeouts on this Mac (A12).
+      node tests' timeouts on this Mac (A12, fixed by 9ecb9d35).
     next-free: A13
   - letter: L
     file: local-app.yaml
@@ -75,9 +75,9 @@ order:
     status: not yet proposed; the owner orders it
     rows: >-
       R5's live part, R6 row 4's note, R7's open rows, R14 (DEC-48 item 4), R21, R22, R24 - R28, R31, R32, R34 -
-      R39, R41, R44 - R48, R51, R52, R54 - R61 (R23 and R53 done by E-WSANDBOX.W5; R40 ran in W1 and R42 is ruled
-      out at the E-WSANDBOX close). R20 and R29 close with the owner's post-merge install (epic plan
-      details.close-steps-w7); R47's L3 is wanted soon.
+      R39, R41, R44 - R48, R51, R52, R54 - R58, R60 (R23 and R53 done by E-WSANDBOX.W5; R40 ran in W1 and R42 is
+      ruled out at the E-WSANDBOX close; R59 and R61 fixed at that close). R20 and R29 close with the owner's
+      post-merge install (epic plan details.close-steps-w7); R47's L3 is wanted soon.
   - rank: none
     epic: E-CRLEVEL · a review schedule per level
     status: "closed: [review.wu] and [review.epic] over [review], per key, and fix_blockers_from; the level read from the review's target; Keel's WU review runs one round and fixes its blockers under a fix-PASS"
@@ -95,9 +95,10 @@ order:
     status: "closed 2026-11-28 with its e2e layer waived: local ports, packages and sites as ruled, the 14 ignored tests deleted, worker resume and reuse, one effort policy by role, and the router's and the watchdog's bounds; the e2e re-run is R60"
     rows: >-
       W1's findings closed R40 and R42; W2, W3 and W4 took R49's tests; W5 closed R23 and R53; W7 built R20 and
-      R29 (they close with the owner's install); R54 - R57 added during the epic; R58 (the rule-set load gate), R59
-      (the watch family's parallel flake) and R60 (the e2e re-run) added at its close, with R61 (the T1 pages' and
-      skills' rule-bearing wording); local-app A12 added; dsh D2 refreshed and D4 added
+      R29 (they close with the owner's install); R54 - R57 added during the epic; R58 (the rule-set load gate) and
+      R60 (the e2e re-run) added at its close; R59 (the watch family's parallel flake) and R61 (the T1 pages' and
+      skills' rule-bearing wording) fixed by its close (R59 by the close's test commit, R61 by the owner's rule
+      commit 0aa37df8); local-app A12 fixed by 9ecb9d35; dsh D2 refreshed and D4 added
   - rank: none
     epic: E-KEELFIX · keel fixes
     status: "closed: the commit level reads the committed rules, a gate run or help writes nothing unless asked, the github tier removed; W4 dropped by the owner's ruling of 2026-11-20"
@@ -127,5 +128,5 @@ order:
     status: open
     rows: >-
       B24 (an owner pick: A, B, C or E, then an epic), B25, B26 and B27; B21 (accepted limits); B19 (owed by the
-      owner's reinstall); B7's open rows; B2's unbuilt follow-ups, only if asked; local-app A8, A9, A10, A11, A12
+      owner's reinstall); B7's open rows; B2's unbuilt follow-ups, only if asked; local-app A8, A9, A10, A11
       (A4 or A5 may take any item).

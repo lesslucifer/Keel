@@ -619,19 +619,6 @@ open:
       guard, DSH by the guard plugin (D2, item 6).
     source: "Owner ruling 2026-11-28 at the E-WSANDBOX close."
     taken-by: "unowned: the next epic"
-  - id: R59
-    title: "The router::watch* suite tests are not parallel-safe"
-    status: "open: a test-isolation fix; keel check is red on this Mac without it"
-    problem: >-
-      At the E-WSANDBOX tip `keel check` fails under parallel test threads: the `router::watch*` family and
-      `watcher_run_is_bounded_when_the_watch_outpolls_its_releases` time out at `tests/suite/router.rs:1859`
-      ("watch never reached poll 1"). Each passes alone, and all 23 `router::watch*` tests pass with
-      `--test-threads=1` (E-WSANDBOX.W10 result). `keel preflight`'s `0·tree` is red until it is fixed.
-    proposal: >-
-      One fixture per test (its own poll shim, clock and temp dirs), or a serial group for the watch family, and a
-      pin that runs the family in parallel.
-    source: "E-WSANDBOX.W10 result (the resumed fix session's gate block, 2026-11-28); owner ruling 2026-11-28 to defer the fix."
-    taken-by: "unowned: the next router epic"
   - id: R60
     title: "The epic e2e re-run on the next Claude quota"
     status: "open: the E-WSANDBOX e2e layer is waived; this row runs it on Claude Code"
@@ -652,22 +639,6 @@ open:
       `:271`; the red-doc 14 -> 7 against the 16/2 line; the `ok: built` early-exit line at `:103-105`.
     source: "E-WSANDBOX close (owner ruling 2026-11-28); the W10 result and the e2e harness; the epic plan's e2e-plan."
     taken-by: "the next Claude quota (owner); a worker judges the run"
-  - id: R61
-    title: "The T1 pages' E-WSANDBOX facts and the router skills' wording"
-    status: "open: rule-bearing edits; each is the owner's keel mr commit"
-    problem: >-
-      The epic's distillation left three rule-bearing edits unlanded, because the close cannot make them: T1 pages
-      and skills are the owner's `keel mr commit`. (a) `docs/architecture.html`'s `[router]` keys row lacks the two
-      reuse ceilings (`200000`, `400000`; DEC-43). (b) `docs/local-app.html`'s "Three test loops and the seams" does
-      not say that a worker session runs all three loops itself - the install on the grant and local ports
-      (E-WSANDBOX.W2 - W4, W10) - so the owner-run install and port lanes look current when they are gone.
-      (c) `skills/keel-router/references/worker-ops.md`'s spawn recipe names no `--role` (both copies), and
-      E-WSANDBOX.W9's rule-file round left two wording nits.
-    proposal: >-
-      One owner `keel mr commit`: the architecture row's two keys, the local-app sentence, and the worker-ops spawn
-      recipe with the review's nits. Each edit is named above so it can be applied as written.
-    source: "E-WSANDBOX close (the epic plan's distillation-plan); E-WSANDBOX.W9's rule-file round; the close author may not commit a rule-bearing path."
-    taken-by: "unowned: the owner's next rule-bearing commit"
 closed:
   - id: R1
     title: "Worker persona missing in branches without it"
@@ -744,3 +715,9 @@ closed:
   - id: R53
     title: "A long-lived builder session costs more on follow-ups than a fresh worker"
     closed: "done by E-WSANDBOX.W5: the owner's reuse rule (cold and warm ceilings in [router], read with the launcher's status) replaces the proposed 130k / 300k note (DEC-43)"
+  - id: R59
+    title: "The router::watch* suite tests are not parallel-safe"
+    closed: "fixed at the E-WSANDBOX close (7b78335c): the watcher fixture runs each script a watch execs (the watch, the sleep, git and date shims) once before any bound starts, so a fresh file's first-exec scan - 420 ms for one, p50 9.2 s for 40 at once - is paid outside it; plain keel check green in repeated runs at the same load"
+  - id: R61
+    title: "The T1 pages' E-WSANDBOX facts and the router skills' wording"
+    closed: "landed by the owner's rule commit 0aa37df8: architecture's [router] row gains the two reuse ceilings, local-app's test loops say a worker session runs them, worker-ops names --role, and the two W9 wording nits are fixed (the host's own default on omission; the allowed levels named, not the refused one)"
