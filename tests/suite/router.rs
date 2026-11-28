@@ -2068,7 +2068,7 @@ fn launcher_has_only_its_modes_and_writes_no_out_dir() {
     for args in [vec!["wait", "n"], vec!["send", "n", ".router/briefs/b.md"], vec!["brief", "n", ".router/briefs/b.md"]] {
         let o = l.cmd(&args, &[]).output().unwrap();
         assert_eq!(o.status.code(), Some(2), "{args:?}");
-        assert!(String::from_utf8_lossy(&o.stderr).contains("spawn|stop|resume|status|worktree|watchdog"), "{args:?}: {o:?}");
+        assert!(String::from_utf8_lossy(&o.stderr).contains("spawn|stop|resume|status|prune|worktree|watchdog"), "{args:?}: {o:?}");
     }
     let o = l.cmd(&["resume", "n", "0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b", l.wt.to_str().unwrap(), ".router/briefs/b.md"], &[]).output().unwrap();
     assert_eq!(o.status.code(), Some(2));
