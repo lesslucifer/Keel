@@ -2,202 +2,200 @@ artifact: wu-plan
 status: ready
 id: E-WSANDBOX.W7
 epic: E-WSANDBOX
-title: "E-WSANDBOX.W7 plan: what the router and the watchdog may do, in two tables a test pins"
+title: "E-WSANDBOX.W7 plan: what the router and the watchdog can and can't do, and the new abilities you pick"
 date: "2026-11-28"
 page: 2026-11-28-e-wsandbox-w7-plan.html
 requirement: >-
-  The router's bound and the watchdog's bound are each written once, as one table of every admitted tool, Bash shape,
-  write, setting and unsandboxed script with what widening it exposes, in one new decision in
-  docs/decisions/router.html; tests/suite/router.rs reads both tables and fails when a table row, a guard shape, a
-  settings allow line, the router agent file's tools or the watchdog's launch argv disagree; neither session gains a
-  sandbox or any power, and after W5 merges the tables and tests cover its resume and status shapes too.
+  The plan shows the owner what the router and the watchdog can and can't do today, each item grounded in a
+  file:line, and lists candidate new abilities with what each gives, what it exposes and a recommendation; W7 then
+  builds only the abilities and gap fixes the owner picks, each behind a test that is red before it and green after
+  the owner's one keel mr commit.
 maps-to: >-
   E-WSANDBOX.W7 (wu-summaries); the owner's scope note of 2026-11-26 (the router's and the watchdog's own parts); the
-  merge ruling of 2026-11-28 (old W7 and W8 as one WU); the parallel ruling of 2026-11-28 (W7 runs beside W5);
-  UC-ROUTE-1 and UC-ROUTE-6 (amended).
+  merge ruling of 2026-11-28 (old W7 and W8 as one WU); the parallel ruling of 2026-11-28 (W7 beside W5); the owner's
+  direction of 2026-11-28 ("I want to know first what it can & can't do in the plan. Then I decide to add more
+  ability if needed. W7 is the implementation plan for the new abilities."); UC-ROUTE-1 and UC-ROUTE-6 (amended for
+  each ability picked).
 expected: >-
-  docs/decisions/router.html holds one new decision with two tables (router, watchdog), each row a bound id, what is
-  admitted and what widening it exposes; the guard test admits one example of every router Bash alternative and
-  refuses a near miss of each, and its set of alternatives equals the router table's Bash rows; every
-  permissions.allow line of .claude/settings.json is admitted by the guard on an example and every guard Bash
-  alternative has its allow line (router-watch.sh narrowed to its five kinds if the owner keeps the default); the
-  guard's verdicts are the same under every permission_mode; router.md's tools equal the guard's and its body points
-  to the table instead of listing shapes; the watchdog's argv carries only --setting-sources local, --tools
-  SendMessage CronCreate, --strict-mcp-config and a --settings whose only key is hooks (the facts hook and the guard
-  with watchdog_to), and the guard with watchdog_to refuses every other tool and every other CronCreate or recipient;
-  after the epic merge, resume and status (and retire, under W5's outcome B) are rows and pins; the rule-bearing files
-  are staged together for one owner keel mr commit.
+  For each ability or gap fix the owner picks (details.candidates, details.gaps): the guard, settings, launcher or
+  hook admits exactly the new shape and still refuses its near misses; its tests in tests/suite/router.rs are red on
+  the epic tip and green after the owner commit; UC-ROUTE-6, the keel-router posture section, router.md and the
+  decision rows name it. Nothing the owner did not pick changes. If the owner picks nothing, W7 closes with no build
+  and its result says so.
 test-plan:
   unit: >-
-    Per worker commit, in tests/suite/router.rs (the guard and launcher are jq and shell, run through the suite's
-    helpers guard(), guard_event(), guard_to() and the stub-claude Launcher, as every router test is): one verdict case
-    per admitted shape and per refused near miss, each a single jq run on one PreToolUse event. A case pinning
-    behaviour that already holds is green when added; the settings-narrowing case and the router.md pointer case are
-    red until the owner commit, like W9's and W5's staged-file tests.
+    Per worker commit, in tests/suite/router.rs through the existing helpers (guard() and bash() at router.rs:19 and
+    :42, guard_to() :3081, the stub-claude Launcher, facts() :3403): for each picked ability one case per new admitted
+    shape and one per refused near miss, each red on the epic tip (the guard refuses the shape today) and green after
+    the owner commit. Per candidate, details.candidates[].tests names them.
   integration: >-
-    tests/suite/router.rs, new or extended: (1) router_bounds_table_matches_the_guard - parses the new decision's two
-    tables (rows carry data-bound="<id>") and asserts the router Bash ids equal the guard's alternatives in bash_ok and
-    app_shapes, the tool ids equal def tools, the skill ids equal def skills, the write ids equal the two Write paths;
-    (2) settings_allow_and_the_guard_name_the_same_bash_shapes - every allow line is admitted on an example, every
-    alternative has a line (generalises settings_allow_exactly_the_launcher_shapes_the_guard_admits and
-    settings_allow_exactly_the_app_shapes_the_guard_admits, which stay); (3) router_guard_verdicts_ignore_the_permission_mode -
-    the same events under plan, acceptEdits, auto, default and bypassPermissions give the same verdicts;
-    (4) router_agent_file_names_the_tools_and_points_to_the_bounds - tools: equals def tools (kept from
-    router_guard_confines_the_router_to_its_tools_and_leaves_other_agents_alone), no Agent, Edit or Monitor, the body
-    cites the decision; (5) watchdog_bounds_table_matches_its_launch - the watchdog table's ids equal the argv flags
-    the launcher passes (extends watchdog_session_loads_local_settings_only_and_defines_its_agent_inline and
-    watchdog_starts_as_a_background_session_whose_hooks_carry_the_routers_name: the --settings JSON's only key is hooks,
-    no permissions, no sandbox, no env); (6) watchdog guard refusals widened - Bash, Read, Write, CronDelete, a
-    CronCreate with another cron, prompt or recurring false, a SendMessage to another name or an empty to (extends
-    guard_run_with_a_watchdog_recipient_allows_only_the_scheduler_and_a_message_to_that_name); the facts hook's
-    linked_ok-before-git pin is the existing watchdog_facts test at router.rs:1740-1741, cited by the table, not
-    duplicated. After the epic merge: W5's resume, status (and retire under B) rows join (1) and (2).
+    tests/suite/router.rs: the settings-vs-guard tests (settings_allow_exactly_the_launcher_shapes_the_guard_admits
+    :2115, settings_allow_exactly_the_app_shapes_the_guard_admits :494) extended so every permissions.allow line is
+    admitted by the guard and every new guard shape has its allow line; the router.md tools test (:261-288) kept; for
+    C5 the wired Stop hook run as Claude Code runs it (as settings_run_the_guard_on_every_tool_and_fail_closed :543
+    runs the PreToolUse one); for C6 the watchdog facts at a fixed clock (ROUTER_NOW) with a schedule age past six
+    days. After W5 merges in: W5's resume and status shapes sit in the same extended tests.
   e2e: >-
-    none: both bounds are the guard and the launcher's argv, proven by the fixture tests above (epic plan
-    details.w7-router-bounds.no-live-probe); the epic e2e is W5's probe-clone run and is unchanged by W7.
+    none: every ability on offer is a guard, settings or launcher shape proven by the fixture tests; the epic e2e is
+    W5's probe-clone run, unchanged by W7. If the owner picks C3 (htmldoc comments), one live read of a page's
+    comments by the router is an owner step at the epic e2e.
 details:
   grounding:
     tip: "0f68238b950bb6536f4d805159fa06ac9241ebef (= epic/E-WSANDBOX); line numbers below are at this tip."
-    guard: |-
-      scripts/router-guard.jq (72 lines): def tools line 15 (11 tools); def skills line 18 (keel-router,
-      project-router, keel-workflow, keel-plan, keel-distill); gh_args line 32; app_shapes line 36; bash_ok 37-41
-      (character whitelist, no --ou, the alternatives, no .. in a scripts/ path); watchdog_to branch 43-51; agent_type
-      gate 52; tools 53; Bash 54-59 (length cap 1000, trim, deny text 58); Write 60-64 (.router/briefs/<name>.md and
-      .router/notify/owner.md under cwd); Skill 65-66; SendMessage 69-71 (any non-empty to). The guard never reads
-      permission_mode.
-    settings: |-
-      .claude/settings.json: "agent": "router" line 2; permissions.allow 4-39 (34 lines); PreToolUse guard 42-53, no
-      matcher, fail-closed (jq failure exits 2); PostToolUse and Stop verify-doc hooks 54-74. Line 32
-      "Bash(scripts/router-watch.sh *)" is wider than the guard's five kinds (commit|signed|merged|pushed|tagged); the
-      guard is the bound, so an allow line wider than it only skips a prompt the guard denies anyway.
-    agent-file: ".claude/agents/router.md: tools line 4 (the guard's 11); body 11-33 lists the Bash shapes by hand and omits scripts/router-inbox.sh, a drift source the pointer removes."
-    mode: "The router's permission mode is the user settings' (auto); the project settings set none. Hooks run in every mode, so the bound does not depend on it; test (3) pins that."
-    launcher-watchdog: |-
-      scripts/router-worker.sh watchdog mode 348-384: start reads [router] watchdog_model (haiku), refuses an unlisted
-      router and a second start, builds the inline agent (tools SendMessage, CronCreate; prompt says the blocks are
-      untrusted) 368-369 and the hooks JSON 370-372 (UserPromptSubmit: watchdog facts <router>, timeout 60;
-      PreToolUse matcher *: router-guard.jq --arg watchdog_to <router>, fail-closed), then claude --bg -n
-      watchdog-<router> --setting-sources local --agents ... --agent watchdog --model <m> --tools SendMessage CronCreate
-      --allowedTools SendMessage CronCreate --strict-mcp-config --autocompact 100k --settings <hooks> 374-376. No
-      --permission-mode. facts() 218-307: claude agents --json; claude stop of its own session when the router is gone
-      (225-226); git -c core.fsmonitor=false (and --no-optional-locks for status) in a worktree only after linked_ok
-      (261-268); reads the last 64 KB of each worker's transcript; app_lines writes the update log through
-      scripts/router-app.sh. Header 11-20.
-    local-settings: "--setting-sources local loads the router checkout's .claude/settings.local.json (absent at this tip; git-ignored; the owner's file). A worker's sandbox cannot write the router checkout (DEC-46 point 9; the file guard), so only the owner can widen the watchdog that way."
-    skill: "skills/keel-router/SKILL.md and .claude/skills/keel-router/SKILL.md (identical), 'The router posture' 25-78: generic, names no Keel file path beyond the launcher's shapes; has no watchdog paragraph."
-    project-router: ".claude/skills/project-router/SKILL.md:22 (Router checkout row) and :43 (posture: .claude/agents/router.md)."
-    decisions: "docs/decisions/router.html: DEC-30 (line 21-27, the whitelist and the guard), DEC-45 (96-103, the watchdog), DEC-46 (117-138, scope); DEC-37 (105-116) is the worker grant and mode, which W7 does not touch. Highest DEC id in docs/decisions at this tip: DEC-83 (distribution.html); the new decision takes the next free id at build time (DEC-84 if none lands first)."
-    use-cases: "docs/use-cases/router.yaml UC-ROUTE-1 (line 12) and UC-ROUTE-6 (line 177): UC-ROUTE-6 names the tests; it gains the two new test names and the decision."
-    tests: "tests/suite/router.rs (5064 lines): guard 19, guard_event 24, settings 46, router_guard_confines_... 261-288, settings_run_the_guard_on_every_tool_and_fail_closed 543, router_guard_admits_spawn_and_stop_and_refuses_resume_wait_and_send 2078, settings_allow_exactly_the_launcher_shapes_the_guard_admits 2115, guard_to 3081, watchdog tests 3094-3357, facts unlinked pin 1740-1741."
-  router-bounds:
-    - {id: tools, admitted: "Read, Grep, Glob, Write, Bash, Skill, ToolSearch, TodoWrite, AskUserQuestion, SendMessage, ListAgents", widening-exposes: "Agent: a subagent runs under its own agent type, outside the guard, with full tools. Edit: any file, the guard and settings included. Monitor: a shell outside the Bash hook."}
-    - {id: read, admitted: "Read, Grep, Glob of any path the owner's user can read (no sandbox)", widening-exposes: "Already wide: secrets under the owner's home are readable by a session that reads untrusted text; its only ways out are a brief and a SendMessage. Recorded, not changed (open question)."}
-    - {id: bash-git, admitted: "git status|log|diff|show ..., git branch -v|-vv|-a|-av|-va|-a -v|--all|--all -v", widening-exposes: "Any other git word writes refs, config or hooks with the owner's rights, unsandboxed."}
-    - {id: bash-gh, admitted: "gh pr view|list|status with named query flags and bare words; no -R, URL, -q/--jq/-t, --web", widening-exposes: "A host or jq argument points gh's keychain token at any host or reads the environment."}
-    - {id: bash-ps, admitted: "ps aux, ps -ef", widening-exposes: "kill or another process tool stops the owner's sessions."}
-    - {id: bash-launcher, admitted: "scripts/router-worker.sh spawn|stop <words>, worktree add|remove <epic/E or wu/E/slug>, watchdog start|stop <router-name>; after the merge, W5's resume <name> and status [<name>] (retire <name> under outcome B)", widening-exposes: "Each mode runs claude and git with the owner's rights; a new mode or argument is a new unsandboxed power."}
-    - {id: bash-watch, admitted: "scripts/router-watch.sh commit|signed|merged|pushed|tagged <words not starting with ->", widening-exposes: "pushed runs git fetch of one remote ref over the network; another kind or a flag reaches more of the network or git."}
-    - {id: bash-notify, admitted: "scripts/notify-owner.py --check|--send|--dry-run (body in .router/notify/owner.md)", widening-exposes: "A body argument lets a quoted string reach the shell; the sender reaches its push host."}
-    - {id: bash-inbox, admitted: "scripts/router-inbox.sh init|status|watch <seconds>|consume <id>, never post", widening-exposes: "post lets the router write a report as if from a worker."}
-    - {id: bash-app, admitted: "scripts/router-app.sh start <name>|stage <wu> <stage> [<tip>]|del question/<id>|del wu/<wu>/stage, never set or alert", widening-exposes: "set and alert carry free JSON no plain-word guard can judge."}
-    - {id: bash-form, admitted: "One command of plain words, at most 1000 characters; no quote, $, glob, pipe, redirect, separator, --ou, or .. in a scripts/ path", widening-exposes: "Any shell syntax lets a denied command be reassembled (lessons K10)."}
-    - {id: write, admitted: "<cwd>/.router/briefs/<name>.md and <cwd>/.router/notify/owner.md", widening-exposes: "A write to scripts/ or .claude/ rewrites the guard or settings the next session loads."}
-    - {id: skills, admitted: "keel-router, project-router, keel-workflow, keel-plan, keel-distill (inline)", widening-exposes: "A skill that forks a subagent escapes the guard as Agent does."}
-    - {id: message, admitted: "SendMessage to any non-empty name; ListAgents", widening-exposes: "Already any named session; a peer's message is never the owner's approval (UC-ROUTE-1)."}
-    - {id: settings-allow, admitted: "permissions.allow: the same shapes as the guard (skips the prompt only)", widening-exposes: "Nothing while the guard runs; a line wider than the guard is drift (router-watch.sh * today)."}
-    - {id: mode, admitted: "the user settings' mode (auto); the guard runs in every mode", widening-exposes: "None through the mode; removing the hook or the agent line removes the bound."}
-    - {id: hooks, admitted: "PreToolUse guard on every tool, fail-closed; PostToolUse and Stop verify-doc", widening-exposes: "A matcher on the guard leaves the unmatched tools unbounded; an error that allows lets every call through."}
-  watchdog-bounds:
-    - {id: tools, admitted: "--tools SendMessage CronCreate (only those exist in the session); --allowedTools the same", widening-exposes: "Bash or Read lets a session that reads worker transcripts act on them."}
-    - {id: guard, admitted: "router-guard.jq --arg watchdog_to <router>: CronCreate only of cron */5 * * * *, prompt tick, recurring true; SendMessage only to <router>", widening-exposes: "Another recipient lets untrusted worker text steer a worker; another schedule floods the router."}
-    - {id: settings, admitted: "--setting-sources local (the router checkout's settings.local.json, absent today, the owner's), --settings with hooks only, --strict-mcp-config, inline agent, no --permission-mode", widening-exposes: "Project settings bring the Stop verify-doc hook (the watchdog loops on a red doc) and the router's allow list; MCP brings tools the guard never named."}
-    - {id: model, admitted: "[router] watchdog_model (haiku), --autocompact 100k, never resumed", widening-exposes: "Cost only."}
-    - {id: facts-hook, admitted: "watchdog facts <router>, unsandboxed with the owner's rights, timeout 60: claude agents --json; claude stop of its own session once the router is gone; git branch/log/status in a worktree only after linked_ok, fsmonitor off, no optional locks; the last 64 KB of each transcript; the update log through router-app.sh", widening-exposes: "git in an unlinked worktree runs a worker-written config or fsmonitor with the owner's rights; any write beyond the update log is unsandboxed."}
+    denials-on-record: |-
+      The router's transcripts in ~/.claude/projects/-Users-nguyenvanluong-Documents-proj-misc-Keel (54 sessions, 8
+      with a guard denial, Nov 7 - Nov 28): 83 'Bash whitelist' denials, 14 'SendMessage only as a pure subscription'
+      (the old rule, gone since DEC-42), 8 'jq failed', 4 'Skill only'. The denied calls, grouped:
+      - search: grep -n <file> (7; the Grep tool would have served), git grep at a ref (7), git ls-tree (1)
+      - git outside the shapes: git branch --list/-v -a variants (5; most now admitted), git worktree list (2), git -C <other worktree> log (1), cd <other checkout> && git (2), git ls-remote origin refs/notes/* (1)
+      - gh: --repo (2), gh pr view --comments (1), gh run view --log (1)
+      - shell forms: a pipe (ps aux | grep), an until/kill -0 wait loop, python3 <script> (2)
+      - skills: htmldoc (1), loop (1)
+      - data errors: router-app.sh stage with an unknown stage word (1), router-watch.sh with no kind (2)
+    delegated-today: "skills/keel-router/SKILL.md:49-51: keel verify-dod, keel check, git notes, gh run, curl against an htmldoc server, lsof, watch loops, a git worktree the launcher does not make - delegated to a worker. project-router SKILL.md:42: reading CI runs and git state beyond the whitelist is a read-only worker's."
+    dsh: "project-router SKILL.md:18, :41, :75: on DSH the preset denies the launcher's worktree add|remove, so a worker does it; DSH has no shell hook, so the posture is unenforced there (keel-router SKILL.md:66-73)."
+  can-today:
+    router:
+      - {can: "Use 11 tools: Read, Grep, Glob, Write, Bash, Skill, ToolSearch, TodoWrite, AskUserQuestion, SendMessage, ListAgents", where: "scripts/router-guard.jq:15,53; .claude/agents/router.md:4"}
+      - {can: "Read and search any file the owner's user can read (no sandbox, no path rule)", where: "router-guard.jq:52-72 (no Read rule); W1 findings details.router-watchdog.router"}
+      - {can: "Read git: status, log, diff, show with any plain-word args (git log --notes included), branch -v/-vv/-a/-av/-va/-a -v/--all/--all -v", where: "router-guard.jq:40"}
+      - {can: "Read pull requests: gh pr view|list|status with named query flags", where: "router-guard.jq:32,40"}
+      - {can: "List processes: ps aux, ps -ef", where: "router-guard.jq:40"}
+      - {can: "Start and stop workers, add and remove worktrees, start and stop the watchdog (the launcher, run with the owner's rights)", where: "router-guard.jq:40; scripts/router-worker.sh:5-8"}
+      - {can: "Watch for the owner's commit, sign-off, merge, push and tag (push runs git fetch)", where: "router-guard.jq:40; scripts/router-watch.sh"}
+      - {can: "Push the owner a message (body from .router/notify/owner.md)", where: "router-guard.jq:40,63; scripts/notify-owner.py"}
+      - {can: "Read worker reports from the inbox: init, status, watch, consume", where: "router-guard.jq:40; scripts/router-inbox.sh"}
+      - {can: "Write the update log: start, stage, del", where: "router-guard.jq:36"}
+      - {can: "Write worker briefs and the owner's message body", where: "router-guard.jq:60-64"}
+      - {can: "Message any named session; list sessions", where: "router-guard.jq:69-71"}
+      - {can: "Load five skills: keel-router, project-router, keel-workflow, keel-plan, keel-distill", where: "router-guard.jq:18,65-66"}
+      - {can: "Run in any permission mode with the same limits (the guard never reads the mode)", where: "router-guard.jq (no permission_mode); .claude/settings.json:42-53"}
+    router-cannot:
+      - {cannot: "Edit any file, or Write anything but briefs and the message body", where: "router-guard.jq:53,60-64"}
+      - {cannot: "Start a subagent or a shell watcher (Agent, Monitor)", where: "router-guard.jq:13-15,53"}
+      - {cannot: "Run any other command: no pipe, cd, quote, $, glob, redirect, chain; no grep, git grep, git -C, git worktree list, git ls-tree, gh run, curl, keel, cargo, kill, python3", where: "router-guard.jq:37-41,57"}
+      - {cannot: "Point gh at another repo or host (-R, --repo, a URL), or use gh --jq, --template, --web", where: "router-guard.jq:26-32"}
+      - {cannot: "Post to the inbox, or write set and alert lines to the update log", where: "router-guard.jq:33-36,40"}
+      - {cannot: "Load any other skill (htmldoc, loop, code review)", where: "router-guard.jq:18,65-66"}
+      - {cannot: "End its turn while a doc in its checkout is red: the Stop doc hook refuses, and it cannot fix docs (backlog R20)", where: ".claude/settings.json:65-74; docs/backlog/e-router-v2.yaml:165-176"}
+      - {cannot: "Run keel checks, read git notes refs remotely, read CI runs or htmldoc comments itself: a worker does it", where: "skills/keel-router/SKILL.md:49-51"}
+      - {cannot: "Create or remove worktrees on DSH (the preset denies the launcher there)", where: "project-router SKILL.md:41"}
+    watchdog:
+      - {can: "Create its one schedule: CronCreate of */5 * * * *, prompt tick, recurring", where: "router-guard.jq:46-47; router-worker.sh:374-376"}
+      - {can: "Message its own router", where: "router-guard.jq:48"}
+      - {can: "Through its facts hook, each tick, with the owner's rights: list sessions; read each worker's branch, tip and dirty count after checking the worktree's link; read the last 64 KB of each worker's history; write the update log; stop itself once the router is gone", where: "router-worker.sh:218-307, 225-226, 261-268"}
+      - {can: "Load the router checkout's local settings file (absent today)", where: "router-worker.sh:374 (--setting-sources local)"}
+    watchdog-cannot:
+      - {cannot: "Use any tool but those two: no shell, read or write", where: "router-worker.sh:375 (--tools SendMessage CronCreate)"}
+      - {cannot: "Message anyone else, or change or delete its schedule", where: "router-guard.jq:46-51"}
+      - {cannot: "Load project or user settings, or MCP servers", where: "router-worker.sh:374-375"}
+      - {cannot: "Keep its schedule past 7 days: the recurring job ends and its reports stop (backlog R29)", where: "docs/backlog/e-router-v2.yaml:273-282; skills/keel-router/references/worker-ops.md:198"}
+  candidates:
+    - id: C1
+      ability: "Router: more read-only git - git grep (at a ref), git ls-tree, git worktree list, git branch --list <name>"
+      gives: "Search another branch or tip and list worktrees without a worker (14 denials on record)."
+      exposes: "git grep -O / --open-files-in-pager runs a command, so those flags are refused; the rest reads the repo only, as git show already does."
+      recommend: "Yes."
+      build: "router-guard.jq bash_ok: four shapes, each word plain, -O, --open-files-in-pager and --ou refused; settings.json allow lines; deny text; keel-router posture and UC-ROUTE-6 list them."
+      tests: "Admitted: git grep -n word main -- path, git ls-tree --name-only main docs, git worktree list, git branch --list main. Refused: git grep -O vim x, git grep --open-files-in-pager=x y, git worktree add x, git ls-tree x; rm -r y."
+    - id: C2
+      ability: "Router: read CI runs - gh run list|view with named query flags, --log included"
+      gives: "Check a red CI run without a worker (delegated today, SKILL.md:49)."
+      exposes: "Run logs are untrusted text, like PR bodies; no -R or URL, so the token reaches only this repo's host."
+      recommend: "Yes."
+      build: "router-guard.jq: gh run (view|list) with gh_args plus --log and --job; settings.json; posture text."
+      tests: "Admitted: gh run list --limit 5, gh run view 44453026886 --log. Refused: gh run rerun 1, gh run view 1 -R x/y, gh run view 1 --jq .x."
+    - id: C3
+      ability: "Router: read a page's htmldoc comments through a new fixed script (one host, GET only)"
+      gives: "Relay and route the owner's page comments without a worker."
+      exposes: "A new unsandboxed script with network to htmldoc.wfomobile.com; comments are untrusted text."
+      recommend: "Not now: the owner's comments reach the worker that owns the page; revisit if relaying them by hand costs."
+      build: "scripts/router-htmldoc.sh comments <24-hex id> (fixed URL, jq summary); rule_bearing entry in .keel/config.toml; guard shape; settings line."
+      tests: "Stubbed curl: the fixed URL, an id refused unless 24 hex; guard admits only that shape."
+    - id: C4
+      ability: "Router: git in another worktree (git -C <path> log|status)"
+      gives: "Read a worker's branch state directly."
+      exposes: "git in a worktree whose .git a worker rewrote runs the worker's config, hooks or fsmonitor with the owner's rights (why the launcher checks linked_ok first)."
+      recommend: "No: the watchdog's facts and W5's status already read it safely."
+      build: "-"
+      tests: "-"
+    - id: C5
+      ability: "Router: end its turn while a doc is red (the Stop doc hook skips the router)"
+      gives: "No loop on a red doc it cannot fix (R20)."
+      exposes: "Nothing: the router writes no doc; a worker still sees the hook."
+      recommend: "Yes."
+      build: "settings.json Stop hook: skip when the hook input's agent_type is router (checked against a captured Stop event first; if Stop carries no agent_type, the plan reports it and drops C5)."
+      tests: "The wired Stop command with a red doc: a router event passes, a worker event is refused."
+    - id: C6
+      ability: "Watchdog: warn the router before its 7-day schedule ends"
+      gives: "The router restarts it (watchdog stop, start) before reports stop (R29)."
+      exposes: "Nothing: one more line in the facts block; no new tool."
+      recommend: "Yes."
+      build: "router-worker.sh facts: read the watchdog session's start time from its transcript's first record and print 'Schedule ends in under a day: restart the watchdog.' past six days; keel-router worker-ops.md:198 names it."
+      tests: "Facts at ROUTER_NOW six days and one hour after a fixture start print the line; at five days they do not."
+    - id: C7
+      ability: "Router: run keel verify-dod, keel check or preflight itself"
+      gives: "Verify a worker's gate claim without a worker."
+      exposes: "keel runs git in the worker's worktree with the owner's rights (the C4 risk) and reads code the worker wrote."
+      recommend: "No."
+      build: "-"
+      tests: "-"
+    - id: C8
+      ability: "Router on DSH: worktree add|remove through the launcher"
+      gives: "No worker for worktrees on DSH."
+      exposes: "DSH has no hook to bound the shape; a host preset change outside this repo."
+      recommend: "No in W7 (a DSH preset, not this repo's guard); a backlog row if wanted."
+      build: "-"
+      tests: "-"
+  gaps:
+    - id: G1
+      gap: "settings.json:32 allows Bash(scripts/router-watch.sh *); the guard admits five kinds only"
+      effect: "None while the guard runs (the guard refuses the rest); the two lists disagree."
+      recommend: "Fix: five allow lines, one per kind; test as C1's settings test."
+    - id: G2
+      gap: ".claude/agents/router.md:16-23 lists the router's shapes by hand and omits router-inbox.sh"
+      effect: "A reader of the agent file sees an older list."
+      recommend: "Fix: replace the list with a pointer to UC-ROUTE-6 and the guard."
+    - id: G3
+      gap: "The watchdog loads the router checkout's .claude/settings.local.json (router-worker.sh:374)"
+      effect: "Hooks or permissions in that file reach the watchdog. Absent today; git-ignored; only the owner writes it (a worker's sandbox cannot write the router checkout)."
+      recommend: "Leave, and record it in DEC-45."
   sandbox-fork:
-    facts: "A Claude Code sandbox bounds the Bash tool only. The watchdog has no Bash tool, and its facts hook runs outside any sandbox; so a sandbox bounds nothing of it. The router's Bash runs only the whitelisted shapes; the launcher must write ~/.claude (claude --bg), the git dir (worktree add) and reach the network (claude, git fetch, the push sender)."
+    question: "The epic's open question: do the router and the watchdog stay outside a sandbox?"
+    default: "Yes. A sandbox bounds the Bash tool only: the watchdog has none and its facts hook runs outside any sandbox; the router's Bash runs only fixed scripts that need ~/.claude, the git dir and the network."
+    under-default: "Recorded in DEC-30 and DEC-45 Amended rows with the abilities picked; no backlog row."
   overlap-with-w5:
-    files-both-edit:
-      - "scripts/router-guard.jq (W5: resume, status, retire under B, the deny text; W7: a header comment citing the decision, the deny text pointing to it)"
-      - ".claude/settings.json (W5: allow resume *, status, status *, retire * under B; W7: router-watch.sh narrowed to five kinds)"
-      - ".claude/agents/router.md (W5: only if a tool line changes, none expected; W7: the body points to the decision)"
-      - "scripts/router-worker.sh (W5: resume, status, stop, the flag builder; W7: none planned - a header comment only if the review asks)"
-      - "skills/keel-router/SKILL.md and .claude/skills/keel-router/SKILL.md (W5: Workers, the review table, 'One live session per WU'; W7: 'The router posture' only, 25-78)"
-      - ".claude/skills/project-router/SKILL.md (W5: Workers 68; W7: the Router checkout row 22 and the posture row 43)"
-      - "tests/suite/router.rs (W5 rewrites router_guard_admits_spawn_and_stop_and_refuses_resume_wait_and_send and settings_allow_exactly_the_launcher_shapes_the_guard_admits; W7 adds tests (1)-(6) beside them)"
-      - "docs/decisions/router.html (W5: DEC-30, DEC-43, DEC-44, DEC-46 rows; W7: the new decision, DEC-30, DEC-45, DEC-46 Amended rows)"
-      - "docs/use-cases/router.yaml (W5: UC-ROUTE-1, -5, -6; W7: UC-ROUTE-1, -6)"
-      - "docs/decisions/decisions-index.yaml (W7 only: the new decision's entry)"
-    merge-order:
-      recommended: >-
-        A - W5 merges into epic/E-WSANDBOX first. W7 builds now: its tests and docs are worker commits; it makes no
-        rule-bearing edit yet. Once W5 has merged, the W7 worker merges epic/E-WSANDBOX into
-        wu/E-WSANDBOX/w7-bounds with a merge commit (never a rebase). Conflicts can fall only in files W7 has
-        committed (tests/suite/router.rs, docs/decisions/router.html, docs/use-cases/router.yaml), none rule-bearing,
-        so the worker resolves them. Then it adds W5's resume and status rows and pins, makes its rule-bearing edits
-        on top of W5's, stages them, and the owner makes the one keel mr commit. One review covers the range and the
-        merge's resolution.
-      cost-of-A: "W7's owner commit, review and sign-off wait for W5's merge, which waits on the owner's W5 probe. No second owner commit, no re-review."
-      alternative-B: >-
-        W7 first, signed and merged. W5 then merges the epic into its branch (a merge commit) and must add its resume and
-        status rows to W7's tables and tests, which test (1) and (2) force (a guard alternative with no row fails).
-        Cost: W5's confirmed plan is amended and its review covers the table rows; W7 is not touched again.
-      alternative-C: >-
-        W7 signs off before W5 merges, then takes W5's shapes later. Cost: a second owner keel mr commit on W7 (or a
-        follow-up WU) and a second review round.
-      switch-rule: "If W5 is blocked (no probe) when W7 is otherwise ready, the router asks the owner to switch to B; no code changes with the switch, only who adds W5's rows."
-  rule-bearing-map:
-    staged-for-one-owner-commit:
-      - ".claude/settings.json (router-watch.sh * becomes five kind lines, if the default holds)"
-      - ".claude/agents/router.md (body: the hand list replaced by a pointer to the decision; tools line unchanged)"
-      - "scripts/router-guard.jq (header comment and deny text cite the decision; no verdict changes)"
-      - "skills/keel-router/SKILL.md and its .claude/skills/keel-router mirror ('The router posture': a watchdog paragraph and the rule 'every bound has a table and a test'; generic, no Keel paths)"
-      - ".claude/skills/project-router/SKILL.md (rows 22 and 43 point to the decision)"
-    committed-by-worker:
-      - "docs/work/2026-11-28-e-wsandbox-w7-plan.html and .yaml (this pair), later the result pair"
-      - "tests/suite/router.rs"
-      - "docs/decisions/router.html (the new decision with both tables; DEC-30, DEC-45, DEC-46 Amended rows) and docs/decisions/decisions-index.yaml"
-      - "docs/use-cases/router.yaml (UC-ROUTE-1, UC-ROUTE-6)"
-      - "docs/backlog/e-router-v2.yaml only under the sandbox fork's option (b) or the read option deferred"
-    epic-plan-deviation: "The epic's rule-bearing-by-wu.W7 names DEC-37; DEC-37 is the worker grant and mode, which W7 does not touch, so the Amended rows go to DEC-30 (the router whitelist), DEC-45 and DEC-46."
-  open-questions:
-    - q: "Do the router and the watchdog stay outside a sandbox? (the epic's open fork)"
-      default: "Yes. The guard is the bound. A sandbox bounds only the Bash tool: the watchdog has none, and the router's Bash runs only whitelisted scripts that need ~/.claude, the git dir and the network."
-      options: "(a) stay unsandboxed - default; (b) sandbox the router's Bash with exceptions for the launcher, watch and sender; (c) defer to a backlog row."
-      under-each: "(a) the decision records it; no backlog row. (b) out of W7 (it adds a setting, not a table): a backlog row in docs/backlog/e-router-v2.yaml, W7 unchanged otherwise. (c) the same backlog row, worded as open."
-    - q: "Narrow the router's settings allow line for router-watch.sh to its five kinds?"
-      default: "Yes: five lines, one per kind, so the settings and the guard name the same set. No power changes; the guard already refuses the rest."
-      options: "(a) narrow - default; (b) keep router-watch.sh * and record it as allowed drift."
-      under-each: "(a) test (2) checks both directions, red until the owner commit. (b) test (2) holds a named exception for that one line."
-    - q: "Where do the two tables live?"
-      default: "One new decision in docs/decisions/router.html (T2, the why); router.md, project-router and UC-ROUTE-6 point to it; the keel-router skill keeps the generic rule only."
-      options: "(a) the decisions doc - default; (b) the project-router skill (rule-bearing: every table change is an owner commit)."
-      under-each: "(a) the tables change in worker commits, and the test ties them to the guard, which only the owner commits. (b) the tables join the owner commit; test (1) reads the skill."
-    - q: "Should the router's Read reach stay as wide as the owner's user?"
-      default: "Yes, recorded as accepted: the router must read worktrees, transcripts and git state; W7 adds and removes no power."
-      options: "(a) record only - default; (b) the guard also denies Read, Grep and Glob under ~/.ssh and ~/.claude/channels, the paths a worker's sandbox denies."
-      under-each: "(a) a row in the decision. (b) a guard change in the owner commit, its pins in test (1), a narrowing the owner names."
-    - q: "Which WU merges into the epic first?"
-      default: "W5 first (overlap-with-w5.merge-order.recommended, A)."
-      options: "(A) W5 first, W7 merges the epic in, then its one owner commit; (B) W7 first, W5 adds its rows; (C) W7 signs first and takes W5's shapes in a second owner commit."
-      under-each: "A: W7 waits at its owner commit. B: W5's plan is amended. C: a second owner commit and review on W7."
+    files-both-may-edit: "scripts/router-guard.jq (C1, C2, C3), .claude/settings.json (C1, C2, C3, C5, G1), .claude/agents/router.md (G2), scripts/router-worker.sh (C6), skills/keel-router SKILL.md and references/worker-ops.md and their .claude mirrors (posture; C6), .claude/skills/project-router/SKILL.md, tests/suite/router.rs, docs/decisions/router.html, docs/use-cases/router.yaml. W5 edits all of these (its plan's rule-bearing-map)."
+    recommended: >-
+      A - W5 merges into the epic first. W7 commits its tests and doc rows now (worker commits; the tests red), makes
+      no rule-bearing edit yet, and once W5 has merged merges epic/E-WSANDBOX into wu/E-WSANDBOX/w7-bounds with a
+      merge commit (never a rebase). Conflicts fall only in the non-rule-bearing files W7 committed; the worker
+      resolves them. Then the rule-bearing edits go on top of W5's and are staged for the one owner commit.
+    cost: "W7's owner commit and sign-off wait for W5's merge (which waits on the owner's W5 probe). No second owner commit, no re-review."
+    alternatives: "B - W7 first; W5 merges the epic in and its settings and guard tests carry W7's shapes (W5's plan amended). C - W7 signs before W5 merges; a second owner commit and review if W5's shapes then break W7's tests."
+    if-nothing-picked: "No overlap: W7 closes with its plan and result only."
+    if-only-c6: "Overlap only in router-worker.sh, worker-ops.md and router.rs; A still holds."
+  rule-bearing:
+    staged-for-one-owner-commit: "Per pick: scripts/router-guard.jq (C1, C2, C3), .claude/settings.json (C1, C2, C3, C5, G1), .claude/agents/router.md (G2), scripts/router-worker.sh (C6), skills/keel-router and .claude/skills/keel-router (posture and worker-ops.md), .claude/skills/project-router, scripts/router-htmldoc.sh and .keel/config.toml rule_bearing (C3 only)."
+    committed-by-worker: "This plan pair and the result pair; tests/suite/router.rs; docs/decisions/router.html (DEC-30, DEC-45 Amended rows); docs/use-cases/router.yaml (UC-ROUTE-1, UC-ROUTE-6); docs/backlog/e-router-v2.yaml (R20, R29 closed if C5, C6 picked)."
   commit-order:
-    - "1. docs(E-WSANDBOX.W7): this plan pair (now)."
-    - "Owner: confirms the plan (owner ruling 2026-11-28). Nothing below starts before it."
-    - "2. test(E-WSANDBOX.W7 router): tests (1)-(4); (1) reads a decision not yet written, so it lands with 4, or is red until 4."
-    - "3. test(E-WSANDBOX.W7 watchdog): tests (5)-(6)."
-    - "4. docs(E-WSANDBOX.W7): the new decision with both tables, the Amended rows, the index entry, UC-ROUTE-1 and UC-ROUTE-6."
-    - "5. Under A: once W5 is merged, a merge commit of epic/E-WSANDBOX into this branch (no rebase); then test and docs commits adding W5's resume and status (retire under B) rows and pins."
-    - "Staged, not committed by the worker: every file under rule-bearing-map.staged-for-one-owner-commit, made after step 5 on top of W5's versions."
-    - "6. Owner: one keel mr commit of the staged files; the red cases go green on it."
-    - "7. docs(E-WSANDBOX.W7): the result pair; a fresh worker re-gates; a fresh reviewer runs the round."
+    - "1. docs(E-WSANDBOX.W7): this plan pair."
+    - "Owner: picks abilities and gap fixes, and confirms the plan. Nothing below starts before it."
+    - "2. test(E-WSANDBOX.W7): per pick, the red cases."
+    - "3. docs(E-WSANDBOX.W7): DEC, UC and backlog rows for the picks."
+    - "4. Under A: after W5 merges, a merge commit of epic/E-WSANDBOX; then any test fix W5's shapes need."
+    - "Staged, not committed: the picks' rule-bearing edits, on top of W5's."
+    - "5. Owner: one keel mr commit; the red cases go green."
+    - "6. docs(E-WSANDBOX.W7): the result pair; a fresh worker re-gates; a fresh reviewer runs the round."
   owner-steps:
-    - "1. Read this page; answer or accept the five questions by htmldoc comment; confirm the plan."
-    - "2. Under the merge-order default: sign off and merge W5 as its plan says; W7 then merges the epic in by itself."
-    - "3. After the worker stages: one keel mr commit of the staged rule-bearing files (--as vuluu)."
-    - "4. After the re-gate, the review round and the result pair: keel mr confirm wu <tip> --as vuluu --target epic/E-WSANDBOX, then git merge --no-ff wu/E-WSANDBOX/w7-bounds into epic/E-WSANDBOX."
+    - "1. Read the page; pick abilities (C1-C8) and gap fixes (G1-G3), or none, by htmldoc comment; confirm the plan."
+    - "2. Sign off and merge W5 as its plan says; W7 then merges the epic in by itself."
+    - "3. One keel mr commit of the staged files (--as vuluu)."
+    - "4. After the re-gate, the review and the result pair: keel mr confirm wu <tip> --as vuluu --target epic/E-WSANDBOX, then git merge --no-ff wu/E-WSANDBOX/w7-bounds into epic/E-WSANDBOX."
+  dropped-from-first-draft: "The first draft (5ebdcb6d) built two bounds tables as a new decision and pinned them with tests, adding no power. The owner rejected that direction on 2026-11-28; its facts are kept above (can-today, gaps), its deliverable is dropped."
   gates:
     - "keel verify-doc on every changed doc, keel check raw, by the worker."
-    - "keel preflight wu and keel verify-dod wu after the owner commit (they bind the tip)."
-  effort-note: "This epic's workers run on opus at effort medium (owner ruling 2026-11-28); the epic's open effort question is not W7's and is unchanged."
+    - "keel preflight wu and keel verify-dod wu after the owner commit."
+  effort-note: "This epic's workers run on opus at effort medium (owner ruling 2026-11-28)."
   htmldoc:
     id: 6b0a62cc9f34851f0dfb2dae
