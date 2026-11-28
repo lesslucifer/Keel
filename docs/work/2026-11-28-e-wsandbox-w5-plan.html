@@ -16,7 +16,7 @@
   <main>
 
 <h2 id="problem">The problem</h2>
-<p data-c="problem">A stopped worker is never brought back, because a plain resume loses its safety settings. So each follow-up goes to a fresh worker, which spends about 36,000 tokens before it starts, then re-reads the files. The router also cannot see a worker's memory size or cache, so it cannot tell when reuse is cheaper.</p>
+<p data-c="problem">A stopped worker is never brought back, because a plain resume loses its safety settings. So each follow-up goes to a fresh worker, which spends about 36,000 tokens, then re-reads the files. The router also cannot see a worker's memory size or cache, so it cannot tell when reuse is cheaper.</p>
 
 <h2 id="get">What you get</h2>
 <table data-c="get">
@@ -30,8 +30,8 @@
 
 <h2 id="how">How it works</h2>
 <ol data-c="how">
-  <li><b>Resume.</b> The launcher finds the named worker's last session and rebuilds every setting from the committed rules, with the code a new start uses. It refuses a running worker, a lost history, a moved worktree, a changed brief, a reviewer, or settings the rules no longer allow.</li>
-  <li><b>Reuse.</b> Reuse wins when the task is the worker's own or a follow-up, and its memory is under 200,000 tokens (cold cache) or 400,000 (warm). A reviewer is always fresh.</li>
+  <li><b>Resume.</b> The launcher finds the named worker's last session and rebuilds every setting from the committed rules, with the code a new start uses. It refuses a running worker, a lost history, a moved worktree, a changed brief, or settings the rules no longer allow.</li>
+  <li><b>Reuse.</b> Reuse wins when the task is the worker's own or a follow-up, and its memory is under 200,000 tokens (cold cache) or 400,000 (warm). A reviewer starts fresh.</li>
 </ol>
 
 <h2 id="probe">Your probe decides one design</h2>
@@ -60,9 +60,9 @@
   <tbody>
     <tr><td>Are the two limits settings?</td><td>Yes, in the project config</td><td>One place</td></tr>
     <tr><td>When is a cache warm?</td><td>While idle under its last write's lifetime (1 hour or 5 minutes)</td><td>Each turn refreshes it</td></tr>
-    <tr><td>May the author keep a fix past a limit?</td><td>No; under it, the author may decline</td><td>Fresh is cheaper there</td></tr>
+    <tr><td>May the code's author, a worker, keep a fix past a limit?</td><td>Not on its own; you may always override</td><td>You watch the sessions</td></tr>
     <tr><td>Where does the router read the facts?</td><td>A read-only launcher command</td><td>The watchdog stays as it is</td></tr>
-    <tr><td>Can a reviewer come back?</td><td>Never</td><td>Reviews stay independent</td></tr>
+    <tr><td>Can a reviewer come back?</td><td>Don't, as an instruction only</td><td>Your ruling</td></tr>
     <tr><td>A stopped worker's effort is no longer allowed?</td><td>Refuse; start fresh</td><td>Resume never widens the rules</td></tr>
   </tbody>
 </table>
@@ -70,8 +70,7 @@
 <h2 id="know">How you'll know it worked</h2>
 <ul data-c="know">
   <li>A resumed worker's command line matches a new start's, plus its session.</li>
-  <li>Each refusal fires before a start.</li>
-  <li>The status read matches a recorded history at a fixed clock.</li>
+    <li>The status read matches a recorded history at a fixed clock.</li>
   <li>No router text still says "never revived", and the two fix rules agree.</li>
   <li>Live: the resumed worker remembers a word and is still refused a write outside its worktree.</li>
 </ul>

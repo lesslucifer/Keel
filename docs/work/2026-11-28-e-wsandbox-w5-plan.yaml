@@ -28,7 +28,7 @@ test-plan:
   unit: >-
     Per worker commit (each red on the code before the owner commit, as W9's): (1) resume - the run-dir lookup by
     exact name (w5 never matches w5-fix), the newest run dir, every refusal, the copied-back brief, the RESUMED
-    line, the review-worker refusal; (2) stop - per the probe outcome (A: unchanged stop then rm; B: stop keeps the
+    line, a --review run resumed with its recorded review grant (cr note, no edit tools); (2) stop - per the probe outcome (A: unchanged stop then rm; B: stop keeps the
     session, retire removes it, and spawn, facts and worktree remove read a stopped row as not live); (3) the
     policy reader - `reuse_max_context_cold` and `reuse_max_context_warm` as digit values, a repeat, a non-digit or
     a warm below cold refused whole, both optional for spawn and resume and required by status; (4) status - the
@@ -90,7 +90,6 @@ details:
     refusals:
       - "a live session of that name (rows), or the session list unreadable"
       - "no run dir with a recorded session for that name"
-      - "the run was a --review worker (reviewers stay fresh every round; DEC-46 point 4)"
       - "no transcript ~/.claude/projects/<the recorded worktree's slug>/<sid>.jsonl"
       - "the recorded worktree is not a registered worktree, is the router's or the main checkout, sits inside one, fails linked_ok, has no .claude/agents/worker.md, or is on a branch other than the recorded one (or detached)"
       - "the run dir's brief.md no longer hashes to its sha256 file"
@@ -98,7 +97,7 @@ details:
       - "a launch of that name in progress (the same .lock-<name> as spawn)"
     builds: >-
       A new run dir <name>-<ts>-<pid>-resume: the snapshot's brief.md and sha256 copied, the same name, worktree,
-      branch, effort, mode and review files, and from this WU a model file in both modes; a fresh brief copy in the
+      branch, effort, mode and review files (a --review run comes back with the review grant: owner comment 2026-11-28, no check refuses it), and from this WU a model file in both modes; a fresh brief copy in the
       worktree (stop removed the old one); then the one flag builder's argv with --resume <sid> and the fixed resume
       prompt. Never claude respawn, never the job state's respawnFlags.
     prompt: >-
@@ -130,9 +129,13 @@ details:
       Locked (owner 2026-11-26), written once in skills/keel-router SKILL.md and pointed at elsewhere:
       1. Reuse a worker (live, or stopped and resumed) when the task is its own WU's or a follow-up of its last task
          and its context now is under the cold ceiling with a cold cache, or the warm ceiling with a warm one.
-      2. A fix is not forced fresh: the router offers it to the author by rule 1; the author may answer 'take it
-         fresh' in its report and the router then spawns fresh; past a ceiling it goes fresh.
-      3. Reviewers, independent checks and a new WU stay fresh (unchanged).
+      2. A fix is not forced fresh: the router offers it to the author (the worker that wrote the WU's code) by
+         rule 1; the author may answer 'take it fresh' in its report and the router then spawns fresh; past a
+         ceiling it goes fresh unless the owner says otherwise. The owner watches the sessions and may override
+         any reuse or fresh choice with an ad-hoc instruction, which the router follows (owner comment 2026-11-28).
+      3. Reviewers, independent checks and a new WU stay fresh (unchanged). For a reviewer this is a soft
+         instruction in the router skill ('do not resume a reviewer'), never a launcher check (owner comment
+         2026-11-28).
       4. The router reads the facts with status before each decision.
     conflicts-resolved:
       - "SKILL.md 319-324 'One live session per WU' vs 444 'fix round (fresh worker ...)': 444 becomes 'fix round (the author by the reuse rule, else fresh), new tip, re-gate'."
@@ -161,14 +164,19 @@ details:
       default: "While the idle time is under the lifetime of the newest cache write (1h or 5m); every turn's cache read refreshes it, so idle counts from the last turn."
       under-default: "status prints warm/cold by the clock only, live or stopped; the e2e checks status against the transcript, not a fixed 'cold'."
     - q: "May the author keep a fix past a ceiling?"
-      default: "No: past a ceiling the fix goes fresh; under it the author may decline."
-      under-default: "Rule 2 as written in details.reuse.rules."
+      default: >-
+        Owner comment 2026-11-28 ('if the author is the user, yes; the user monitors sessions and gives ad-hoc
+        instructions'). The author is the worker that wrote the code, not the owner. Recommended (a): the worker
+        cannot keep a fix past a ceiling on its own; the owner can always send it to the author (or fresh) by an
+        ad-hoc instruction, which the router follows. Option (b): the worker may also keep it past a ceiling by
+        saying so in its report.
+      under-default: "Rule 2 as written in details.reuse.rules: the router's default plus the owner's override; the skill text says so, no launcher check."
     - q: "Is status a launcher mode or a line in the watchdog's facts?"
       default: "A launcher mode the router runs before each decision; the watchdog's 5-minute message is unchanged."
       under-default: "The guard admits status and status <name>; facts() is not touched."
     - q: "Is a review worker ever resumed?"
-      default: "No: resume refuses a --review run."
-      under-default: "One refusal and its test."
+      default: "RULED (owner comment 2026-11-28): don't, but as a soft instruction - no rule or check restricts it."
+      under-default: "No launcher refusal and no test for it; the keel-router skill says 'do not resume a reviewer; a review round is a fresh worker'; resume of a --review run rebuilds its recorded review grant."
     - q: "What if the policy no longer admits a stopped worker's effort (medium after this epic lands)?"
       default: "Refuse; the router spawns fresh. resume takes no --effort or --role."
       under-default: "One refusal and its test; the guard shape stays resume <name> alone."
