@@ -53,7 +53,7 @@
 </table>
 
 <h2 id="router">What the probe router runs</h2>
-<p data-c="router-intro">Its prompt, <code>docs/work/2026-11-28-e-wsandbox-e2e-probe-router.md</code>, holds every command, its expected output and its failure condition. It writes its full results to <code>.router/notify/owner.md</code> in the clone, and sends <code>keel-57</code> one message with a PASS/FAIL table. In short:</p>
+<p data-c="router-intro">Its prompt, <code>docs/work/2026-11-28-e-wsandbox-e2e-probe-router.md</code>, holds every command, its expected output and its failure condition. It writes nothing and gives no verdicts: it sends <code>keel-57</code> one message with every step&#39;s raw output. Your finish step writes the raw evidence to <code>~/keel-wsandbox-e2e-evidence.txt</code>, and a worker judges each step from it (E-WSANDBOX.W10). In short:</p>
 <table data-c="router">
   <thead><tr><th>Part</th><th>What it checks</th></tr></thead>
   <tbody>
@@ -76,7 +76,7 @@
     <tr><td><code>… spawn probe-w1 …-E-PROBE-work .router/briefs/probe-w1.md haiku</code> · <code>… spawn probe-plan1 … --role planner</code> · <code>… spawn probe-med … --effort medium</code></td><td>allow</td></tr>
     <tr><td><code>… stop probe-w1</code> · <code>… stop probe-plan1</code> · <code>… stop probe-med</code> · <code>… resume probe-w1</code> · <code>… status probe-w1</code> · <code>… prune</code></td><td>allow</td></tr>
     <tr><td><code>git worktree list</code> · <code>git branch --list wu/E-PROBE/work wu/E-PROBE/plan wu/E-PROBE/done wu/E-PROBE/gone</code></td><td>allow</td></tr>
-    <tr><td>Read of PROBE-RESULTS.txt · Glob of a run's effort file and of a transcript · Grep of a transcript · Write of <code>.router/notify/owner.md</code> · SendMessage to keel-57 · Skill keel-router</td><td>allow</td></tr>
+    <tr><td>Read of PROBE-RESULTS.txt · Glob of a run's effort file and of a transcript · Grep of a transcript · SendMessage to keel-57 · Skill keel-router</td><td>allow</td></tr>
     <tr><td><code>watchdog facts probe-router</code> · <code>jq …</code> · <code>rm -rf …</code> · <code>git commit-tree …</code> · <code>git branch -f …</code> · <code>claude attach …</code> · <code>claude --bg …</code> · <code>keel verify-doc</code> · <code>cat …</code> · Write of the red doc · Edit · Agent</td><td>deny: each moved out, as above</td></tr>
   </tbody>
 </table>

@@ -6,13 +6,16 @@
 #   start    after that commit: the epic's hooks, the probe branches and worktrees, the two briefs, the red doc,
 #            then the probe router session, which runs the rest and reports to the router keel-57
 #   finish   after the probe router's report: the two checks it cannot run (status against the transcript, the
-#            red-doc messages it got), then the cleanup; the clone stays detached on the policy commit
+#            red-doc messages it got, counted in hook records only), the raw evidence file a worker judges
+#            (E-WSANDBOX.W10: no model in the run gives verdicts), then the cleanup; the clone stays detached
+#            on the policy commit
 #   cleanup  the cleanup alone
 # Safe to re-run: prepare and start first remove what an earlier run left.
 set -eu
 P=/Users/nguyenvanluong/Documents/proj/misc/Keel-probe
 E=/Users/nguyenvanluong/Documents/proj/misc/Keel-E-WSANDBOX
 L=$HOME/keel-wsandbox-e2e.log
+EV=$HOME/keel-wsandbox-e2e-evidence.txt
 C=${ROUTER_CLAUDE:-$HOME/.local/bin/claude}
 LINE='worker_model = "haiku"'
 MSG='probe: haiku workers for the E-WSANDBOX e2e'
@@ -128,9 +131,19 @@ for h in ("127.0.0.1", "0.0.0.0"):
     s = socket.socket(); s.bind((h, 0)); print("bind", h, "ok", s.getsockname()[1]); s.close()
 l = socket.socket(); l.bind(("127.0.0.1", 0)); l.listen(1); p = l.getsockname()[1]
 c = socket.create_connection(("127.0.0.1", p), timeout=5); a, _ = l.accept(); c.sendall(b"ping"); print("connect ok", a.recv(4))'
-2. Frozen install: cd app && pnpm install --frozen-lockfile; then, still in app:
-   ls -la node_modules; ls "$pnpm_config_modules_dir/.pnpm" | grep xmlbuilder; ls -a . .. | grep -c vscode
-3. pnpm add, in a scratch dir: d=$(scripts/router-scratch.sh new) && cd "$d" && env -u pnpm_config_modules_dir pnpm add is-number@7.0.0
+2. Frozen install, each line its own Bash call, from your worktree's root:
+   printenv PNPM_HOME pnpm_config_modules_dir pnpm_config_store_dir
+   ls -la app/node_modules
+   realpath app/node_modules
+   cd app && pnpm install --frozen-lockfile
+   ls -d "$pnpm_config_modules_dir"/.pnpm/xmlbuilder@*
+   ls -a . .. | grep -c vscode
+3. pnpm add in a scratch dir, split so each part is its own Bash call (the 2026-11-28 run waited on a
+   permission prompt for the one-line form; this finds the part that asks):
+   3a. scripts/router-scratch.sh new        (it prints a folder D)
+   3b. cd D                                 (D written out, not a variable)
+   3c. env -u pnpm_config_modules_dir pnpm add is-number@7.0.0
+   3d. cd back to your worktree's root
 4. A site the reviewer may allow: curl -sS -m 10 -o /dev/null -w '%{http_code}\n' https://pnpm.io/
    with the Bash allowed_domains ["pnpm.io"]. If it is refused, try https://www.rust-lang.org/ once
    (allowed_domains ["www.rust-lang.org"]) and write both results.
@@ -140,7 +153,8 @@ c = socket.create_connection(("127.0.0.1", p), timeout=5); a, _ = l.accept(); c.
 6. Scratch keel init: d=$(scripts/router-scratch.sh new) && scripts/router-scratch.sh init "$d"
 7. The Write tool on /Users/nguyenvanluong/Documents/proj/misc/Keel-probe/probe-outside.txt, text "probe".
 8. The Read tool on ~/.ssh/known_hosts.
-9. git status --short at your worktree's root.
+9. At your worktree's root, each its own Bash call: git status --short; ls -a | grep -c pnpm-store;
+   ls "$pnpm_config_store_dir"
 
 If you are resumed (the launcher's resume prompt says so), run none of the probes again. Do only:
 the Write of probe 7 again, then the SendMessage the resume prompt asks for, adding
@@ -162,11 +176,9 @@ EOF
   done
   [ -n "$rs" ] || die "probe-router is not listed after 60 s"
   printf '%s\n' "$rs" > "$STATE/router-session"
-  ok "probe-router runs (session $rs). It runs the rest and sends its table to the router keel-57; then run: cd $P && bash $SELF finish"
+  ok "probe-router runs (session $rs). It runs the rest and sends its raw results to the router keel-57; then run: cd $P && bash $SELF finish"
   ;;
 finish)
-  echo "--- the probe router's report (.router/notify/owner.md)"
-  cat .router/notify/owner.md 2> /dev/null || echo "(none written)"
   echo "--- check: status against the transcript"
   d=$(ls -d .router/runs/probe-w1-* 2> /dev/null | sort | tail -1)
   s1=$(cat "$d/session" 2> /dev/null) || s1=
@@ -185,8 +197,11 @@ finish)
   rs=$(cat "$STATE/router-session" 2> /dev/null) || rs=
   tr=$(ls "$HOME"/.claude/projects/*/"$rs".jsonl 2> /dev/null | head -1) || tr=
   if [ -n "$tr" ]; then
-    n=$(grep -c 'A doc is red: send the worker that owns it' "$tr" || :)
-    w=$(grep -c 'fix it before ending the turn' "$tr" || :)
+    # only records a hook or a peer delivered: no assistant text and no tool result, so the prompt file's own
+    # words (read by the router, or repeated in its reasoning) are not counted (E-WSANDBOX.W10)
+    hooked() { jq -c --arg s "$1" 'select(.type != "assistant") | select([.message.content? | arrays | .[] | select(type == "object" and .type == "tool_result")] | length == 0) | select(tostring | contains($s))' "$tr" | wc -l | tr -d ' '; }
+    n=$(hooked 'A doc is red: send the worker that owns it')
+    w=$(hooked 'fix it before ending the turn')
     a=$(head -n 20 "$tr" | jq -r 'select(.agentSetting) | .agentSetting' 2> /dev/null | head -1)
     echo "router messages=$n worker messages=$w agentSetting=$a"
     shasum -a 256 -c "$STATE/red.sha" > /dev/null 2>&1 && same=yes || same=no
@@ -195,8 +210,23 @@ finish)
   else
     echo "FAIL no probe-router transcript found"
   fi
+  echo "--- the raw evidence for the judging worker: $EV"
+  raw() { jq -r '.timestamp as $t | if .type == "assistant" then (.message.content[]? | select(.type == "tool_use") | "--- \($t) \(.name) \(.input | tostring | .[0:800])")
+    elif .type == "user" then (if (.message.content | type) == "string" then "=== \($t) received\n\(.message.content | .[0:3000])"
+      else (.message.content[]? | select(type == "object" and .type == "tool_result") | "<<< \($t)\n\(.content | if type == "array" then map(.text? // "") | join("\n") else tostring end | .[0:3000])") end)
+    else empty end' "$1"; }
+  {
+    echo "E-WSANDBOX e2e raw evidence, $(date '+%Y-%m-%d %H:%M:%S'), written by the finish step before the cleanup. No verdicts."
+    echo "=================== PROBE-RESULTS.txt (probe-w1, verbatim)"
+    cat "$P-E-PROBE-work/PROBE-RESULTS.txt" 2> /dev/null || echo "(none written)"
+    echo "=================== probe-router (session $rs): tool calls, results, messages, hook feedback, in order"
+    if [ -n "$tr" ]; then raw "$tr"; else echo "(no transcript)"; fi
+    echo "=================== probe-w1 (session $s1): tool calls, results, messages, in order"
+    if [ -n "$t1" ]; then raw "$t1"; else echo "(no transcript)"; fi
+  } > "$EV" 2>&1 || echo "FAIL writing $EV"
+  wc -l "$EV"
   cleanup_probe
-  echo "Done. Send $L to the router."
+  echo "Done. Send $L and $EV to the router: a worker judges the evidence against the probe router's Expect lines."
   ;;
 cleanup)
   cleanup_probe
