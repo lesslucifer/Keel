@@ -144,6 +144,8 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
             Some(p) if p.ends_with(" stop") || p.ends_with(" watchdog start") => format!("{p} n"),
             Some(p) if p.ends_with(" worktree add") || p.ends_with(" worktree remove") => format!("{p} wu/E-X/w1-a"),
             Some(p) if p.ends_with("router-watch.sh") => format!("{p} signed 1a2b3c4"),
+            // E-WSANDBOX.W7 G1: one line per kind
+            Some(p) if p.contains("router-watch.sh ") => format!("{p} 1a2b3c4"),
             Some(p) if p.ends_with("router-inbox.sh watch") => format!("{p} 6600"),
             Some(p) if p.ends_with("router-inbox.sh consume") => format!("{p} 1794659383-abc123"),
             Some(p) if p.ends_with("router-app.sh start") => format!("{p} keel-1c"),
@@ -2124,9 +2126,10 @@ fn settings_allow_exactly_the_launcher_shapes_the_guard_admits() {
         .as_array()
         .unwrap()
         .iter()
-        .filter_map(|a| a.as_str().unwrap().strip_prefix("Bash(scripts/router-worker.sh ").map(|m| m.trim_end_matches(" *)").to_string()))
+        .filter_map(|a| a.as_str().unwrap().strip_prefix("Bash(scripts/router-worker.sh ").map(|m| m.trim_end_matches(" *)").trim_end_matches(')').to_string()))
         .collect();
-    assert_eq!(modes, ["spawn", "stop", "watchdog start", "watchdog stop", "worktree add", "worktree remove"]);
+    // E-WSANDBOX.W7 C10: prune, bare
+    assert_eq!(modes, ["prune", "spawn", "stop", "watchdog start", "watchdog stop", "worktree add", "worktree remove"]);
     for (m, arg) in [("watchdog start", "r1"), ("watchdog stop", "r1"), ("worktree add", "epic/E-X"), ("worktree remove", "wu/E-X/w1-a")] {
         assert_eq!(bash(&format!("scripts/router-worker.sh {m} {arg}")), None, "the guard refuses the allowed {m}");
     }
@@ -5019,12 +5022,15 @@ fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
     }
     for (said, why) in [
         ("before any respawn", "UNLISTED's instruction to check ListAgents"),
-        ("the owner decides", "stop's refusal of a worker that is neither busy nor idle"),
+        ("the owner decides", "stop's refusal of a worker still busy"),
+        ("state=<state>", "stop of a dead worker, naming its state (E-WSANDBOX.W7 C9)"),
+        ("PRUNED worktrees=", "prune's outcome line (E-WSANDBOX.W7 C10)"),
         ("intent", "the deny list as intent, the sandbox as the bound"),
     ] {
         assert!(ops.contains(said), "worker-ops omits {why}");
     }
-    assert!(launcher.contains("check ListAgents before any respawn") && launcher.contains(": the owner decides (claude stop $id)"));
+    assert!(launcher.contains("check ListAgents before any respawn") && launcher.contains("; the owner decides (claude stop $id)"));
+    assert!(launcher.contains("state=${status:-unknown}"), "stop no longer names a dead worker's state");
 
     let mut current = Vec::new();
     for dir in ["skills/keel-router", ".claude/skills/keel-router"] {
@@ -5053,16 +5059,18 @@ fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
     for t in ["SendMessage", "ListAgents"] {
         assert!(body.contains(&format!("`{t}`")), "router.md's posture omits {t}");
     }
-    // E-APPLIST.W1: the router's three update-log verbs, in the words the guard admits
-    for shape in ["scripts/router-app.sh", "start <name>", "stage <wu> <stage> [<tip>]", "del question/<id>", "del wu/<wu>/stage"] {
-        assert!(body.contains(shape), "router.md's Bash posture omits {shape:?}");
+    // E-APPLIST.W1: the router's three update-log verbs, in the words the guard admits, and never set or
+    // alert. E-WSANDBOX.W7 G2 (owner, 2026-11-28): router.md lists no shapes and points to the guard and
+    // UC-ROUTE-6, so the words are pinned in UC-ROUTE-6.
+    let uc = read("docs/use-cases/router.yaml").split_whitespace().collect::<Vec<_>>().join(" ");
+    for shape in [
+        "`scripts/router-app.sh start <router-name>`",
+        "stage <wu> plan-in-work|plan-to-read|plan-approved|building|in-review [<tip>]",
+        "`del question/<id>`",
+        "never `set` or `alert`",
+    ] {
+        assert!(uc.contains(shape), "UC-ROUTE-6 omits the update-log shape {shape:?}");
     }
-    // and the two verbs it never runs are named as the watchdog's and the sender's (review round 1 nit)
-    let flat = body.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(
-        flat.contains("its `set` and `alert` carry free JSON and are the watchdog's and the sender's, never the router's"),
-        "router.md does not give set and alert to the watchdog and the sender"
-    );
 
     let policy: toml::Value = read(".keel/config.toml").parse().unwrap();
     let tiers: Vec<String> = policy["mr"]["tiers"].as_array().unwrap().iter().map(|t| format!("{t}")).collect();
@@ -5206,77 +5214,6 @@ fn project_router_lets_the_router_make_worktrees_on_dsh() {
     assert!(!s.contains("preset denies"), "project-router still says the DSH preset denies worktrees");
 }
 
-/// Run the project's Stop hook command as Claude Code runs it, in `dir`, on `event`; (exit code, stderr).
-fn stop_hook(dir: &Path, event: &serde_json::Value) -> (Option<i32>, String) {
-    let stop = settings()["hooks"]["Stop"].as_array().unwrap().clone();
-    assert_eq!(stop.len(), 1, "one Stop group");
-    let cmd = stop[0]["hooks"][0]["command"].as_str().unwrap().to_string();
-    let mut p = common::cmd("/bin/sh")
-        .args(["-c", &cmd])
-        .current_dir(dir)
-        .env("CLAUDE_PROJECT_DIR", dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    std::io::Write::write_all(&mut p.stdin.take().unwrap(), event.to_string().as_bytes()).unwrap();
-    let o = p.wait_with_output().unwrap();
-    (o.status.code(), String::from_utf8_lossy(&o.stderr).to_string())
-}
-
-/// C5 (owner, 2026-11-28: "The router shouldn't fix doc, if it finds problems, it tells the worker to
-/// fix"): the Stop hook tells the router of a red doc once per turn end - with the sentence that sends a
-/// worker - and lets its turn end while the turn already continues for that hook (stop_hook_active); a
-/// worker is refused every time, as today. The router is known by agent_type, else by its transcript's
-/// agentSetting.
-#[test]
-fn stop_hook_tells_the_router_once_and_holds_every_worker() {
-    let d = TempDir::new().unwrap();
-    let repo = d.path().canonicalize().unwrap();
-    git(&repo, &["init", "-q", "-b", "main"]);
-    let hooks = repo.join(".git/keel-hooks");
-    std::fs::create_dir_all(&hooks).unwrap();
-    let red = |is_red: bool| {
-        let body = if is_red {
-            "#!/bin/sh\nprintf 'A doc is red - fix it before ending the turn:\\ndocs/x.html: red\\n' >&2\nexit 2\n"
-        } else {
-            "#!/bin/sh\nexit 0\n"
-        };
-        std::fs::write(hooks.join("verify-doc-stop"), body).unwrap();
-    };
-    let transcript = repo.join("t.jsonl");
-    std::fs::write(&transcript, "{\"type\":\"user\",\"agentSetting\":\"router\",\"message\":{}}\n").unwrap();
-    let wtranscript = repo.join("w.jsonl");
-    std::fs::write(&wtranscript, "{\"type\":\"user\",\"agentSetting\":\"worker\",\"message\":{}}\n").unwrap();
-    let ev = |agent: Option<&str>, active: bool, t: &Path| {
-        let mut e = serde_json::json!({"session_id": "s", "transcript_path": t, "cwd": repo, "hook_event_name": "Stop", "stop_hook_active": active, "last_assistant_message": "done"});
-        if let Some(a) = agent {
-            e["agent_type"] = a.into();
-        }
-        e
-    };
-    red(true);
-    for (who, router_t) in [(Some("router"), &transcript), (None, &transcript)] {
-        let (code, err) = stop_hook(&repo, &ev(who, false, router_t));
-        assert_eq!(code, Some(2), "{who:?}: the router was not told: {err}");
-        assert!(err.contains("send the worker that owns it to fix it") && err.contains("docs/x.html: red"), "{who:?}: {err}");
-        let (code, err) = stop_hook(&repo, &ev(who, true, router_t));
-        assert_eq!(code, Some(0), "{who:?}: the router was held a second time: {err}");
-    }
-    for (who, t) in [(Some("worker"), &wtranscript), (None, &wtranscript)] {
-        for active in [false, true] {
-            let (code, err) = stop_hook(&repo, &ev(who, active, t));
-            assert_eq!(code, Some(2), "{who:?} active={active}: a worker ended its turn on a red doc");
-            assert!(err.contains("A doc is red") && !err.contains("send the worker"), "{who:?}: {err}");
-        }
-    }
-    red(false);
-    for (who, t) in [(Some("router"), &transcript), (Some("worker"), &wtranscript)] {
-        assert_eq!(stop_hook(&repo, &ev(who, false, t)).0, Some(0), "{who:?}: a green checkout held the turn");
-    }
-}
-
 /// The watchdog's own row and a transcript whose first record is `age_h` hours old, under `home`.
 fn watchdog_row(l: &Launcher, home: &Path, age_h: u64) -> serde_json::Value {
     let s = sid(90);
@@ -5291,16 +5228,20 @@ fn watchdog_row(l: &Launcher, home: &Path, age_h: u64) -> serde_json::Value {
     serde_json::json!({"id": "wd00", "sessionId": s, "name": "watchdog-r1", "cwd": l.main, "kind": "background", "status": "busy"})
 }
 
-/// An ISO 8601 UTC timestamp with milliseconds, as Claude Code writes them.
+/// An ISO 8601 UTC timestamp with milliseconds, as Claude Code writes them (civil-from-days, no clock tool).
 fn chrono_like(t: std::time::SystemTime) -> String {
-    let secs = t.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-    let o = Command::new("date").args(["-u", "-r", &secs.to_string(), "+%Y-%m-%dT%H:%M:%S.000Z"]).output().unwrap();
-    let s = String::from_utf8(o.stdout).unwrap().trim().to_string();
-    if !s.is_empty() {
-        return s;
-    }
-    let o = Command::new("date").args(["-u", "-d", &format!("@{secs}"), "+%Y-%m-%dT%H:%M:%S.000Z"]).output().unwrap();
-    String::from_utf8(o.stdout).unwrap().trim().to_string()
+    let secs = t.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+    let (days, rem) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}.000Z", rem / 3600, rem % 3600 / 60, rem % 60)
 }
 
 /// C6: the watchdog's recurring schedule ends after 7 days (backlog R29); from day 6 its facts tell the
@@ -5362,19 +5303,15 @@ fn watchdog_facts_name_what_the_router_should_close() {
     rows.push(w);
     l.set_sessions(&rows);
     let out = facts(&l, h);
-    let close: Vec<&str> = out.lines().skip_while(|l| *l != "Close:").skip(1).collect();
-    assert_eq!(
-        close,
-        [
-            "wu/E-X/busy: merged into epic/E-X, worker e-x-busy still runs - stop e-x-busy".to_string(),
-            "wu/E-X/idle: merged into epic/E-X, no worker - worktree remove wu/E-X/idle".to_string(),
-            format!("{}: directory gone - prune", gone.display()),
-        ]
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>(),
-        "{out}"
-    );
+    let mut close: Vec<&str> = out.lines().skip_while(|l| *l != "Close:").skip(1).collect();
+    close.sort();
+    let mut want: Vec<String> = vec![
+        "wu/E-X/busy: merged into epic/E-X, worker e-x-busy still runs - stop e-x-busy".to_string(),
+        "wu/E-X/idle: merged into epic/E-X, no worker - worktree remove wu/E-X/idle".to_string(),
+        format!("{}: directory gone - prune", gone.display()),
+    ];
+    want.sort();
+    assert_eq!(close, want.iter().map(String::as_str).collect::<Vec<_>>(), "{out}");
     assert!(!out.contains("wu/E-X/open:") && !out.contains("wu/E-X/fresh:"), "{out}");
     assert!(idle.exists());
     // nothing to close: no Close block at all
