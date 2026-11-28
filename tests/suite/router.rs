@@ -599,7 +599,9 @@ struct Launcher {
 /// succeeds k more times, then fails printing to stderr only. After printing: while $STUB_STATE/vanish
 /// exists it empties the list (a session that ends between two looks), while $STUB_STATE/swap exists a
 /// busy session is replaced by an idle one of the same name under a new id, and while
-/// $STUB_STATE/settle exists every session turns idle (a turn that ends between two looks). `stop <id>`
+/// $STUB_STATE/settle exists every session turns idle (a turn that ends between two looks), and while
+/// $STUB_STATE/after-agents exists it runs that script once and removes it (a session that starts and
+/// seals its run dir right after a list was read; E-WSANDBOX.W7 review round 1). `stop <id>`
 /// delists the id, `rm` only records.
 fn stub_claude(stub: &Path) {
     std::fs::write(stub, concat!(
@@ -612,7 +614,8 @@ fn stub_claude(stub: &Path) {
         "  agents) if [ -e \"$S/agents-ok\" ]; then k=$(cat \"$S/agents-ok\"); [ \"$k\" -gt 0 ] || { echo 'Error: no supervisor' >&2; exit 1; }; echo $((k - 1)) > \"$S/agents-ok\"; fi\n",
         "    cat \"$S/sessions.json\"; [ ! -e \"$S/vanish\" ] || echo '[]' > \"$S/sessions.json\"\n",
         "    [ ! -e \"$S/swap\" ] || { jq 'map(if .status == \"busy\" then .id = \"new0\" | .sessionId = \"new0-x\" | .status = \"idle\" else . end)' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }\n",
-        "    [ ! -e \"$S/settle\" ] || { jq 'map(.status = \"idle\")' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }; exit 0;;\n",
+        "    [ ! -e \"$S/settle\" ] || { jq 'map(.status = \"idle\")' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }\n",
+        "    [ ! -e \"$S/after-agents\" ] || { sh \"$S/after-agents\"; rm -f \"$S/after-agents\"; }; exit 0;;\n",
         "  stop) jq --arg i \"$2\" 'map(select(.id != $i))' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; echo \"stopped $2\"; exit 0;;\n",
         "  rm) echo \"removed $2\"; exit 0;;\n",
         "esac\n",
@@ -4587,7 +4590,14 @@ fn a_commondir_file_in_the_main_git_dir_stops_the_launcher() {
     let elsewhere = l.main.parent().unwrap().join("elsewhere");
     std::fs::create_dir_all(&elsewhere).unwrap();
     let wt = l.wt.to_str().unwrap();
-    let modes = [vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"], vec!["stop", "a"], vec!["worktree", "add", "epic/E"], vec!["watchdog", "start", "r"]];
+    // E-WSANDBOX.W7 review round 1: prune too, before its git worktree prune
+    let modes = [
+        vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"],
+        vec!["stop", "a"],
+        vec!["worktree", "add", "epic/E"],
+        vec!["watchdog", "start", "r"],
+        vec!["prune"],
+    ];
     // R33: config.worktree too (a url.insteadOf or core.askPass there runs code)
     for f in ["commondir", "config.worktree"] {
         let p = l.main.join(".git").join(f);
@@ -4617,7 +4627,14 @@ fn every_worktree_admin_dir_is_checked_on_every_run() {
     git(&l.main, &["worktree", "add", "-q", later.to_str().unwrap(), "-b", "later"]);
     let admin = l.main.join(".git/worktrees/later");
     let wt = l.wt.to_str().unwrap();
-    let modes = [vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"], vec!["stop", "a"], vec!["worktree", "add", "epic/E"], vec!["watchdog", "start", "r"]];
+    // E-WSANDBOX.W7 review round 1: prune too, before its git worktree prune
+    let modes = [
+        vec!["spawn", "a", wt, ".router/briefs/b.md", "opus"],
+        vec!["stop", "a"],
+        vec!["worktree", "add", "epic/E"],
+        vec!["watchdog", "start", "r"],
+        vec!["prune"],
+    ];
     let unlinked = "worktree admin dir";
     for (what, file, body) in [
         ("commondir", "commondir", "/tmp/evil.git\n".to_string()),
@@ -5827,4 +5844,121 @@ fn an_unlisted_or_stopped_worker_goes_through_reuse_or_fresh() {
     let lessons = flat("skills/keel-router/references/lessons.md");
     assert!(!lessons.contains("spawns a fresh one for an unlisted one"), "lesson C13 bypasses the reuse rule");
     assert!(lessons.contains("\"Reuse or fresh\""), "lesson C13 does not point at the reuse rule");
+}
+
+// ---- E-WSANDBOX.W7 review round 1 (cr FAIL: 2 blockers, 2 importants; independent review HIGH) ----
+
+/// Blocker :370: only the branch's own --no-ff merge into its base counts as merged (DEC-45). A fresh
+/// branch cut at the epic tip T is a parent of a sibling's back-merge X(sib, T), which lies on T..epic
+/// once the epic merges the sibling as Y(T, X); it is not merged, and its live worker is never told to stop.
+#[test]
+fn watchdog_close_ignores_a_fresh_branch_a_sibling_back_merged() {
+    let l = watchdog_launcher();
+    let home = TempDir::new().unwrap();
+    let h = home.path();
+    let sib = wu_worktree(&l, "sib");
+    wu_worktree(&l, "done");
+    let into_epic = |b: &str| {
+        git(&l.main, &["checkout", "-q", "epic/E-X"]);
+        git(&l.main, &["merge", "-q", "--no-ff", "-m", b, &format!("wu/E-X/{b}")]);
+        git(&l.main, &["checkout", "-q", "main"]);
+    };
+    into_epic("done");
+    let (ok, out) = l.run(&["worktree", "add", "wu/E-X/fresh"]);
+    assert!(ok, "{out}");
+    let fresh = PathBuf::from(field(&out, "path="));
+    git(&sib, &["merge", "-q", "--no-ff", "-m", "back-merge the epic", "epic/E-X"]);
+    into_epic("sib");
+    let mut rows = l.sessions();
+    let mut w = worker_row(&l, h, "e-x-fresh", &sid(21), serde_json::json!({"status": "busy"}), Some(1), &[]);
+    w["cwd"] = fresh.to_str().unwrap().into();
+    rows.push(w);
+    l.set_sessions(&rows);
+    let out = facts(&l, h);
+    let mut close: Vec<&str> = out.lines().skip_while(|l| *l != "Close:").skip(1).collect();
+    close.sort();
+    assert_eq!(
+        close,
+        [
+            "wu/E-X/done: merged into epic/E-X, no worker - worktree remove wu/E-X/done",
+            "wu/E-X/sib: merged into epic/E-X, no worker - worktree remove wu/E-X/sib"
+        ],
+        "{out}"
+    );
+    assert!(!out.contains("wu/E-X/fresh:") && !out.contains("stop e-x-fresh"), "a fresh branch read as merged: {out}");
+}
+
+/// Blocker :646: prune reads the run dirs once. With every run dir's session gone it costs one pass, not
+/// a walk of every run dir per session (about D squared forks: minutes on a real router's 563 run dirs).
+#[test]
+fn prune_reads_the_run_dirs_once() {
+    let l = launcher();
+    let runs = l.main.join(".router/runs");
+    let n = 120;
+    for i in 0..n {
+        let r = runs.join(format!("w{i}-20261128000000-{i}-spawn"));
+        std::fs::create_dir_all(&r).unwrap();
+        let copy = l.wt.join(format!(".router-brief.a{i:05}"));
+        std::fs::create_dir_all(&copy).unwrap();
+        std::fs::write(r.join("session"), format!("{}\n", sid(1000 + i))).unwrap();
+        std::fs::write(r.join("name"), format!("w{i}\n")).unwrap();
+        std::fs::write(r.join("worktree"), format!("{}\n", l.wt.display())).unwrap();
+        std::fs::write(r.join("brief-copy"), format!("{}\n", copy.display())).unwrap();
+    }
+    let t0 = Instant::now();
+    let (ok, out) = l.run(&["prune"]);
+    let took = t0.elapsed();
+    assert!(ok && out == format!("PRUNED worktrees=0 briefs={n} locks=0\n"), "{out}");
+    assert!(brief_copies(&l.wt).is_empty());
+    assert!(took < Duration::from_secs(15), "prune took {took:?} over {n} run dirs");
+}
+
+/// Important :649: a session list prune cannot read (not an array, a banner before it) stops prune before
+/// it cleans anything, as every other mode stops (nolist); it never reads as "no session listed".
+#[test]
+fn prune_stops_on_a_session_list_it_cannot_read() {
+    let l = launcher();
+    assert!(l.run(&["spawn", "live", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
+    let rows = std::fs::read_to_string(l.state.join("sessions.json")).unwrap();
+    for bad in ["{\"error\": \"supervisor down\"}".to_string(), format!("Claude Code is updating\n{rows}")] {
+        std::fs::write(l.state.join("sessions.json"), &bad).unwrap();
+        let (ok, out) = l.run(&["prune"]);
+        assert!(!ok && out.contains("cannot list sessions"), "{bad}: {out}");
+        assert_eq!(brief_copies(&l.wt).len(), 1, "{bad}: prune deleted a live worker's brief");
+    }
+}
+
+/// Important :642: prune globs the run dirs before it reads the session list, so a worker that starts and
+/// seals its run dir right after the list was read is not taken for a gone one.
+#[test]
+fn prune_never_takes_a_worker_started_after_its_list_for_a_gone_one() {
+    let l = launcher();
+    let r = l.main.join(".router/runs/late-20261128000000-1-spawn");
+    let copy = l.wt.join(".router-brief.late01");
+    let s = sid(77);
+    let script = format!(
+        "mkdir -p '{r}' '{copy}'\nprintf '%s\\n' '{s}' > '{r}/session'\nprintf '%s\\n' late > '{r}/name'\nprintf '%s\\n' '{wt}' > '{r}/worktree'\nprintf '%s\\n' '{copy}' > '{r}/brief-copy'\njq --arg s '{s}' --arg c '{wt}' '. + [{{id: \"late0\", sessionId: $s, name: \"late\", cwd: $c, kind: \"background\", status: \"busy\"}}]' \"$STUB_STATE/sessions.json\" > \"$STUB_STATE/s.tmp\" && mv \"$STUB_STATE/s.tmp\" \"$STUB_STATE/sessions.json\"\n",
+        r = r.display(),
+        copy = copy.display(),
+        wt = l.wt.display()
+    );
+    std::fs::write(l.state.join("after-agents"), script).unwrap();
+    let (ok, out) = l.run(&["prune"]);
+    assert!(ok, "{out}");
+    assert!(!l.state.join("after-agents").exists(), "the stub never listed sessions");
+    assert!(r.join("session").exists() && copy.is_dir(), "prune deleted the brief of a worker that started after its list: {out}");
+}
+
+/// Independent review HIGH: a worker listed only as `state: working` is busy (as the watchdog reads it),
+/// so stop gives it the busy wait and then leaves it to the owner (Q2, owner 2026-11-28); C9 stops only a
+/// dead worker.
+#[test]
+fn stop_holds_a_worker_listed_only_as_working() {
+    let l = launcher();
+    let wt = l.wt.to_str().unwrap();
+    l.set_sessions(&[serde_json::json!({"id": "w0", "sessionId": "w0-x", "name": "w", "cwd": wt, "kind": "background", "state": "working"})]);
+    let path = l.fast_path();
+    let (ok, out) = l.run_env(&["stop", "w"], &[("PATH", &path)]);
+    assert!(!ok && out.contains("worker w is still busy: stopping it would cut its turn; the owner decides (claude stop w0)"), "{out}");
+    assert!(calls(&l.state).iter().all(|(_, c)| c[0] == "agents"), "stop closed a working worker");
 }
