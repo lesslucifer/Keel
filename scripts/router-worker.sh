@@ -65,7 +65,8 @@
 # worktree add cuts epic/E off main, wu/E/slug off epic/E and a task wu/E/wu_task (three words
 # without _; E-GHREVERT.W1 keep 4) off its WU branch wu/E/wu (an existing branch is used as it is) at
 # <main checkout>-<branch without its prefix, / as ->; worktree remove takes only a clean worktree
-# whose branch is merged into its base and in which no session runs, and keeps the branch.
+# whose branch is merged into its base and in which no session runs, keeps the branch, and reclaims
+# the worker's pnpm home.
 set -eu
 for v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 die() { echo "router-worker: $*" >&2; exit 2; }
@@ -151,6 +152,20 @@ cleanup() {
     if ! linked_ok "$w"; then drift=" drift=unlinked"; continue; fi
     now=$(git -c core.fsmonitor=false -C "$w" branch --show-current 2>/dev/null) || now=
     if [ -n "$rb" ] && [ "$now" != "$rb" ]; then drift=" drift=${now:-detached}"; fi
+  done
+}
+# The worker's pnpm home is named from its worktree path (the spawn block below), so the launcher
+# reclaims it when it removes that worktree - finding 3 of the epic close's review round 1: without
+# this, every retired worktree left a full package tree under the temp folder. Guards: the home is a
+# real directory this user owns under the temp root, and its name is the launcher's. The old shared
+# layout's modules-<cksum> is reclaimed too when it is there.
+reclaim_pnpm() {
+  rp_root=$(cd -P "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P) || die "cannot resolve the temp folder ${TMPDIR:-/tmp}"
+  rp_sum=$(printf '%s\n' "$1" | cksum | cut -d' ' -f1)
+  for rp_d in "$rp_root/keel-worker-pnpm-$rp_sum" "$rp_root/keel-worker-pnpm/modules-$rp_sum"; do
+    [ -e "$rp_d" ] || [ -L "$rp_d" ] || continue
+    [ -d "$rp_d" ] && [ ! -L "$rp_d" ] && [ -O "$rp_d" ] || continue
+    rm -rf -- "$rp_d" || die "cannot reclaim the worker's pnpm home $rp_d"
   done
 }
 # this repository's git dir (git's common dir), resolved from the router's checkout, never from a
@@ -535,6 +550,7 @@ if [ "$mode" = worktree ]; then
   git -C "$ROOT" merge-base --is-ancestor "refs/heads/$b" "refs/heads/$base" 2>/dev/null || die "branch $b is not merged into $base: the owner decides"
   [ -z "$(ls -A "$wt/docs/.archive" 2>/dev/null)" ] || die "worktree $wt holds archived docs in docs/.archive: copy them out first (git worktree remove deletes ignored files)"
   git -C "$ROOT" worktree remove "$wt" >&2 || die "git worktree remove failed"
+  reclaim_pnpm "$wt"
   echo "REMOVED path=$wt branch=$b"; exit 0
 fi
 # E-WSANDBOX.W5: every run dir that recorded a session, one per worker name, newest first (by its
@@ -603,13 +619,13 @@ EOF
     st=${st:-unknown}
     transcript "$sid"
     if [ -z "$t" ]; then echo "STATUS name=$name state=$st session=$sid transcript=none"; continue; fi
-    facts=$(jq -R -r 'fromjson? | select(type == "object" and .type == "assistant" and (.isSidechain // false) == false
+    if jqout=$(jq -R -r 'fromjson? | select(type == "object" and .type == "assistant" and (.isSidechain // false) == false
         and (.isApiErrorMessage // false) == false and .message.model != "<synthetic>" and (.message.usage | type) == "object")
       | .message.usage as $u
       | [(($u.input_tokens // 0) + ($u.cache_creation_input_tokens // 0) + ($u.cache_read_input_tokens // 0)),
          ($u.cache_creation // {} | if (.ephemeral_1h_input_tokens // 0) > 0 then 3600 elif (.ephemeral_5m_input_tokens // 0) > 0 then 300 else 0 end),
-         (try (.timestamp | sub("\\.[0-9]+"; "") | fromdateiso8601) catch -1)] | @tsv' < "$t" 2>/dev/null |
-      awk -v now="$now" -v cold="$policy_cold" -v warm="$policy_warm" 'BEGIN { n = 0; p = 0; life = 300 }
+         (try (.timestamp | sub("\\.[0-9]+"; "") | fromdateiso8601) catch -1)] | @tsv' < "$t" 2>/dev/null); then
+      facts=$(printf '%s' "$jqout" | awk -v now="$now" -v cold="$policy_cold" -v warm="$policy_warm" 'BEGIN { n = 0; p = 0; life = 300 }
         { c = $1 + 0; if (c > p) p = c; if ($2 + 0 > 0) life = $2 + 0; ts = $3 + 0; n++ }
         END {
           if (n == 0) { print "usage=none"; exit }
@@ -620,6 +636,10 @@ EOF
           if (c < max) fits = "yes"; else fits = "no"
           printf "context=%d peak=%d idle=%dm cache=%s ttl=%s cold-max=%d warm-max=%d fits=%s\n", c, p, int(gap / 60), cache, ttl, cold, warm, fits
         }') || facts=usage=unreadable
+    else
+      # jq's own failure (unreadable, or no transcript it can parse): never the word for a fresh worker
+      facts=usage=unreadable
+    fi
     echo "STATUS name=$name state=$st session=$sid $facts"
   done <<EOF
 $runs
@@ -783,22 +803,23 @@ for d in "$gd"/worktrees/*; do
   [ "$d" != "$admin" ] || continue
   others=$(printf '%s' "$others" | jq -c --arg d "$d" '. + [$d + "/commondir", $d + "/gitdir", $d + "/config.worktree"]')
 done
-# E-WSANDBOX.W3 (owner q3), corrected after the independent review: the worker's sandbox reaches only
-# its cwd, its own temp and this settings' allowWrite, so the package tree the launcher keeps outside
-# the worktree must itself be an allowWrite root - and pnpm materialises the whole package tree
-# (xmlbuilder 15.1.1's .vscode/launch.json included) in its modules dir, which the cwd-anchored deny
-# makes lethal inside the worktree (W1 finding d). pnpm 11 reads pnpm_config_modules_dir from the
-# environment; the worktree's git-ignored app/node_modules links at the modules dir, so pnpm scripts,
-# Node and Vite resolve through it. pnpm_config_store_dir keeps the content store in the pnpm home and the
-# owner's ~/Library/pnpm is never touched. The three variables travel in the --settings env object:
-# claude --bg hands the session to the Claude Code daemon, which does not pass the launcher's own
-# environment on (E-WSANDBOX.W10, the e2e of 2026-11-28: an exported variable never reached the worker's
-# shell). The launcher creates the modules dir, so the link never dangles; what it finds at that fixed
-# name must be a real directory this user owns, like the home. A fixed name is safe only inside the user's own $TMPDIR; without one
-# the home is a mktemp dir, and either way it must be a real directory this user owns. Trade-off:
-# Forge's packager needs a real tree, so `pnpm make` stays an owner install; a worktree that already
-# holds a real app/node_modules is left alone, never replaced.
-pnpm_home= pnpm_modules=
+# E-WSANDBOX.W3 (owner q3), corrected at the epic close's review round 1 (findings 1 - 3): pnpm
+# materialises the whole package tree (xmlbuilder 15.1.1's .vscode/launch.json included) in its
+# virtual store, and the sandbox denies **/.vscode/** under the working directory, so that tree must
+# live outside the worktree. Each worktree gets its own pnpm home under the temp folder,
+# keel-worker-pnpm-<cksum of the worktree path>: a worker's allowWrite root is its own home and never
+# another worktree's (finding 1), and the launcher reclaims it when it removes that worktree (finding
+# 3). The home holds pnpm's content store and its virtual store; no modules dir is named in the
+# session, because an absolute modules dir redirects a granted pnpm command run outside app/ into the
+# app's tree and prints success with no node_modules where the worker ran (finding 2). pnpm writes a
+# real app/node_modules of its own whose package files all live in that virtual store, so Node and
+# Vite resolve through it and nothing the sandbox denies lands in the worktree. The three variables
+# travel in the --settings env object: claude --bg hands the session to the Claude Code daemon, which
+# does not pass the launcher's own environment on (E-WSANDBOX.W10, the e2e of 2026-11-28). What the
+# launcher finds at the home's name must be a real directory this user owns. Trade-off: Forge's
+# packager needs a real node_modules, which pnpm now makes; `pnpm make` stays an owner install, and a
+# worktree that already holds a real app/node_modules is left alone, never replaced.
+pnpm_home=
 if [ -e "$wt/app" ] || [ -L "$wt/app" ]; then
   # a worker can replace its app directory with a symlink (it may write anywhere in its worktree);
   # following it would create node_modules in another worktree with the launcher's owner rights, so
@@ -806,24 +827,20 @@ if [ -e "$wt/app" ] || [ -L "$wt/app" ]; then
   [ -d "$wt/app" ] && [ ! -L "$wt/app" ] || die "the worktree's app is not a real directory: $wt/app"
   app_real=$(cd -P "$wt/app" 2>/dev/null && pwd -P) || die "cannot resolve $wt/app"
   [ "$app_real" = "$wt/app" ] || die "the worktree's app resolves outside it: $wt/app -> $app_real"
-  pnpm_tmp=${TMPDIR:-}
-  if [ -n "$pnpm_tmp" ]; then
-    pnpm_tmp=$(cd -P "$pnpm_tmp" 2>/dev/null && pwd -P) || die "cannot resolve the temp folder ${TMPDIR:-}"
-    pnpm_home=$pnpm_tmp/keel-worker-pnpm
-    mkdir -p "$pnpm_home" || die "cannot create the worker's pnpm home $pnpm_home"
+  pnpm_tmp=${TMPDIR:-/tmp}
+  pnpm_tmp=$(cd -P "$pnpm_tmp" 2>/dev/null && pwd -P) || die "cannot resolve the temp folder ${TMPDIR:-/tmp}"
+  pnpm_home=$pnpm_tmp/keel-worker-pnpm-$(printf '%s\n' "$wt" | cksum | cut -d' ' -f1)
+  if [ -e "$pnpm_home" ] || [ -L "$pnpm_home" ]; then
     [ -d "$pnpm_home" ] && [ ! -L "$pnpm_home" ] && [ -O "$pnpm_home" ] || die "the worker's pnpm home $pnpm_home is not a directory this user owns"
   else
-    pnpm_home=$(mktemp -d /tmp/keel-worker-pnpm.XXXXXXXX) || die "cannot create the worker's pnpm home"
-    pnpm_home=$(cd -P "$pnpm_home" && pwd -P) || die "cannot resolve the worker's pnpm home"
+    mkdir "$pnpm_home" || die "cannot create the worker's pnpm home $pnpm_home"
   fi
-  pnpm_modules=$pnpm_home/modules-$(printf '%s\n' "$wt" | cksum | cut -d' ' -f1)
-  if [ -e "$pnpm_modules" ] || [ -L "$pnpm_modules" ]; then
-    [ -d "$pnpm_modules" ] && [ ! -L "$pnpm_modules" ] && [ -O "$pnpm_modules" ] || die "the worker's pnpm modules dir $pnpm_modules is not a directory this user owns"
-  else
-    mkdir "$pnpm_modules" || die "cannot create the worker's pnpm modules dir $pnpm_modules"
-  fi
+  # pnpm cannot install through a symlinked node_modules (ENOTDIR), and the old layout made one: clear
+  # it so pnpm writes a real node_modules (app/node_modules is git-ignored, so the worktree stays
+  # clean). A real install is never touched.
+  if [ -L "$wt/app/node_modules" ]; then rm -f -- "$wt/app/node_modules" || die "cannot clear the old app/node_modules link"; fi
 fi
-sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --argjson o "$others" --arg hook "$hook" --arg ph "$pnpm_home" --arg pm "$pnpm_modules" '{sandbox: {enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
+sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --argjson o "$others" --arg hook "$hook" --arg ph "$pnpm_home" '{sandbox: {enabled: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
   filesystem: {allowWrite: ([$g, "~/.cargo/registry", "~/.cargo/git", "~/.cargo/.package-cache", "~/.cargo/.package-cache-mutate",
       "~/.cargo/.global-cache", "~/.cargo/.global-cache-journal", "~/.cargo/.global-cache-wal", "~/.cargo/.global-cache-shm"]
       + (if $ph == "" then [] else [$ph] end)),
@@ -834,7 +851,7 @@ sandbox=$(jq -n -c --arg g "$gd" --arg w "$wt" --arg a "$admin" --argjson o "$ot
     denyRead: ["~/.ssh", "~/.claude/channels"]},
   network: {allowLocalBinding: true, allowedDomains: ["htmldoc.wfomobile.com", "crates.io", "index.crates.io", "static.crates.io", "github.com", "registry.npmjs.org"]}},
   hooks: {PreToolUse: [{matcher: "*", hooks: [{type: "command", command: $hook, timeout: 10}]}]}}
-  + (if $ph == "" then {} else {env: {PNPM_HOME: $ph, pnpm_config_modules_dir: $pm, pnpm_config_store_dir: ($ph + "/store")}} end)')
+  + (if $ph == "" then {} else {env: {PNPM_HOME: $ph, pnpm_config_store_dir: ($ph + "/store"), pnpm_config_virtual_store_dir: ($ph + "/vstore")}} end)')
 set -- --bg -n "$name" --model "$model" --effort "$effort" --agent worker --setting-sources project,local --strict-mcp-config \
   --settings "$sandbox" --allowedTools
 for c in "cargo build" "cargo test" "cargo check" "cargo clippy" "cargo fmt" "keel preflight" \
@@ -868,13 +885,6 @@ if [ "$mode" = resume ]; then
   set -- "$@" --resume "$rsid" --permission-mode "$pm" "You are resumed by the launcher after a stop. Read $f again: it is the brief you were started with. First action: git rev-parse --show-toplevel must print $wt (if it prints anything else, report that and stop); then git branch --show-current, git log --oneline -6, git status --short. Then send the router your brief names one SendMessage saying you are back, with those four outputs, and end your turn: its next task follows as a message. Your shell runs in a sandbox: give every network command a timeout (a host outside the sandbox makes it wait), and report a refusal or \"Operation not permitted\", never route around it."
 else
 set -- "$@" --permission-mode "$pm" "You are a fresh worker session. Read $f in full and do exactly what it says. When your work is finished, send one self-contained report by SendMessage to the router your brief names, then end your turn; you stay alive for follow-up tasks. First action: git rev-parse --show-toplevel must print $wt (if it prints anything else, report that and stop); then git branch --show-current, git log --oneline -6, git status --short. Your shell runs in a sandbox: give every network command a timeout (a host outside the sandbox makes it wait), and report a refusal or \"Operation not permitted\", never route around it."
-fi
-if [ -n "$pnpm_home" ]; then
-  if [ -e "$wt/app/node_modules" ] && [ ! -L "$wt/app/node_modules" ]; then
-    : # a real install is never replaced
-  else
-    ln -sfn "$pnpm_modules" "$wt/app/node_modules" || die "cannot link $wt/app/node_modules"
-  fi
 fi
 cd "$wt"
 rc=0; started=$("$C" "$@" 2>&1) || rc=$?
