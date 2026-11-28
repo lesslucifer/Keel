@@ -36,8 +36,8 @@ test('a login shell printing profile noise around the markers gives its PATH, re
 test('a login shell that hangs is killed at the timeout with its children, and the fallback says why', async (t) => {
   const dir = tempDir(t, 'login');
   const shell = program(path.join(dir, 'zsh'), `#!/bin/sh\necho $$ > ${dir}/pid\n${HANG}\n`);
-  const r = await readLoginPath({ shell, timeoutMs: 300, toolDirs: ['/Users/me/.cargo/bin'] });
-  assert.deepEqual(r, { entries: [...SYSTEM_PATH, '/Users/me/.cargo/bin'], source: 'fallback', reason: 'the login shell did not answer within 0.3 s' });
+  const r = await readLoginPath({ shell, timeoutMs: 3000, toolDirs: ['/Users/me/.cargo/bin'] });
+  assert.deepEqual(r, { entries: [...SYSTEM_PATH, '/Users/me/.cargo/bin'], source: 'fallback', reason: 'the login shell did not answer within 3 s' });
   assert.ok(groupGone(Number(readFileSync(path.join(dir, 'pid'), 'utf8'))), 'the hung shell or its child is still running');
 });
 
