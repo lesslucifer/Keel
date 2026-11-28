@@ -1055,6 +1055,17 @@ fn one_effort_policy_is_stated_in_the_skills_as_the_launcher_enforces_it() {
     }
 }
 
+/// E-WSANDBOX.W10: project-router states what the launcher now does - the pnpm env through --settings
+/// (a background session gets no caller env), the pnpm grant (owner q2), the bare-shell deny (owner q1) -
+/// and that the router itself is never a background session (owner q3).
+#[test]
+fn project_router_states_the_w10_launcher_and_the_interactive_router() {
+    let s = std::fs::read_to_string(root().join(".claude/skills/project-router/SKILL.md")).unwrap();
+    for said in ["pnpm_config_store_dir", "`--settings` `env` object", "`pnpm install|add|run|test`", "`sh`, `bash`, `zsh`", "never `claude --bg`"] {
+        assert!(s.contains(said), "project-router does not state {said}");
+    }
+}
+
 /// E-ROUTER3.W4 (R3, DEC-48): in a self-clone with keel's hooks a plain commit touching a router security file is refused naming it,
 /// while a trailer naming the committed roster's signer admits it.
 #[test]
