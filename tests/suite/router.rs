@@ -141,7 +141,7 @@ fn router_bash_guard_judges_plain_words_so_shell_cannot_reassemble_a_denied_flag
     for a in settings()["permissions"]["allow"].as_array().unwrap() {
         let a = a.as_str().unwrap().strip_prefix("Bash(").unwrap().strip_suffix(')').unwrap();
         let cmd = match a.strip_suffix(" *") {
-            Some(p) if p.ends_with(" stop") || p.ends_with(" watchdog start") => format!("{p} n"),
+            Some(p) if p.ends_with(" stop") || p.ends_with(" resume") || p.ends_with(" status") || p.ends_with(" watchdog start") => format!("{p} n"),
             Some(p) if p.ends_with(" worktree add") || p.ends_with(" worktree remove") => format!("{p} wu/E-X/w1-a"),
             Some(p) if p.ends_with("router-watch.sh") => format!("{p} signed 1a2b3c4"),
             Some(p) if p.ends_with("router-inbox.sh watch") => format!("{p} 6600"),
@@ -615,8 +615,8 @@ fn stub_claude(stub: &Path) {
         "  rm) echo \"removed $2\"; exit 0;;\n",
         "esac\n",
         "[ ! -e \"$S/refuse\" ] || { cat \"$S/refuse\"; exit 1; }\n",
-        "name=\nwhile [ $# -gt 0 ]; do case \"$1\" in -n) name=$2;; esac; shift; done\n",
-        "sid=$(uuidgen | tr A-F a-f)\n",
+        "name= rs=\nwhile [ $# -gt 0 ]; do case \"$1\" in -n) name=$2;; --resume) rs=$2;; esac; shift; done\n",
+        "sid=${rs:-$(uuidgen | tr A-F a-f)}\n",
         "id=${sid%%-*}\n",
         "[ -e \"$S/unlisted\" ] || { jq --arg n \"$name\" --arg i \"$id\" --arg s \"$sid\" --arg c \"$PWD\" '. + [{pid: 1, id: $i, cwd: $c, kind: \"background\", sessionId: $s, name: $n, status: \"idle\", state: \"done\"}]' \"$S/sessions.json\" > \"$S/s.tmp\" && mv \"$S/s.tmp\" \"$S/sessions.json\"; }\n",
         "echo \"backgrounded · $id · $name\"\n"
@@ -1012,7 +1012,9 @@ fn committed_worker_policy_is_low_for_a_worker_and_high_for_a_planner_in_auto_mo
             "worker_default_effort = \"low\"",
             "planner_effort = \"high\"",
             "worker_permission_mode = \"auto\"",
-            "watchdog_model = \"haiku\""
+            "watchdog_model = \"haiku\"",
+            "reuse_max_context_cold = 200000",
+            "reuse_max_context_warm = 400000"
         ]
     );
     let project_router = std::fs::read_to_string(root().join(".claude/skills/project-router/SKILL.md")).unwrap();
@@ -2049,20 +2051,19 @@ fn stop_stops_then_removes_this_repositorys_idle_worker_by_id() {
 
 /// E-ROUTER3.W10 (owner ruling 2026-11-11): `wait` and `send` are gone, with every file under
 /// .router/out: a spawn and a stop leave only the brief and its run dir. E-ROUTER3.W8 (owner ruling
-/// 2026-11-11, probe P3 i): `resume` is gone too: a plain `--bg --resume` drops every launch flag.
+/// 2026-11-11, probe P3 i): the old `resume <name> <sid> <worktree> <brief>` is gone. E-WSANDBOX.W5:
+/// `resume <name>` and `status [<name>]` are modes again, taking nothing but a name.
 #[test]
 fn launcher_has_only_its_modes_and_writes_no_out_dir() {
     let l = launcher();
-    for args in [
-        vec!["wait", "n"],
-        vec!["send", "n", ".router/briefs/b.md"],
-        vec!["brief", "n", ".router/briefs/b.md"],
-        vec!["resume", "n", "0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b", l.wt.to_str().unwrap(), ".router/briefs/b.md"],
-    ] {
+    for args in [vec!["wait", "n"], vec!["send", "n", ".router/briefs/b.md"], vec!["brief", "n", ".router/briefs/b.md"]] {
         let o = l.cmd(&args, &[]).output().unwrap();
         assert_eq!(o.status.code(), Some(2), "{args:?}");
-        assert!(String::from_utf8_lossy(&o.stderr).contains("spawn|stop|worktree|watchdog"), "{args:?}: {o:?}");
+        assert!(String::from_utf8_lossy(&o.stderr).contains("spawn|stop|resume|status|worktree|watchdog"), "{args:?}: {o:?}");
     }
+    let o = l.cmd(&["resume", "n", "0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b", l.wt.to_str().unwrap(), ".router/briefs/b.md"], &[]).output().unwrap();
+    assert_eq!(o.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("resume <name>"), "{o:?}");
     assert_eq!(calls(&l.state).len(), 0, "an unknown mode called the CLI");
     assert!(l.run(&["spawn", "n", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
     l.stop("n");
@@ -2073,9 +2074,10 @@ fn launcher_has_only_its_modes_and_writes_no_out_dir() {
 }
 
 /// E-ROUTER3.W10: the router's launcher shapes are spawn and stop in plain words; `wait` and `send`
-/// are gone, E-ROUTER3.W8 `resume` too, and nothing else of the script passes.
+/// are gone, E-ROUTER3.W8's `resume` with a session id and paths too (E-WSANDBOX.W5's `resume <name>`
+/// passes: router_guard_admits_resume_and_status_by_name_alone), and nothing else of the script passes.
 #[test]
-fn router_guard_admits_spawn_and_stop_and_refuses_resume_wait_and_send() {
+fn router_guard_admits_spawn_and_stop_and_refuses_wait_send_and_a_resume_with_arguments() {
     for ok in [
         "scripts/router-worker.sh spawn w1 /Users/o/Keel-x .router/briefs/w1.md opus",
         "scripts/router-worker.sh spawn w1 /Users/o/Keel-x .router/briefs/w1.md opus --review",
@@ -2110,17 +2112,26 @@ fn router_guard_leaves_a_background_workers_calls_alone() {
 }
 
 /// E-ROUTER3.W10: the settings allow exactly the launcher shapes the guard admits; `wait` and `send`
-/// are gone from both. E-ROUTER3.W8: `resume` is gone too, and `worktree add|remove` are in.
+/// are gone from both. E-ROUTER3.W8: `worktree add|remove` are in. E-WSANDBOX.W5: `resume <name>`
+/// and `status [<name>]` are in.
 #[test]
 fn settings_allow_exactly_the_launcher_shapes_the_guard_admits() {
     let modes: Vec<String> = settings()["permissions"]["allow"]
         .as_array()
         .unwrap()
         .iter()
-        .filter_map(|a| a.as_str().unwrap().strip_prefix("Bash(scripts/router-worker.sh ").map(|m| m.trim_end_matches(" *)").to_string()))
+        .filter_map(|a| a.as_str().unwrap().strip_prefix("Bash(scripts/router-worker.sh ").map(|m| m.trim_end_matches(" *)").trim_end_matches(')').to_string()))
         .collect();
-    assert_eq!(modes, ["spawn", "stop", "watchdog start", "watchdog stop", "worktree add", "worktree remove"]);
-    for (m, arg) in [("watchdog start", "r1"), ("watchdog stop", "r1"), ("worktree add", "epic/E-X"), ("worktree remove", "wu/E-X/w1-a")] {
+    assert_eq!(modes, ["spawn", "stop", "resume", "status", "status", "watchdog start", "watchdog stop", "worktree add", "worktree remove"]);
+    assert_eq!(bash("scripts/router-worker.sh status"), None, "the guard refuses the allowed bare status");
+    for (m, arg) in [
+        ("resume", "w1"),
+        ("status", "w1"),
+        ("watchdog start", "r1"),
+        ("watchdog stop", "r1"),
+        ("worktree add", "epic/E-X"),
+        ("worktree remove", "wu/E-X/w1-a"),
+    ] {
         assert_eq!(bash(&format!("scripts/router-worker.sh {m} {arg}")), None, "the guard refuses the allowed {m}");
     }
 }
@@ -2286,17 +2297,19 @@ fn epic_e2e_router_drives_a_granted_worker_in_a_seeded_worktree_to_its_end() {
     assert!(copy.starts_with(l.wt.to_str().unwrap()) && std::fs::read_to_string(copy).unwrap() == "run the gate\n", "{out}");
 
     // 4 · W2, E-ROUTER3.W1: the router subscribes to the worker's end and may steer it with a message;
-    // E-ROUTER3.W10: a follow-up task is a message too, and `wait`, `send` and `resume` are gone
+    // E-ROUTER3.W10: a follow-up task is a message too, and `wait` and `send` are gone; E-WSANDBOX.W5:
+    // `resume <name>` and `status` pass
     assert_eq!(wired_guard(&c, "SendMessage", serde_json::json!({"to": name, "notify_when_idle": true})), None);
     let steer = serde_json::json!({"to": name, "message": "stop after the plan", "type": "message", "recipient": name, "content": "stop after the plan"});
     assert_eq!(wired_guard(&c, "SendMessage", steer), None);
     assert_eq!(wired_guard(&c, "SendMessage", serde_json::json!({"to": name, "message": "Follow-up task: now write the notes"})), None);
-    for cmd in [
-        format!("scripts/router-worker.sh wait {name}"),
-        format!("scripts/router-worker.sh send {name} .router/briefs/{name}.md"),
-        format!("scripts/router-worker.sh resume {name}"),
-    ] {
+    for cmd in [format!("scripts/router-worker.sh wait {name}"), format!("scripts/router-worker.sh send {name} .router/briefs/{name}.md")] {
         assert!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })).is_some(), "router may run {cmd:?}");
+    }
+    for cmd in
+        [format!("scripts/router-worker.sh resume {name}"), "scripts/router-worker.sh status".to_string(), format!("scripts/router-worker.sh status {name}")]
+    {
+        assert_eq!(wired_guard(&c, "Bash", serde_json::json!({ "command": cmd })), None, "router may not run {cmd:?}");
     }
     // the grant is the worker's alone
     for cmd in ["cargo test", "keel preflight wu HEAD", "keel mr confirm wu HEAD --as owner"] {
@@ -4996,7 +5009,8 @@ fn worktree_branches_follow_the_committed_branch_policy() {
 /// E-ROUTER3.W5: the router's rule-bearing text says what the launcher at this tip prints and holds no
 /// retired mechanism. Every outcome word the launcher prints as `<WORD> name=` or `<WORD> path=` is in
 /// worker-ops, with the UNLISTED respawn instruction, the stop refusal by state and the deny list as
-/// intent; no current text names `wait`, `resume`, `.router/out` or a router that never messages
+/// intent; no current text names `wait`, `.router/out`, a router that never messages or (E-WSANDBOX.W5)
+/// a worker that is never revived
 /// (lessons.md is the dated record of what was, so it is not read); router.md's body names the two
 /// fleet tools; project-router states the committed sign-off tiers.
 #[test]
@@ -5036,7 +5050,7 @@ fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
     current.extend([".claude/skills/project-router/SKILL.md".to_string(), ".claude/agents/router.md".to_string()]);
     for f in &current {
         let body = read(f);
-        for retired in ["router-worker.sh wait", "router-worker.sh resume", "<launcher> wait", "<launcher> resume", ".router/out", "never message"] {
+        for retired in ["router-worker.sh wait", "<launcher> wait", ".router/out", "never message", "never revived", "has no resume", "No resume"] {
             assert!(!body.contains(retired), "{f} names the retired {retired:?}");
         }
     }
@@ -5061,4 +5075,457 @@ fn router_text_names_what_the_launcher_prints_and_no_retired_mechanism() {
     let tiers: Vec<String> = policy["mr"]["tiers"].as_array().unwrap().iter().map(|t| format!("{t}")).collect();
     let tiers = format!("tiers = [{}]", tiers.join(", "));
     assert!(read(".claude/skills/project-router/SKILL.md").contains(&tiers), "project-router does not state {tiers}");
+}
+
+// ---- E-WSANDBOX.W5: resume a stopped worker by name, read the fleet's context and cache, one reuse rule ----
+
+/// The transcript Claude Code keeps for session `sid` of a worker run in `wt` (the project dir is the
+/// path with every character but a letter or a digit made `-`), under the launcher's HOME.
+fn transcript_path(l: &Launcher, wt: &Path, sid: &str) -> PathBuf {
+    let slug: String = wt.to_str().unwrap().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+    l.state.join("home/.claude/projects").join(slug).join(format!("{sid}.jsonl"))
+}
+
+fn write_transcript(l: &Launcher, wt: &Path, sid: &str, lines: &[String]) {
+    let t = transcript_path(l, wt, sid);
+    std::fs::create_dir_all(t.parent().unwrap()).unwrap();
+    std::fs::write(t, lines.join("\n") + "\n").unwrap();
+}
+
+/// One assistant record as a transcript holds it: its usage (input, cache write labelled by its
+/// lifetime, cache read) and its timestamp.
+fn usage(ts: &str, input: u64, write: u64, read: u64, ttl: &str, sidechain: bool) -> String {
+    let (h, m) = if ttl == "1h" { (write, 0) } else { (0, write) };
+    serde_json::json!({"type": "assistant", "isSidechain": sidechain, "timestamp": ts, "message": {"role": "assistant",
+        "content": [{"type": "text", "text": "ok"}],
+        "usage": {"input_tokens": input, "cache_creation_input_tokens": write, "cache_read_input_tokens": read, "output_tokens": 7,
+            "cache_creation": {"ephemeral_1h_input_tokens": h, "ephemeral_5m_input_tokens": m}}}})
+    .to_string()
+}
+
+fn user_line(ts: &str) -> String {
+    serde_json::json!({"type": "user", "isSidechain": false, "timestamp": ts, "message": {"role": "user", "content": "go"}}).to_string()
+}
+
+/// The argv of the latest background session started under `name`.
+fn bg_argv(state: &Path, name: &str) -> Vec<String> {
+    calls(state)
+        .into_iter()
+        .rfind(|(_, a)| a[0] == "--bg" && a.windows(2).any(|w| w[0] == "-n" && w[1] == name))
+        .unwrap_or_else(|| panic!("no session started for {name}"))
+        .1
+}
+
+/// Spawn `name` in `wt` with `extra`, stop it, and leave it a transcript: its session id and spawn argv.
+fn spawn_and_stop(l: &Launcher, name: &str, wt: &Path, extra: &[&str]) -> (String, Vec<String>) {
+    let mut args = vec!["spawn", name, wt.to_str().unwrap(), ".router/briefs/b.md", "opus"];
+    args.extend(extra);
+    let (ok, out) = l.run(&args);
+    assert!(ok, "{out}");
+    let sid = field(&out, "session=").to_string();
+    let argv = bg_argv(&l.state, name);
+    l.stop(name);
+    write_transcript(l, wt, &sid, &[user_line("2027-01-15T07:00:00Z"), usage("2027-01-15T07:00:05Z", 3, 30000, 0, "1h", false)]);
+    (sid, argv)
+}
+
+/// The run dirs recorded under exactly `name` whose mode is `mode`.
+fn runs_of(l: &Launcher, name: &str, mode: &str) -> Vec<PathBuf> {
+    let re = regex::Regex::new(&format!(r"^{}-[0-9]{{14}}-[0-9]+-{mode}$", regex::escape(name))).unwrap();
+    std::fs::read_dir(l.main.join(".router/runs"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| re.is_match(p.file_name().unwrap().to_str().unwrap()))
+        .collect()
+}
+
+/// The main checkout's committed config with `edit` applied to its text, as the launcher's new HEAD.
+fn commit_edited_config(l: &Launcher, edit: impl Fn(String) -> String) -> String {
+    let before = std::fs::read_to_string(l.main.join(".keel/config.toml")).unwrap();
+    l.commit_config(Some(&edit(before.clone())));
+    before
+}
+
+/// E-WSANDBOX.W5 (owner request 2026-11-26): `resume <name>` brings back the last stopped session of
+/// that name with the argv a spawn of it builds now - the one flag builder - plus `--resume <its id>`
+/// before the mode, and a fixed resume prompt last. A review run comes back with its review grant (the
+/// owner's comment 2026-11-28: not resuming a reviewer is an instruction, not a check). The resume has
+/// a run dir of its own holding the session, and stop cleans its brief copy as it cleans a spawn's.
+#[test]
+fn resume_rebuilds_the_spawn_argv_and_adds_only_the_recorded_session() {
+    let l = launcher();
+    for (name, extra) in [("r1", vec![]), ("r2", vec!["--role", "planner"]), ("r3", vec!["--permission-mode", "plan"]), ("r4", vec!["--review"])] {
+        let (sid, spawned) = spawn_and_stop(&l, name, &l.wt, &extra);
+        let (ok, out) = l.run(&["resume", name]);
+        assert!(ok && out.starts_with(&format!("RESUMED name={name} ")), "{out}");
+        assert_eq!(field(&out, "session="), sid, "{out}");
+        assert_eq!(field(&out, "worktree="), l.wt.to_str().unwrap());
+        let resumed = bg_argv(&l.state, name);
+        let i = resumed.iter().position(|x| x == "--resume").unwrap_or_else(|| panic!("{name}: no --resume in {resumed:?}"));
+        assert_eq!(resumed[i + 1], sid);
+        assert_eq!(resumed[resumed.len() - 3], "--permission-mode", "{name}: the prompt must follow the mode: {resumed:?}");
+        let mut rebuilt = resumed.clone();
+        rebuilt.drain(i..i + 2);
+        assert_eq!(rebuilt[..rebuilt.len() - 1], spawned[..spawned.len() - 1], "{name}: a resume rebuilds the spawn's flags");
+        let prompt = resumed.last().unwrap();
+        assert!(prompt.starts_with("You are resumed by the launcher after a stop. Read "), "{prompt}");
+        assert!(prompt.contains(&format!("git rev-parse --show-toplevel must print {}", l.wt.to_str().unwrap())), "{prompt}");
+        let copy = field(&out, "brief=");
+        assert!(copy.starts_with(l.wt.to_str().unwrap()) && prompt.contains(copy), "{out}");
+        assert_eq!(std::fs::read_to_string(copy).unwrap(), "do the thing\n");
+        let dirs = runs_of(&l, name, "resume");
+        assert_eq!(dirs.len(), 1, "{name}: {dirs:?}");
+        assert_eq!(std::fs::read_to_string(dirs[0].join("session")).unwrap().trim(), sid);
+        assert_eq!(std::fs::read_to_string(dirs[0].join("model")).unwrap().trim(), "opus");
+        assert_eq!(std::fs::read_to_string(runs_of(&l, name, "spawn")[0].join("model")).unwrap().trim(), "opus");
+        assert_eq!(l.starts(name), 2, "{name}");
+        l.stop(name);
+    }
+    assert!(brief_copies(&l.wt).is_empty(), "stop left a resumed worker's brief copy: {:?}", brief_copies(&l.wt));
+    // a second resume takes the newest run, the resume's own
+    let (ok, out) = l.run(&["resume", "r1"]);
+    assert!(ok && out.starts_with("RESUMED name=r1 "), "{out}");
+    assert_eq!(runs_of(&l, "r1", "resume").len(), 2);
+}
+
+/// E-WSANDBOX.W5: every refusal comes before any start - the shape, no run of exactly that name (w5
+/// never takes w5-fix's), a live session, no transcript, a changed brief snapshot, an effort or mode
+/// the committed policy no longer admits, a worktree off the run's branch, and no persona.
+#[test]
+fn resume_refuses_what_it_cannot_rebuild_before_any_start() {
+    let l = launcher();
+    let refused = |args: &[&str], why: &str| {
+        let before = calls(&l.state).iter().filter(|(_, a)| a[0] == "--bg").count();
+        let (ok, out) = l.run(args);
+        assert!(!ok && out.contains(why), "{args:?}: expected {why:?} in {out}");
+        assert_eq!(calls(&l.state).iter().filter(|(_, a)| a[0] == "--bg").count(), before, "{args:?} started a session");
+    };
+    refused(&["resume"], "resume <name>");
+    refused(&["resume", "r1", "x"], "resume <name>");
+    refused(&["resume", "R1"], "bad name");
+    refused(&["resume", "watchdog-r"], "reserved for the watchdog");
+    refused(&["resume", "r1"], "no stopped run of r1");
+
+    assert!(l.run(&["spawn", "p-fix", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
+    l.stop("p-fix");
+    refused(&["resume", "p"], "no stopped run of p");
+
+    assert!(l.run(&["spawn", "r1", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
+    refused(&["resume", "r1"], "worker r1 is still running");
+    l.stop("r1");
+    refused(&["resume", "r1"], "no transcript");
+
+    spawn_and_stop(&l, "b1", &l.wt, &[]);
+    let snap = runs_of(&l, "b1", "spawn")[0].clone();
+    std::fs::set_permissions(&snap, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(snap.join("brief.md"), std::os::unix::fs::PermissionsExt::from_mode(0o644)).unwrap();
+    std::fs::write(snap.join("brief.md"), "do another thing\n").unwrap();
+    refused(&["resume", "b1"], "no longer matches its sha256");
+
+    spawn_and_stop(&l, "e1", &l.wt, &[]);
+    let kept = commit_edited_config(&l, |c| {
+        c.replace("worker_efforts = [\"low\", \"high\"]", "worker_efforts = [\"high\"]")
+            .replace("worker_default_effort = \"low\"", "worker_default_effort = \"high\"")
+    });
+    refused(&["resume", "e1"], "effort must be one of: high ([router] worker_efforts in .keel/config.toml): spawn a fresh worker");
+    l.commit_config(Some(&kept));
+
+    spawn_and_stop(&l, "m1", &l.wt, &[]);
+    let kept = commit_edited_config(&l, |c| c.replace("worker_permission_mode = \"auto\"", "worker_permission_mode = \"plan\""));
+    refused(
+        &["resume", "m1"],
+        "permission mode auto is wider than the policy's plan ([router] worker_permission_mode in .keel/config.toml): spawn a fresh worker",
+    );
+    l.commit_config(Some(&kept));
+
+    spawn_and_stop(&l, "g1", &l.wt2, &[]);
+    git(&l.wt2, &["checkout", "-q", "-b", "other"]);
+    refused(&["resume", "g1"], "on other, not the run's w2");
+    git(&l.wt2, &["checkout", "-q", "w2"]);
+
+    spawn_and_stop(&l, "q1", &l.wt2, &[]);
+    std::fs::remove_file(l.wt2.join(".claude/agents/worker.md")).unwrap();
+    refused(&["resume", "q1"], "no worker persona");
+    git(&l.wt2, &["checkout", "-q", "--", ".claude/agents/worker.md"]);
+    let (ok, out) = l.run(&["resume", "q1"]);
+    assert!(ok && out.starts_with("RESUMED name=q1 "), "{out}");
+}
+
+/// E-WSANDBOX.W5 (owner rulings 2026-11-26, rule 4): `status` reads each worker's context and cache
+/// state from its transcript's assistant usage records and timestamps alone, newest run first: context
+/// is the last record's input + cache write + cache read, the peak the largest, idle the minutes since
+/// the last record, the lifetime that of the newest cache write (1h or 5m), warm while idle is under
+/// it, and whether the context fits the ceiling for that state. A sidechain record is not the
+/// worker's context. The clock is ROUTER_NOW (2027-01-15T08:00:00Z here).
+#[test]
+fn status_reads_context_and_cache_from_usage_records_at_a_fixed_clock() {
+    let l = launcher();
+    let now = [("ROUTER_NOW", "1800000000")];
+    let spawn = |name: &str| {
+        let (ok, out) = l.run(&["spawn", name, l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+        assert!(ok, "{out}");
+        field(&out, "session=").to_string()
+    };
+    let a = spawn("a");
+    write_transcript(
+        &l,
+        &l.wt,
+        &a,
+        &[
+            user_line("2027-01-15T06:29:00Z"),
+            usage("2027-01-15T06:30:00.250Z", 3, 20000, 0, "1h", false),
+            usage("2027-01-15T07:00:00Z", 1, 900000, 0, "5m", true),
+            usage("2027-01-15T07:30:00Z", 2, 1000, 150000, "1h", false),
+            user_line("2027-01-15T07:31:00Z"),
+        ],
+    );
+    let b = spawn("b");
+    l.stop("b");
+    write_transcript(&l, &l.wt, &b, &[usage("2027-01-15T07:10:00Z", 5, 260000, 0, "5m", false), usage("2027-01-15T07:50:00Z", 0, 0, 250000, "5m", false)]);
+    let c = spawn("c");
+    l.stop("c");
+    let d = spawn("d");
+    write_transcript(&l, &l.wt, &d, &[user_line("2027-01-15T07:59:00Z")]);
+
+    let want = [
+        format!("STATUS name=d state=idle session={d} usage=none"),
+        format!("STATUS name=c state=stopped session={c} transcript=none"),
+        format!("STATUS name=b state=stopped session={b} context=250000 peak=260005 idle=10m cache=cold ttl=5m cold-max=200000 warm-max=400000 fits=no"),
+        format!("STATUS name=a state=idle session={a} context=151002 peak=151002 idle=30m cache=warm ttl=1h cold-max=200000 warm-max=400000 fits=yes"),
+    ];
+    // newest run first, by the run dir's second; these four may share one, so the lines are compared as a set
+    let (ok, out) = l.run_env(&["status"], &now);
+    assert!(ok, "{out}");
+    let mut got: Vec<&str> = out.lines().collect();
+    got.sort();
+    let mut sorted: Vec<&str> = want.iter().map(String::as_str).collect();
+    sorted.sort();
+    assert_eq!(got, sorted, "{out}");
+    // status is read-only: it starts, stops and removes nothing
+    assert!(calls(&l.state).iter().rev().take_while(|(_, a)| a[0] != "--bg" && a[0] != "stop").all(|(_, a)| a[0] == "agents"));
+    let (ok, out) = l.run_env(&["status", "a"], &now);
+    assert!(ok, "{out}");
+    assert_eq!(out.lines().collect::<Vec<_>>(), [want[3].as_str()]);
+    // a 1h write still warm at 59 minutes, cold at 60
+    for (clock, cache) in [("1800001740", "cache=warm"), ("1800001800", "cache=cold")] {
+        let (ok, out) = l.run_env(&["status", "a"], &[("ROUTER_NOW", clock)]);
+        assert!(ok && out.contains(cache), "{clock}: {out}");
+    }
+    let (ok, out) = l.run_env(&["status", "x"], &now);
+    assert!(!ok && out.contains("no recorded run of x"), "{out}");
+    for args in [vec!["status", "a", "b"], vec!["status", "A"]] {
+        assert!(!l.run_env(&args, &now).0, "{args:?}");
+    }
+    let (ok, out) = l.run_env(&["status"], &[("ROUTER_NOW", "soon")]);
+    assert!(!ok && out.contains("ROUTER_NOW"), "{out}");
+    // status needs the ceilings; spawn does not
+    commit_edited_config(&l, |c| c.lines().filter(|x| !x.starts_with("reuse_max_context_")).collect::<Vec<_>>().join("\n") + "\n");
+    let (ok, out) = l.run_env(&["status"], &now);
+    assert!(!ok && out.contains("reuse_max_context_cold"), "{out}");
+    assert!(l.run(&["spawn", "e", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
+}
+
+/// E-WSANDBOX.W5 (open question 2, default): the two reuse ceilings are `[router]` keys of digits,
+/// given together, the warm one not below the cold one; anything else refuses the whole policy, as the
+/// reader does for every other key.
+#[test]
+fn the_reuse_ceilings_are_two_digit_keys_given_together_warm_not_below_cold() {
+    let l = launcher();
+    let spawn = |name: &str| l.run(&["spawn", name, l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+    let base = std::fs::read_to_string(l.main.join(".keel/config.toml")).unwrap();
+    assert!(base.contains("reuse_max_context_cold = 200000\nreuse_max_context_warm = 400000\n"), "the fixture lacks the ceilings");
+    let without = base.replace("reuse_max_context_cold = 200000\nreuse_max_context_warm = 400000\n", "");
+    l.commit_config(Some(&without));
+    let (ok, out) = spawn("s0");
+    assert!(ok, "spawn needs no ceilings: {out}");
+    for (i, bad) in [
+        "reuse_max_context_cold = 200000\nreuse_max_context_cold = 200000\nreuse_max_context_warm = 400000\n",
+        "reuse_max_context_cold = \"200000\"\nreuse_max_context_warm = 400000\n",
+        "reuse_max_context_cold = 0\nreuse_max_context_warm = 400000\n",
+        "reuse_max_context_cold = 0200000\nreuse_max_context_warm = 400000\n",
+        "reuse_max_context_cold = 200000\nreuse_max_context_warm = 100000\n",
+        "reuse_max_context_cold = 200000\n",
+        "reuse_max_context_warm = 400000\n",
+        "reuse_max_context_cold = 2e5\nreuse_max_context_warm = 400000\n",
+    ]
+    .iter()
+    .enumerate()
+    {
+        l.commit_config(Some(&base.replace("reuse_max_context_cold = 200000\nreuse_max_context_warm = 400000\n", bad)));
+        let (ok, out) = spawn(&format!("s{}", i + 1));
+        assert!(!ok && out.contains("no worker policy"), "{bad:?}: {out}");
+    }
+    l.commit_config(Some(&base.replace("reuse_max_context_warm = 400000", "reuse_max_context_warm = 200000")));
+    assert!(spawn("s9").0, "warm equal to cold is admitted");
+}
+
+/// E-WSANDBOX.W5: the router may resume a worker and read status by name, in plain words, and nothing
+/// wider: no session id, path, second name, option, quote or separator.
+#[test]
+fn router_guard_admits_resume_and_status_by_name_alone() {
+    for ok in [
+        "scripts/router-worker.sh resume w1",
+        "scripts/router-worker.sh resume e-wsandbox-w5-build",
+        "scripts/router-worker.sh status",
+        "scripts/router-worker.sh status w1",
+    ] {
+        assert_eq!(bash(ok), None, "guard denied {ok:?}");
+    }
+    for no in [
+        "scripts/router-worker.sh resume",
+        "scripts/router-worker.sh resume w1 0b8a4f4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b",
+        "scripts/router-worker.sh resume ../w1",
+        "scripts/router-worker.sh resume W1",
+        "scripts/router-worker.sh resume -w1",
+        "scripts/router-worker.sh resume w1 --effort high",
+        "scripts/router-worker.sh resume \"w1\"",
+        "scripts/router-worker.sh resume w1; kill 1",
+        "scripts/router-worker.sh status w1 w2",
+        "scripts/router-worker.sh status --all",
+        "scripts/router-worker.sh status /tmp/x",
+        "scripts/router-worker.sh statusx",
+        "ROUTER_NOW=1 scripts/router-worker.sh status",
+    ] {
+        assert!(bash(no).is_some(), "guard allowed {no:?}");
+    }
+}
+
+/// E-WSANDBOX.W5 (owner rulings 2026-11-26 and the plan's rulings of 2026-11-28): the reuse rules are
+/// stated once, in the keel-router skill, by the ceiling keys and never their numbers; a fix goes to
+/// its author under the ceiling and fresh past it unless the owner says otherwise; not resuming a
+/// reviewer is an instruction; the old 'fresh worker' fix row is gone; project-router and router.md
+/// name the two new shapes; worker-ops names what status prints.
+#[test]
+fn the_reuse_rules_are_stated_once_by_their_keys() {
+    let read = |p: &str| std::fs::read_to_string(root().join(p)).unwrap();
+    for f in ["SKILL.md", "references/worker-ops.md", "references/checklists.md"] {
+        assert_eq!(read(&format!("skills/keel-router/{f}")), read(&format!(".claude/skills/keel-router/{f}")), "the two keel-router copies of {f} differ");
+    }
+    let skill = read("skills/keel-router/SKILL.md");
+    let flat = skill.split_whitespace().collect::<Vec<_>>().join(" ");
+    for said in [
+        "reuse_max_context_cold",
+        "reuse_max_context_warm",
+        "<launcher> resume <name>",
+        "<launcher> status",
+        "do not resume a reviewer",
+        "unless the owner says otherwise",
+    ] {
+        assert!(flat.contains(said), "keel-router SKILL.md does not state {said:?}");
+    }
+    assert!(!flat.contains("fix round (fresh worker, new tip, re-gate)"), "the review table still sends every fix fresh");
+    let numbers = regex::Regex::new(r"\b(200000|400000|200,000|400,000|200k|400k)\b").unwrap();
+    for doc in [
+        "skills/keel-router/SKILL.md",
+        "skills/keel-router/references/worker-ops.md",
+        "skills/keel-router/references/checklists.md",
+        ".claude/skills/project-router/SKILL.md",
+    ] {
+        let text = read(doc);
+        assert!(!numbers.is_match(&text), "{doc} writes a ceiling instead of its key: {:?}", numbers.find(&text));
+    }
+    assert!(read("skills/keel-router/references/checklists.md").contains("reuse rule"), "checklists do not point at the reuse rule");
+    let ops = read("skills/keel-router/references/worker-ops.md");
+    for said in ["STATUS name=", "RESUMED name=", "fits="] {
+        assert!(ops.contains(said), "worker-ops does not name {said:?}");
+    }
+    let project_router = read(".claude/skills/project-router/SKILL.md");
+    for said in ["scripts/router-worker.sh resume <name>", "scripts/router-worker.sh status"] {
+        assert!(project_router.contains(said), "project-router does not name {said:?}");
+    }
+    let agent = read(".claude/agents/router.md");
+    let flat = agent.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(flat.contains("`resume <name>`") && flat.contains("`status [<name>]`"), "router.md's Bash posture omits resume or status");
+}
+
+/// E-WSANDBOX.W5 review round 1 (blocker): Claude Code writes a synthetic assistant record for an API
+/// error (model `<synthetic>`, `isApiErrorMessage`, all-zero usage); it is not the worker's context, so
+/// status reads the last real record.
+#[test]
+fn status_skips_synthetic_api_error_records() {
+    let l = launcher();
+    let now = [("ROUTER_NOW", "1800000000")];
+    let (ok, out) = l.run(&["spawn", "f", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]);
+    assert!(ok, "{out}");
+    let f = field(&out, "session=").to_string();
+    let synthetic = |ts: &str| {
+        serde_json::json!({"type": "assistant", "isSidechain": false, "isApiErrorMessage": true, "timestamp": ts,
+            "message": {"model": "<synthetic>", "role": "assistant", "content": [{"type": "text", "text": "API Error: 429 rate_limit"}],
+                "usage": {"input_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 0}}})
+        .to_string()
+    };
+    write_transcript(&l, &l.wt, &f, &[usage("2027-01-15T07:30:00Z", 2, 1000, 180000, "1h", false), synthetic("2027-01-15T07:58:00Z")]);
+    let (ok, out) = l.run_env(&["status", "f"], &now);
+    assert!(ok, "{out}");
+    assert_eq!(
+        out.trim_end(),
+        format!("STATUS name=f state=idle session={f} context=181002 peak=181002 idle=30m cache=warm ttl=1h cold-max=200000 warm-max=400000 fits=yes")
+    );
+    write_transcript(&l, &l.wt, &f, &[synthetic("2027-01-15T07:58:00Z")]);
+    let (ok, out) = l.run_env(&["status", "f"], &now);
+    assert!(ok && out.trim_end().ends_with(&format!("session={f} usage=none")), "{out}");
+}
+
+/// E-WSANDBOX.W5 review round 1: resume and status find a session's transcript by its id in any project
+/// dir, as the watchdog does (no re-encoding of the worktree path); and a run dir missing one of its files is refused by that file's
+/// name, before any start (each record is read on its own line, so set -e stops on the first missing).
+#[test]
+fn resume_finds_the_transcript_by_session_id_and_names_a_missing_run_file() {
+    let l = launcher();
+    assert!(l.run(&["spawn", "s1", l.wt.to_str().unwrap(), ".router/briefs/b.md", "opus"]).0);
+    let sid = field(&l.run(&["status", "s1"]).1, "session=").to_string();
+    l.stop("s1");
+    let dir = l.state.join("home/.claude/projects/-p");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(format!("{sid}.jsonl")), usage("2027-01-15T07:00:05Z", 3, 30000, 0, "1h", false) + "\n").unwrap();
+    let (ok, out) = l.run_env(&["status", "s1"], &[("ROUTER_NOW", "1800000000")]);
+    assert!(ok && out.contains(&format!("session={sid} context=30003 ")), "status reads the transcript in any project dir: {out}");
+    let (ok, out) = l.run(&["resume", "s1"]);
+    assert!(ok && out.starts_with("RESUMED name=s1 "), "{out}");
+    l.stop("s1");
+
+    let before = l.starts("s1");
+    let run = runs_of(&l, "s1", "resume")[0].clone();
+    std::fs::set_permissions(&run, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    std::fs::remove_file(run.join("effort")).unwrap();
+    let (ok, out) = l.run(&["resume", "s1"]);
+    assert!(!ok && out.contains("lacks its effort file"), "{out}");
+    assert_eq!(l.starts("s1"), before);
+}
+
+/// E-WSANDBOX.W5 review round 1: the guard's resume and status shapes repeat the launcher's one name
+/// rule (valid_name); this ties the two, so a change to either fails here.
+#[test]
+fn the_guards_worker_name_is_the_launchers_name_rule() {
+    let launcher = std::fs::read_to_string(root().join("scripts/router-worker.sh")).unwrap();
+    let guard = std::fs::read_to_string(root().join("scripts/router-guard.jq")).unwrap();
+    let rule = regex::Regex::new(r"(?m)^name_ok\(\) \{ expr .\$1. : '\^(.+)\$' >/dev/null; \}$").unwrap();
+    let rule = rule.captures(&launcher).expect("the launcher's name_ok rule")[1].replace(r"\{", "{").replace(r"\}", "}");
+    for shape in ["resume ", "status( "] {
+        let at = guard.find(&format!("scripts/router-worker\\\\.sh {shape}")).unwrap_or_else(|| panic!("no {shape} shape in the guard"));
+        let tail = &guard[at + "scripts/router-worker\\\\.sh ".len() + shape.len()..];
+        assert!(tail.starts_with(&rule), "the guard's {shape:?} name is not the launcher's rule {rule:?}: {}", &tail[..60]);
+    }
+}
+
+/// E-WSANDBOX.W5 independent review round 1: no text sends an unlisted or stopped worker straight to a
+/// fresh one past "Reuse or fresh" (the WAKE step, the retire rule, lesson C13); rule 4 names every
+/// refusal; worker-ops documents status's state word, the skipped synthetic record, usage=unreadable,
+/// and resume's limits (a run with no session, a crashed worker still listed: R56).
+#[test]
+fn an_unlisted_or_stopped_worker_goes_through_reuse_or_fresh() {
+    let read = |p: &str| std::fs::read_to_string(root().join(p)).unwrap();
+    let flat = |p: &str| read(p).split_whitespace().collect::<Vec<_>>().join(" ");
+    let ops = flat("skills/keel-router/references/worker-ops.md");
+    assert!(ops.contains("not listed unasked → SKILL.md \"Reuse or fresh\""), "worker-ops' WAKE step bypasses the reuse rule");
+    for said in ["usage=unreadable", "synthetic API-error record", "a blocked one such as `waiting`", "records none", "R56"] {
+        assert!(ops.contains(said), "worker-ops does not document {said:?}");
+    }
+    let skill = flat("skills/keel-router/SKILL.md");
+    assert!(!skill.contains("Never stop uncommitted work; hand it to a fresh worker"), "SKILL.md's retire rule bypasses the reuse rule");
+    assert!(skill.contains("comes back by \"Reuse or fresh\""), "SKILL.md's retire rule does not point at the reuse rule");
+    assert!(skill.contains("unlinked or without the worker persona, a model, effort or mode"), "rule 4 omits a refusal");
+    let lessons = flat("skills/keel-router/references/lessons.md");
+    assert!(!lessons.contains("spawns a fresh one for an unlisted one"), "lesson C13 bypasses the reuse rule");
+    assert!(lessons.contains("\"Reuse or fresh\""), "lesson C13 does not point at the reuse rule");
 }

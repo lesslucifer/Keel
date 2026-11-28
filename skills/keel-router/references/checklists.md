@@ -82,5 +82,6 @@ watch or job line, one idle notice.
    report protocol, the one-run rule, no mid-run questions.
 3. **Not twice.** Nobody else is already doing this item; never duplicate a dispatch
    to a live worker.
-4. **Count.** One live session per WU; a follow-up round is a message to that session,
+4. **Count.** One live session per WU; a follow-up round is a message to that session
+   (resumed first if it was stopped, by the reuse rule in SKILL.md "Reuse or fresh");
    a new WU or a review is a fresh session.

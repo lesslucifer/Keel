@@ -55,7 +55,7 @@ Source (lineage): a router session on the Trawler project (a Rust + Tauri app ru
 - C10 The owner had to say "done" after every sign/merge/push/tag; the router idled until told → watcher per staged action, same turn; 10-minute heartbeat (superseded 2026-11-11: no router heartbeat; workers report by message (DEC-44) and a watch per action).
 - C11 A worker was announced as spawned but never started (`command -v claude` empty) → absolute claude path; announce only after `ps` shows it.
 - C12 Two parallel workers both took DEC-77 → a worker allocating a shared number (decision, rule, use case) checks every branch first; the router assigns the number in the brief.
-- C13 Workers died (reboot) or idled out and nobody noticed for hours → the heartbeat checks every worker and relaunches a dead or stalled one from its brief (now: a background worker survives the router; on wake the router checks `ListAgents` and spawns a fresh one for an unlisted one; the watchdog, E-ROUTER3.W9, reports idle and stuck workers).
+- C13 Workers died (reboot) or idled out and nobody noticed for hours → the heartbeat checks every worker and relaunches a dead or stalled one from its brief (now: a background worker survives the router; on wake the router checks `ListAgents` and brings an unlisted one back by SKILL.md "Reuse or fresh" - resumed when `status` says it fits, else a fresh one; the watchdog, E-ROUTER3.W9, reports idle and stuck workers).
 
 ## D. Permissions
 - D1 Router merged twice, then "Merge Without Review" was denied → the owner merges; check capability before promising automation.
